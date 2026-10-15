@@ -15,6 +15,7 @@ router.use(profileRouter);
 router.resolvePersonnelId = common.resolvePersonnelId;
 router.parsePostGraduateDiscipline = common.parsePostGraduateDiscipline;
 router.formatPersonnelRecord = common.formatPersonnelRecord;
-router.fetchMasterPersonnelFromInsightEd = common.fetchMasterPersonnelFromInsightEd;
+router.fetchMasterPersonnelFromInsightEd =
+  common.fetchMasterPersonnelFromInsightEd;
 
 module.exports = router;

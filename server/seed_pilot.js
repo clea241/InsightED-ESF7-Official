@@ -11,7 +11,7 @@
 
 const { Pool } = require("pg");
 const path = require("path");
-require("./loadEnv"); });
+require("./loadEnv");
 
 // ── Connection to insightEd (READ-ONLY source) ─────────────────────────────
 const sourcePoolString = process.env.DATABASE_URL

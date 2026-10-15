@@ -2,17 +2,25 @@ const path = require("path");
 const root = "e:\\InsightED - ESF7 Official";
 const { Pool } = require(path.join(root, "node_modules", "pg"));
 
-const PROD_URL = "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted_esf7?sslmode=require";
-const STAGING_URL = "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted_esf7_staging?sslmode=require";
+const PROD_URL =
+  "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted_esf7?sslmode=require";
+const STAGING_URL =
+  "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted_esf7_staging?sslmode=require";
 
 const TARGET_SCHOOLS = ["300488", "342285"];
 
 async function run() {
-  console.log("================================================================");
-  console.log("🚀 Syncing Production Sections -> Staging for 300488 & 342285 ONLY");
+  console.log(
+    "================================================================",
+  );
+  console.log(
+    "🚀 Syncing Production Sections -> Staging for 300488 & 342285 ONLY",
+  );
   console.log("   Source: insighted_esf7 (PROD - Read-Only)");
   console.log("   Target: insighted_esf7_staging (STAGING)");
-  console.log("================================================================");
+  console.log(
+    "================================================================",
+  );
 
   const prodPool = new Pool({ connectionString: PROD_URL, max: 2 });
   const stagingPool = new Pool({ connectionString: STAGING_URL, max: 2 });
@@ -22,7 +30,7 @@ async function run() {
     "esf7_sned_sections",
     "esf7_als_sections",
     "esf7_aral_sections",
-    "esf7_remedial_enrichment_sections"
+    "esf7_remedial_enrichment_sections",
   ];
 
   try {
@@ -36,54 +44,68 @@ async function run() {
     // 2. Copy data from PROD for target schools
     for (const t of sectionTables) {
       console.log(`\n📦 Processing ${t}...`);
-      
+
       // Fetch columns from PROD
-      const colRes = await prodPool.query(`
+      const colRes = await prodPool.query(
+        `
         SELECT column_name 
         FROM information_schema.columns 
         WHERE table_name = $1 
         ORDER BY ordinal_position;
-      `, [t]);
-      const cols = colRes.rows.map(r => r.column_name);
+      `,
+        [t],
+      );
+      const cols = colRes.rows.map((r) => r.column_name);
 
       // Fetch rows for target schools
-      const rowsRes = await prodPool.query(`
-        SELECT ${cols.map(c => `"${c}"`).join(", ")} 
+      const rowsRes = await prodPool.query(
+        `
+        SELECT ${cols.map((c) => `"${c}"`).join(", ")} 
         FROM ${t} 
         WHERE school_id IN ($1, $2, $3, $4);
-      `, [
-        TARGET_SCHOOLS[0],
-        `SCH-${TARGET_SCHOOLS[0]}`,
-        TARGET_SCHOOLS[1],
-        `SCH-${TARGET_SCHOOLS[1]}`
-      ]);
+      `,
+        [
+          TARGET_SCHOOLS[0],
+          `SCH-${TARGET_SCHOOLS[0]}`,
+          TARGET_SCHOOLS[1],
+          `SCH-${TARGET_SCHOOLS[1]}`,
+        ],
+      );
 
       const rows = rowsRes.rows;
       console.log(`   Found ${rows.length} rows in PROD for target schools.`);
 
       let copied = 0;
       for (const row of rows) {
-        const insertCols = cols.map(c => `"${c}"`).join(", ");
+        const insertCols = cols.map((c) => `"${c}"`).join(", ");
         const placeholders = cols.map((_, idx) => `$${idx + 1}`).join(", ");
-        const values = cols.map(c => row[c]);
+        const values = cols.map((c) => row[c]);
 
-        await stagingPool.query(`
+        await stagingPool.query(
+          `
           INSERT INTO ${t} (${insertCols})
           VALUES (${placeholders})
           ON CONFLICT DO NOTHING;
-        `, values);
+        `,
+          values,
+        );
         copied++;
       }
       console.log(`   ✓ Copied ${copied} rows into staging.${t}`);
     }
 
     // 3. Verification in STAGING
-    console.log("\n=================== VERIFICATION IN STAGING ===================");
+    console.log(
+      "\n=================== VERIFICATION IN STAGING ===================",
+    );
     for (const t of sectionTables) {
       for (const sch of TARGET_SCHOOLS) {
-        const countRes = await stagingPool.query(`
+        const countRes = await stagingPool.query(
+          `
           SELECT count(*) FROM ${t} WHERE school_id IN ($1, $2);
-        `, [sch, `SCH-${sch}`]);
+        `,
+          [sch, `SCH-${sch}`],
+        );
         console.log(`STAGING ${t} for ${sch}: ${countRes.rows[0].count} rows`);
       }
     }

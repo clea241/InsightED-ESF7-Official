@@ -68,7 +68,8 @@ async function main() {
           r.id === p.id ||
           r.personnel_id === p.id ||
           r.prn === p.prn ||
-          (p.legacy_id && (r.id === p.legacy_id || r.personnel_id === p.legacy_id)),
+          (p.legacy_id &&
+            (r.id === p.legacy_id || r.personnel_id === p.legacy_id)),
       );
       if (!match) {
         console.warn(

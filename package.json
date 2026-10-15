@@ -56,8 +56,12 @@
     "vitest": "^4.1.11"
   },
   "lint-staged": {
-    "*.{js,jsx,mjs}": [
-      "eslint --quiet --no-warn-ignored"
+    "*.{js,jsx,mjs,ts,tsx}": [
+      "prettier --write",
+      "eslint --fix --quiet --no-warn-ignored"
+    ],
+    "*.{json,css,md}": [
+      "prettier --write"
     ]
   }
 }

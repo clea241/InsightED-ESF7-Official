@@ -17,9 +17,15 @@ function getRowDays(row) {
     Array.isArray(row.days) && row.days.length > 0
       ? row.days
       : typeof row.days === "string" && row.days.trim()
-        ? row.days.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean)
+        ? row.days
+            .split(/[,;\s]+/)
+            .map((s) => s.trim())
+            .filter(Boolean)
         : row.daySchedule
-          ? String(row.daySchedule).split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean)
+          ? String(row.daySchedule)
+              .split(/[,;\s]+/)
+              .map((s) => s.trim())
+              .filter(Boolean)
           : [];
   return raw.map(normalizeDay);
 }
@@ -55,15 +61,23 @@ function isPerGradeSharedSlot(a, b) {
   const secA = String(a.sectionId || a.section_id || "");
   const secB = String(b.sectionId || b.section_id || "");
   if (!secA || secA !== secB) return false;
-  const gA = String(a.subjectGradeLevel || a.subject_grade_level || "").trim().toUpperCase();
-  const gB = String(b.subjectGradeLevel || b.subject_grade_level || "").trim().toUpperCase();
+  const gA = String(a.subjectGradeLevel || a.subject_grade_level || "")
+    .trim()
+    .toUpperCase();
+  const gB = String(b.subjectGradeLevel || b.subject_grade_level || "")
+    .trim()
+    .toUpperCase();
   return Boolean(gA && gB && gA !== gB);
 }
 
 function isAdvisoryRow(row) {
   if (!row) return false;
-  const sub = String(row.subject || row.task || "").trim().toUpperCase();
-  return sub === "ADVISORY" || sub === "HGP" || sub.includes("HOMEROOM GUIDANCE");
+  const sub = String(row.subject || row.task || "")
+    .trim()
+    .toUpperCase();
+  return (
+    sub === "ADVISORY" || sub === "HGP" || sub.includes("HOMEROOM GUIDANCE")
+  );
 }
 
 /**
@@ -73,8 +87,12 @@ function isAdvisoryRow(row) {
  */
 function isAdvisoryOrHgpPair(rA, rB) {
   if (!rA || !rB) return false;
-  const subA = String(rA.subject || rA.task || "").trim().toUpperCase();
-  const subB = String(rB.subject || rB.task || "").trim().toUpperCase();
+  const subA = String(rA.subject || rA.task || "")
+    .trim()
+    .toUpperCase();
+  const subB = String(rB.subject || rB.task || "")
+    .trim()
+    .toUpperCase();
   const isAdvA = subA === "ADVISORY";
   const isAdvB = subB === "ADVISORY";
   const isHgpA = subA === "HGP" || subA.includes("HOMEROOM GUIDANCE");
@@ -103,7 +121,8 @@ function validateWorkloadSchedules(rows) {
 
     const nsA = timeToMins(startA);
     const neA = timeToMins(endA);
-    if (nsA >= 99999 || neA >= 99999 || nsA < 0 || neA < 0 || nsA >= neA) continue;
+    if (nsA >= 99999 || neA >= 99999 || nsA < 0 || neA < 0 || nsA >= neA)
+      continue;
 
     for (let j = i + 1; j < rows.length; j++) {
       const rowB = rows[j];
@@ -114,8 +133,12 @@ function validateWorkloadSchedules(rows) {
 
       // Stale/duplicate block in state
       const isDuplicate =
-        String(rowA.subject || rowA.task || "").trim().toUpperCase() ===
-          String(rowB.subject || rowB.task || "").trim().toUpperCase() &&
+        String(rowA.subject || rowA.task || "")
+          .trim()
+          .toUpperCase() ===
+          String(rowB.subject || rowB.task || "")
+            .trim()
+            .toUpperCase() &&
         String(rowA.sectionId || rowA.section_id || "").trim() ===
           String(rowB.sectionId || rowB.section_id || "").trim() &&
         startA === (rowB.startTime || rowB.start_time) &&
@@ -145,7 +168,8 @@ function validateWorkloadSchedules(rows) {
 
       const nsB = timeToMins(startB);
       const neB = timeToMins(endB);
-      if (nsB >= 99999 || neB >= 99999 || nsB < 0 || neB < 0 || nsB >= neB) continue;
+      if (nsB >= 99999 || neB >= 99999 || nsB < 0 || neB < 0 || nsB >= neB)
+        continue;
 
       // Strictly open-interval overlap: StartA < EndB AND EndA > StartB
       if (nsA < neB && neA > nsB) {

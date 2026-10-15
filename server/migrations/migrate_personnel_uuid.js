@@ -55,11 +55,17 @@ const ruleMap = {
 async function migrate() {
   assertSafeEnvironment();
 
-  console.log("===============================================================");
+  console.log(
+    "===============================================================",
+  );
   console.log(`[Personnel UUID Migration] Starting...`);
-  console.log(`Mode: ${isDryRun ? "DRY RUN (Will ROLLBACK at end)" : "LIVE EXECUTION (Will COMMIT changes)"}`);
+  console.log(
+    `Mode: ${isDryRun ? "DRY RUN (Will ROLLBACK at end)" : "LIVE EXECUTION (Will COMMIT changes)"}`,
+  );
   console.log(`Target: ${dbUser}@${dbHost}:${dbPort}/${dbName}`);
-  console.log("===============================================================\n");
+  console.log(
+    "===============================================================\n",
+  );
 
   const client = new Client({
     host: dbHost,
@@ -86,7 +92,9 @@ async function migrate() {
     );
 
     // 2. Add columns to esf7_personnel_profile if not already present
-    console.log("\n[Step 2/8] Ensuring schema columns exist on esf7_personnel_profile...");
+    console.log(
+      "\n[Step 2/8] Ensuring schema columns exist on esf7_personnel_profile...",
+    );
     await client.query(`
       ALTER TABLE esf7_personnel_profile 
         ADD COLUMN IF NOT EXISTS status VARCHAR(32) DEFAULT 'canonical',
@@ -101,7 +109,9 @@ async function migrate() {
     console.log("  ✓ Columns 'status' and 'legacy_id' and indexes verified.");
 
     // 3. Ensure mapping table exists
-    console.log("\n[Step 3/8] Ensuring mapping table 'esf7_personnel_id_mapping' exists...");
+    console.log(
+      "\n[Step 3/8] Ensuring mapping table 'esf7_personnel_id_mapping' exists...",
+    );
     await client.query(`
       CREATE TABLE IF NOT EXISTS esf7_personnel_id_mapping (
         legacy_id VARCHAR(128) PRIMARY KEY,
@@ -115,7 +125,9 @@ async function migrate() {
     console.log("  ✓ Mapping table confirmed.");
 
     // 4. Populate mapping table for any rows in esf7_personnel_profile not yet mapped
-    console.log("\n[Step 4/8] Generating UUIDs and statuses into mapping table...");
+    console.log(
+      "\n[Step 4/8] Generating UUIDs and statuses into mapping table...",
+    );
     const populateMappingSql = `
       INSERT INTO esf7_personnel_id_mapping (legacy_id, new_id, status)
       SELECT 
@@ -136,7 +148,9 @@ async function migrate() {
       WHERE m.legacy_id IS NULL;
     `;
     const popRes = await client.query(populateMappingSql);
-    console.log(`  ✓ Inserted ${popRes.rowCount} new mappings into 'esf7_personnel_id_mapping'.`);
+    console.log(
+      `  ✓ Inserted ${popRes.rowCount} new mappings into 'esf7_personnel_id_mapping'.`,
+    );
 
     const mapSummary = await client.query(`
       SELECT status, count(*) AS count 
@@ -144,10 +158,14 @@ async function migrate() {
       GROUP BY status ORDER BY count DESC;
     `);
     console.log("  ✓ Current mappings by status:");
-    mapSummary.rows.forEach((r) => console.log(`     - ${r.status}: ${r.count}`));
+    mapSummary.rows.forEach((r) =>
+      console.log(`     - ${r.status}: ${r.count}`),
+    );
 
     // 5. Dynamic FK Discovery from pg_constraint
-    console.log("\n[Step 5/8] Discovering foreign key constraints pointing to esf7_personnel_profile(id)...");
+    console.log(
+      "\n[Step 5/8] Discovering foreign key constraints pointing to esf7_personnel_profile(id)...",
+    );
     const fkDiscoverySql = `
       SELECT
         con.conname AS constraint_name,
@@ -169,27 +187,35 @@ async function migrate() {
     `;
     const fkRes = await client.query(fkDiscoverySql);
     const foreignKeys = fkRes.rows;
-    console.log(`  ✓ Discovered ${foreignKeys.length} foreign key constraints dynamically:`);
+    console.log(
+      `  ✓ Discovered ${foreignKeys.length} foreign key constraints dynamically:`,
+    );
     foreignKeys.forEach((fk, idx) => {
       console.log(
         `     ${idx + 1}. [${fk.constraint_name}] ${fk.table_name}(${fk.column_name}) -> ` +
-        `ON DELETE ${ruleMap[fk.delete_rule] || "NO ACTION"} ON UPDATE ${ruleMap[fk.update_rule] || "NO ACTION"}`,
+          `ON DELETE ${ruleMap[fk.delete_rule] || "NO ACTION"} ON UPDATE ${ruleMap[fk.update_rule] || "NO ACTION"}`,
       );
     });
 
     if (foreignKeys.length !== 20) {
-      console.warn(`  ⚠️ Expected 20 FK constraints, but found ${foreignKeys.length}. Continuing with discovered set.`);
+      console.warn(
+        `  ⚠️ Expected 20 FK constraints, but found ${foreignKeys.length}. Continuing with discovered set.`,
+      );
     }
 
     // 6. Record pre-migration row counts for all affected tables
     console.log("\n[Step 6/8] Capturing baseline pre-migration row counts...");
     const preCounts = {};
-    const profCountRes = await client.query(`SELECT COUNT(*) FROM esf7_personnel_profile`);
+    const profCountRes = await client.query(
+      `SELECT COUNT(*) FROM esf7_personnel_profile`,
+    );
     preCounts["esf7_personnel_profile"] = Number(profCountRes.rows[0].count);
 
     for (const fk of foreignKeys) {
       if (!preCounts[fk.table_name]) {
-        const cRes = await client.query(`SELECT COUNT(*) FROM ${fk.table_name}`);
+        const cRes = await client.query(
+          `SELECT COUNT(*) FROM ${fk.table_name}`,
+        );
         preCounts[fk.table_name] = Number(cRes.rows[0].count);
       }
     }
@@ -216,7 +242,9 @@ async function migrate() {
       }
     }
 
-    console.log(`  ✓ Baseline counts captured for ${Object.keys(preCounts).length} tables.`);
+    console.log(
+      `  ✓ Baseline counts captured for ${Object.keys(preCounts).length} tables.`,
+    );
 
     // 7. Atomic Transaction: Re-key foreign keys, update profile, recreate constraints, and verify
     console.log("\n[Step 7/8] Entering atomic migration transaction...");
@@ -225,7 +253,9 @@ async function migrate() {
     // A. Drop foreign key constraints
     console.log("  A. Dropping foreign key constraints...");
     for (const fk of foreignKeys) {
-      await client.query(`ALTER TABLE "${fk.table_name}" DROP CONSTRAINT IF EXISTS "${fk.constraint_name}";`);
+      await client.query(
+        `ALTER TABLE "${fk.table_name}" DROP CONSTRAINT IF EXISTS "${fk.constraint_name}";`,
+      );
     }
     console.log("     ✓ All foreign key constraints dropped.");
 
@@ -239,7 +269,9 @@ async function migrate() {
         WHERE t."${fk.column_name}" = m.legacy_id;
       `;
       const uRes = await client.query(updateChildSql);
-      console.log(`     - Re-keyed ${fk.table_name}.${fk.column_name}: ${uRes.rowCount} rows updated.`);
+      console.log(
+        `     - Re-keyed ${fk.table_name}.${fk.column_name}: ${uRes.rowCount} rows updated.`,
+      );
     }
 
     // C. Re-key secondary tables without formal FKs
@@ -253,14 +285,18 @@ async function migrate() {
           WHERE t."${sCol}" = m.legacy_id;
         `;
         const usRes = await client.query(updateSecSql);
-        console.log(`     - Re-keyed ${sTable}.${sCol}: ${usRes.rowCount} rows updated.`);
+        console.log(
+          `     - Re-keyed ${sTable}.${sCol}: ${usRes.rowCount} rows updated.`,
+        );
       } catch (e) {
         console.log(`     - Skipped ${sTable}: ${e.message}`);
       }
     }
 
     // D. Update esf7_personnel_profile: primary key id = new_id, legacy_id = old id, status = mapping status
-    console.log("  D. Updating esf7_personnel_profile (id -> new UUID, legacy_id -> old ID, status)...");
+    console.log(
+      "  D. Updating esf7_personnel_profile (id -> new UUID, legacy_id -> old ID, status)...",
+    );
     const updateProfileSql = `
       UPDATE esf7_personnel_profile p
       SET 
@@ -272,7 +308,9 @@ async function migrate() {
       WHERE p.id = m.legacy_id;
     `;
     const profRes = await client.query(updateProfileSql);
-    console.log(`     ✓ Updated ${profRes.rowCount} rows in esf7_personnel_profile.`);
+    console.log(
+      `     ✓ Updated ${profRes.rowCount} rows in esf7_personnel_profile.`,
+    );
 
     // E. Recreate all discovered foreign key constraints
     console.log("  E. Recreating foreign key constraints...");
@@ -313,9 +351,13 @@ async function migrate() {
       }
     }
     if (parityFailures === 0) {
-      console.log(`     ✓ All ${Object.keys(preCounts).length} tables have IDENTICAL row counts before and after.`);
+      console.log(
+        `     ✓ All ${Object.keys(preCounts).length} tables have IDENTICAL row counts before and after.`,
+      );
     } else {
-      throw new Error(`Row count parity check failed with ${parityFailures} mismatches!`);
+      throw new Error(
+        `Row count parity check failed with ${parityFailures} mismatches!`,
+      );
     }
 
     // V2. Orphaned foreign key check (MUST BE 0 for all FK columns)
@@ -331,14 +373,20 @@ async function migrate() {
       const oRes = await client.query(orphanCheckSql);
       const orphanCount = Number(oRes.rows[0].orphan_count);
       if (orphanCount > 0) {
-        console.error(`     ❌ Found ${orphanCount} orphaned rows in ${fk.table_name}.${fk.column_name}!`);
+        console.error(
+          `     ❌ Found ${orphanCount} orphaned rows in ${fk.table_name}.${fk.column_name}!`,
+        );
         orphanFailures++;
       }
     }
     if (orphanFailures === 0) {
-      console.log(`     ✓ Confirmed 0 orphaned foreign key references across all ${foreignKeys.length} FK constraints.`);
+      console.log(
+        `     ✓ Confirmed 0 orphaned foreign key references across all ${foreignKeys.length} FK constraints.`,
+      );
     } else {
-      throw new Error(`Orphaned foreign key check failed with ${orphanFailures} violations!`);
+      throw new Error(
+        `Orphaned foreign key check failed with ${orphanFailures} violations!`,
+      );
     }
 
     // V3. UUID format check on esf7_personnel_profile.id
@@ -350,9 +398,13 @@ async function migrate() {
     `);
     const nonUuidCount = Number(nonUuidRes.rows[0].count);
     if (nonUuidCount === 0) {
-      console.log(`     ✓ All ${postCounts["esf7_personnel_profile"]} personnel records have valid 36-char UUIDs.`);
+      console.log(
+        `     ✓ All ${postCounts["esf7_personnel_profile"]} personnel records have valid 36-char UUIDs.`,
+      );
     } else {
-      throw new Error(`UUID format validation failed: ${nonUuidCount} rows do not match UUID pattern!`);
+      throw new Error(
+        `UUID format validation failed: ${nonUuidCount} rows do not match UUID pattern!`,
+      );
     }
 
     // V4. Legacy ID and status non-null check
@@ -368,18 +420,30 @@ async function migrate() {
 
     // Commit or Rollback based on CLI flags
     if (isDryRun) {
-      console.log("\n---------------------------------------------------------------");
-      console.log("[Dry-Run Complete] Rolling back transaction. Zero persistent changes made.");
+      console.log(
+        "\n---------------------------------------------------------------",
+      );
+      console.log(
+        "[Dry-Run Complete] Rolling back transaction. Zero persistent changes made.",
+      );
       console.log("To apply this migration permanently to the database, run:");
       console.log("   node server/migrations/migrate_personnel_uuid.js --run");
-      console.log("---------------------------------------------------------------");
+      console.log(
+        "---------------------------------------------------------------",
+      );
       await client.query("ROLLBACK;");
     } else {
-      console.log("\n---------------------------------------------------------------");
-      console.log("[Live Execution] Verification passed! Committing transaction to database...");
+      console.log(
+        "\n---------------------------------------------------------------",
+      );
+      console.log(
+        "[Live Execution] Verification passed! Committing transaction to database...",
+      );
       await client.query("COMMIT;");
       console.log("🎉 MIGRATION COMMITTED SUCCESSFULLY!");
-      console.log("---------------------------------------------------------------");
+      console.log(
+        "---------------------------------------------------------------",
+      );
     }
   } catch (err) {
     console.error("\n❌ [Migration Error]:", err.message);

@@ -1,77 +1,81 @@
-const { Pool } = require('../node_modules/pg');
+const { Pool } = require("../node_modules/pg");
 
 const prodPool = new Pool({
-  host: 'stride-posgre-prod-01.postgres.database.azure.com',
+  host: "stride-posgre-prod-01.postgres.database.azure.com",
   port: 5432,
-  user: 'Administrator1',
-  password: 'pRZTbQ2T1JD7',
-  database: 'insighted_esf7',
+  user: "Administrator1",
+  password: "pRZTbQ2T1JD7",
+  database: "insighted_esf7",
   ssl: { rejectUnauthorized: false },
 });
 
 const stagingPool = new Pool({
-  host: 'stride-posgre-prod-01.postgres.database.azure.com',
+  host: "stride-posgre-prod-01.postgres.database.azure.com",
   port: 5432,
-  user: 'Administrator1',
-  password: 'pRZTbQ2T1JD7',
-  database: 'insighted_esf7_staging',
+  user: "Administrator1",
+  password: "pRZTbQ2T1JD7",
+  database: "insighted_esf7_staging",
   ssl: { rejectUnauthorized: false },
 });
 
 const TARGET_TABLES = [
-  'esf7_school_profile',
-  'esf7_personnel_profile',
-  'esf7_personnel_employment',
-  'esf7_perssonel_educ',
-  'esf7_personnel_ld_trainings',
-  'esf7_personnel_learning_areas',
-  'esf7_regular_sections',
-  'esf7_als_sections',
-  'esf7_aral_sections',
-  'esf7_sned_sections',
-  'esf7_remedial_enrichment_sections',
-  'esf7_personnel_designations',
-  'esf7_workload_rows',
-  'esf7_personnel_allowances'
+  "esf7_school_profile",
+  "esf7_personnel_profile",
+  "esf7_personnel_employment",
+  "esf7_perssonel_educ",
+  "esf7_personnel_ld_trainings",
+  "esf7_personnel_learning_areas",
+  "esf7_regular_sections",
+  "esf7_als_sections",
+  "esf7_aral_sections",
+  "esf7_sned_sections",
+  "esf7_remedial_enrichment_sections",
+  "esf7_personnel_designations",
+  "esf7_workload_rows",
+  "esf7_personnel_allowances",
 ];
 
 const TARGET_VIEWS = [
-  'esf7_class_sections',
-  'esf7_personnel_educ',
-  'esf7_personnel_l&d',
-  'esf7_personnel_ld',
-  'esf7_personnel_learning_area',
-  'esf7_regualar_sections',
-  'esf7_personnel_designation',
-  'esf7_workload_row',
-  'esf7_personnel_allowance'
+  "esf7_class_sections",
+  "esf7_personnel_educ",
+  "esf7_personnel_l&d",
+  "esf7_personnel_ld",
+  "esf7_personnel_learning_area",
+  "esf7_regualar_sections",
+  "esf7_personnel_designation",
+  "esf7_workload_row",
+  "esf7_personnel_allowance",
 ];
 
 function formatColumnType(col) {
-  if (col.data_type === 'ARRAY') {
-    const elemType = col.udt_name.replace(/^_/, '');
+  if (col.data_type === "ARRAY") {
+    const elemType = col.udt_name.replace(/^_/, "");
     return `${elemType}[]`;
   }
-  if (col.data_type === 'character varying') {
-    return col.character_maximum_length ? `VARCHAR(${col.character_maximum_length})` : 'VARCHAR';
+  if (col.data_type === "character varying") {
+    return col.character_maximum_length
+      ? `VARCHAR(${col.character_maximum_length})`
+      : "VARCHAR";
   }
-  if (col.data_type === 'character') {
-    return col.character_maximum_length ? `CHAR(${col.character_maximum_length})` : 'CHAR';
+  if (col.data_type === "character") {
+    return col.character_maximum_length
+      ? `CHAR(${col.character_maximum_length})`
+      : "CHAR";
   }
-  if (col.data_type === 'numeric') {
+  if (col.data_type === "numeric") {
     if (col.numeric_precision && col.numeric_scale !== null) {
       return `NUMERIC(${col.numeric_precision}, ${col.numeric_scale})`;
     }
     if (col.numeric_precision) {
       return `NUMERIC(${col.numeric_precision})`;
     }
-    return 'NUMERIC';
+    return "NUMERIC";
   }
-  if (col.data_type === 'timestamp with time zone') return 'TIMESTAMPTZ';
-  if (col.data_type === 'timestamp without time zone') return 'TIMESTAMP';
-  if (col.data_type === 'time without time zone') return 'TIME';
-  if (col.data_type === 'time with time zone') return 'TIMETZ';
-  if (col.data_type === 'USER-DEFINED') return col.udt_name;
+  if (col.data_type === "timestamp with time zone") return "TIMESTAMPTZ";
+  if (col.data_type === "timestamp without time zone") return "TIMESTAMP";
+  if (col.data_type === "time without time zone") return "TIME";
+  if (col.data_type === "time with time zone") return "TIMETZ";
+  if (col.data_type === "USER-DEFINED") return col.udt_name;
   return col.data_type.toUpperCase();
 }
 
@@ -80,13 +84,18 @@ async function runSync() {
   const stagingClient = await stagingPool.connect();
 
   try {
-    console.log('🚀 Starting schema sync from insighted_esf7 to insighted_esf7_staging...');
+    console.log(
+      "🚀 Starting schema sync from insighted_esf7 to insighted_esf7_staging...",
+    );
 
     // 1. Fetch View Definitions from Production
-    console.log('\nFetching view definitions from insighted_esf7...');
+    console.log("\nFetching view definitions from insighted_esf7...");
     const viewDefs = [];
     for (const viewName of TARGET_VIEWS) {
-      const res = await prodClient.query(`SELECT pg_get_viewdef($1::regclass, true) as def;`, [viewName]);
+      const res = await prodClient.query(
+        `SELECT pg_get_viewdef($1::regclass, true) as def;`,
+        [viewName],
+      );
       if (res.rows.length > 0) {
         viewDefs.push({ name: viewName, def: res.rows[0].def });
         console.log(`  ✓ Got definition for view: ${viewName}`);
@@ -96,12 +105,13 @@ async function runSync() {
     }
 
     // 2. Fetch Table Schemas (columns, constraints, indexes) from Production
-    console.log('\nFetching table schemas from insighted_esf7...');
+    console.log("\nFetching table schemas from insighted_esf7...");
     const tableSchemas = [];
 
     for (const tableName of TARGET_TABLES) {
       // Columns
-      const colRes = await prodClient.query(`
+      const colRes = await prodClient.query(
+        `
         SELECT 
           column_name, 
           data_type, 
@@ -114,10 +124,13 @@ async function runSync() {
         FROM information_schema.columns 
         WHERE table_schema = 'public' AND table_name = $1
         ORDER BY ordinal_position;
-      `, [tableName]);
+      `,
+        [tableName],
+      );
 
       // Primary Key
-      const pkRes = await prodClient.query(`
+      const pkRes = await prodClient.query(
+        `
         SELECT kcu.column_name
         FROM information_schema.table_constraints tc
         JOIN information_schema.key_column_usage kcu
@@ -127,18 +140,24 @@ async function runSync() {
           AND tc.table_schema = 'public'
           AND tc.table_name = $1
         ORDER BY kcu.ordinal_position;
-      `, [tableName]);
+      `,
+        [tableName],
+      );
 
       // Unique and Check constraints (excluding PK)
-      const constraintRes = await prodClient.query(`
+      const constraintRes = await prodClient.query(
+        `
         SELECT conname, contype, pg_get_constraintdef(c.oid) as def
         FROM pg_constraint c
         JOIN pg_class t ON c.conrelid = t.oid
         WHERE t.relname = $1 AND c.contype IN ('u', 'c');
-      `, [tableName]);
+      `,
+        [tableName],
+      );
 
       // Indexes (excluding constraint-backed indexes)
-      const idxRes = await prodClient.query(`
+      const idxRes = await prodClient.query(
+        `
         SELECT indexname, indexdef
         FROM pg_indexes
         WHERE schemaname = 'public' 
@@ -148,57 +167,71 @@ async function runSync() {
             FROM information_schema.table_constraints 
             WHERE table_schema = 'public' AND table_name = $1
           );
-      `, [tableName]);
+      `,
+        [tableName],
+      );
 
       tableSchemas.push({
         name: tableName,
         columns: colRes.rows,
-        pkColumns: pkRes.rows.map(r => r.column_name),
+        pkColumns: pkRes.rows.map((r) => r.column_name),
         constraints: constraintRes.rows,
-        indexes: idxRes.rows
+        indexes: idxRes.rows,
       });
-      console.log(`  ✓ Got schema for table: ${tableName} (${colRes.rows.length} columns, PK: [${pkRes.rows.map(r => r.column_name).join(', ')}], ${idxRes.rows.length} indexes)`);
+      console.log(
+        `  ✓ Got schema for table: ${tableName} (${colRes.rows.length} columns, PK: [${pkRes.rows.map((r) => r.column_name).join(", ")}], ${idxRes.rows.length} indexes)`,
+      );
     }
 
     // 3. Drop existing views in insighted_esf7_staging
-    console.log('\nDropping target views in insighted_esf7_staging...');
+    console.log("\nDropping target views in insighted_esf7_staging...");
     for (const view of TARGET_VIEWS) {
       await stagingClient.query(`DROP VIEW IF EXISTS "${view}" CASCADE;`);
       console.log(`  ✓ Dropped view (if existed): ${view}`);
     }
-    await stagingClient.query(`DROP VIEW IF EXISTS "esf7_personnel_l&d" CASCADE;`);
+    await stagingClient.query(
+      `DROP VIEW IF EXISTS "esf7_personnel_l&d" CASCADE;`,
+    );
 
     // 4. Drop and Recreate Target Tables in insighted_esf7_staging
-    console.log('\nReplacing target tables in insighted_esf7_staging (schema only)...');
+    console.log(
+      "\nReplacing target tables in insighted_esf7_staging (schema only)...",
+    );
     for (const schema of tableSchemas) {
       console.log(`\nRecreating table: ${schema.name}...`);
-      await stagingClient.query(`DROP TABLE IF EXISTS "${schema.name}" CASCADE;`);
+      await stagingClient.query(
+        `DROP TABLE IF EXISTS "${schema.name}" CASCADE;`,
+      );
 
       // Build column definitions
-      const colDefs = schema.columns.map(col => {
+      const colDefs = schema.columns.map((col) => {
         let typeStr = formatColumnType(col);
         let def = `"${col.column_name}" ${typeStr}`;
         if (col.column_default) {
           def += ` DEFAULT ${col.column_default}`;
         }
-        if (col.is_nullable === 'NO') {
+        if (col.is_nullable === "NO") {
           def += ` NOT NULL`;
         }
         return def;
       });
 
       if (schema.pkColumns.length > 0) {
-        colDefs.push(`PRIMARY KEY (${schema.pkColumns.map(c => `"${c}"`).join(', ')})`);
+        colDefs.push(
+          `PRIMARY KEY (${schema.pkColumns.map((c) => `"${c}"`).join(", ")})`,
+        );
       }
 
-      const createSql = `CREATE TABLE "${schema.name}" (\n  ${colDefs.join(',\n  ')}\n);`;
+      const createSql = `CREATE TABLE "${schema.name}" (\n  ${colDefs.join(",\n  ")}\n);`;
       await stagingClient.query(createSql);
       console.log(`  ✓ Created table "${schema.name}"`);
 
       // Add constraints (unique, check)
       for (const con of schema.constraints) {
         try {
-          await stagingClient.query(`ALTER TABLE "${schema.name}" ADD CONSTRAINT "${con.conname}" ${con.def};`);
+          await stagingClient.query(
+            `ALTER TABLE "${schema.name}" ADD CONSTRAINT "${con.conname}" ${con.def};`,
+          );
           console.log(`  ✓ Added constraint ${con.conname}`);
         } catch (err) {
           console.warn(`  ⚠️ Constraint ${con.conname} note:`, err.message);
@@ -217,47 +250,66 @@ async function runSync() {
     }
 
     // 5. Recreate Views in insighted_esf7_staging
-    console.log('\nRecreating target views in insighted_esf7_staging...');
+    console.log("\nRecreating target views in insighted_esf7_staging...");
     for (const view of viewDefs) {
       const viewSql = `CREATE OR REPLACE VIEW "${view.name}" AS ${view.def};`;
       try {
         await stagingClient.query(viewSql);
         console.log(`  ✓ Recreated view "${view.name}"`);
       } catch (err) {
-        console.error(`  ❌ Failed to create view "${view.name}":`, err.message);
+        console.error(
+          `  ❌ Failed to create view "${view.name}":`,
+          err.message,
+        );
         throw err;
       }
     }
 
     // 6. Final Verification on insighted_esf7_staging
-    console.log('\n===================== VERIFICATION ON STAGING =====================');
+    console.log(
+      "\n===================== VERIFICATION ON STAGING =====================",
+    );
     for (const schema of tableSchemas) {
-      const verifyCols = await stagingClient.query(`
+      const verifyCols = await stagingClient.query(
+        `
         SELECT column_name, data_type, udt_name 
         FROM information_schema.columns 
         WHERE table_schema = 'public' AND table_name = $1
         ORDER BY ordinal_position;
-      `, [schema.name]);
+      `,
+        [schema.name],
+      );
 
-      const rawPayload = verifyCols.rows.find(c => c.column_name === 'raw_payload');
-      const extrasCol = verifyCols.rows.find(c => c.column_name === 'extras');
-      
-      console.log(`Table ${schema.name}: ${verifyCols.rows.length} columns | raw_payload: ${rawPayload ? 'PRESENT (WARNING)' : 'NONE (CORRECT)'} | extras: ${extrasCol ? extrasCol.data_type : 'N/A'}`);
+      const rawPayload = verifyCols.rows.find(
+        (c) => c.column_name === "raw_payload",
+      );
+      const extrasCol = verifyCols.rows.find((c) => c.column_name === "extras");
+
+      console.log(
+        `Table ${schema.name}: ${verifyCols.rows.length} columns | raw_payload: ${rawPayload ? "PRESENT (WARNING)" : "NONE (CORRECT)"} | extras: ${extrasCol ? extrasCol.data_type : "N/A"}`,
+      );
     }
 
     for (const view of TARGET_VIEWS) {
-      const verifyView = await stagingClient.query(`
+      const verifyView = await stagingClient
+        .query(
+          `
         SELECT count(*) FROM "${view}" LIMIT 1;
-      `).catch(err => ({ error: err.message }));
+      `,
+        )
+        .catch((err) => ({ error: err.message }));
       if (verifyView.error) {
-        console.error(`❌ View query test for ${view} failed: ${verifyView.error}`);
+        console.error(
+          `❌ View query test for ${view} failed: ${verifyView.error}`,
+        );
       } else {
         console.log(`✓ View ${view} query test passed.`);
       }
     }
 
-    console.log('\n🎉 ALL 14 TABLES AND 9 VIEWS SUCCESSFULLY REPLACED IN insighted_esf7_staging!');
-
+    console.log(
+      "\n🎉 ALL 14 TABLES AND 9 VIEWS SUCCESSFULLY REPLACED IN insighted_esf7_staging!",
+    );
   } finally {
     prodClient.release();
     stagingClient.release();
@@ -266,7 +318,7 @@ async function runSync() {
   }
 }
 
-runSync().catch(err => {
-  console.error('Fatal sync error:', err);
+runSync().catch((err) => {
+  console.error("Fatal sync error:", err);
   process.exit(1);
 });

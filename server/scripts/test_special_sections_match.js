@@ -1,11 +1,11 @@
-const { Pool } = require('../node_modules/pg');
+const { Pool } = require("../node_modules/pg");
 
 const pool = new Pool({
-  host: 'stride-posgre-prod-01.postgres.database.azure.com',
+  host: "stride-posgre-prod-01.postgres.database.azure.com",
   port: 5432,
-  user: 'Administrator1',
-  password: 'pRZTbQ2T1JD7',
-  database: 'insighted_esf7',
+  user: "Administrator1",
+  password: "pRZTbQ2T1JD7",
+  database: "insighted_esf7",
   ssl: { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
@@ -14,7 +14,7 @@ const pool = new Pool({
 async function main() {
   const client = await pool.connect();
   try {
-    console.log('--- Testing SNED matching query ---');
+    console.log("--- Testing SNED matching query ---");
     const testSned = await client.query(`
       SELECT w.id, w.school_id, w.section_id, w.section_name, s.id as sned_id, s.section_name as sned_name
       FROM esf7_workload_rows w
@@ -25,9 +25,9 @@ async function main() {
         AND (w.section_id IS NULL OR w.section_id != s.id)
       LIMIT 10;
     `);
-    console.log('Sample SNED potential matches:', testSned.rows);
+    console.log("Sample SNED potential matches:", testSned.rows);
 
-    console.log('\n--- Testing ALS matching query ---');
+    console.log("\n--- Testing ALS matching query ---");
     const testAls = await client.query(`
       SELECT w.id, w.school_id, w.section_id, w.section_name, a.id as als_id, a.section_name as als_name
       FROM esf7_workload_rows w
@@ -38,9 +38,9 @@ async function main() {
         AND (w.section_id IS NULL OR w.section_id != a.id)
       LIMIT 10;
     `);
-    console.log('Sample ALS potential matches:', testAls.rows);
+    console.log("Sample ALS potential matches:", testAls.rows);
 
-    console.log('\n--- Testing ARAL matching query ---');
+    console.log("\n--- Testing ARAL matching query ---");
     const testAral = await client.query(`
       SELECT w.id, w.school_id, w.section_id, w.section_name, ar.id as aral_id, ar.section_name as aral_name
       FROM esf7_workload_rows w
@@ -51,8 +51,7 @@ async function main() {
         AND (w.section_id IS NULL OR w.section_id != ar.id)
       LIMIT 10;
     `);
-    console.log('Sample ARAL potential matches:', testAral.rows);
-
+    console.log("Sample ARAL potential matches:", testAral.rows);
   } finally {
     client.release();
     await pool.end();

@@ -1,6 +1,6 @@
 /**
  * Clean Slate Rebuild of esf7_regular_sections from authentic school_drafts
- * 
+ *
  * Rules:
  * - Strictly isolated to insighted_esf7 (Azure DB).
  * - Creates safety backup table `esf7_regular_sections_backup_20261013`.
@@ -12,14 +12,14 @@
  * - Creates convenience alias view `esf7_regualar_sections` for typo tolerance.
  */
 
-const { Pool } = require('../node_modules/pg');
+const { Pool } = require("../node_modules/pg");
 
 const pool = new Pool({
-  host: 'stride-posgre-prod-01.postgres.database.azure.com',
+  host: "stride-posgre-prod-01.postgres.database.azure.com",
   port: 5432,
-  user: 'Administrator1',
-  password: 'pRZTbQ2T1JD7',
-  database: 'insighted_esf7',
+  user: "Administrator1",
+  password: "pRZTbQ2T1JD7",
+  database: "insighted_esf7",
   ssl: { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
@@ -169,7 +169,9 @@ async function main() {
       FROM unique_ids u
       ON CONFLICT (school_id, school_year, grade_level, section_name) DO NOTHING;
     `);
-    console.log(`   ✅ Ingested ${insertResult.rowCount} authentic sections into esf7_regular_sections.`);
+    console.log(
+      `   ✅ Ingested ${insertResult.rowCount} authentic sections into esf7_regular_sections.`,
+    );
 
     // 7. Recreate view esf7_class_sections
     console.log("7. Recreating view 'esf7_class_sections'...");
@@ -261,9 +263,15 @@ async function main() {
     console.log("   ✅ View 'esf7_regualar_sections' created.");
 
     // 9. Verification metrics
-    const totalCount = await client.query(`SELECT count(*) FROM esf7_regular_sections;`);
-    const adviserCount = await client.query(`SELECT count(*) FROM esf7_regular_sections WHERE adviser_id IS NOT NULL;`);
-    const schoolCount = await client.query(`SELECT count(DISTINCT school_id) FROM esf7_regular_sections;`);
+    const totalCount = await client.query(
+      `SELECT count(*) FROM esf7_regular_sections;`,
+    );
+    const adviserCount = await client.query(
+      `SELECT count(*) FROM esf7_regular_sections WHERE adviser_id IS NOT NULL;`,
+    );
+    const schoolCount = await client.query(
+      `SELECT count(DISTINCT school_id) FROM esf7_regular_sections;`,
+    );
     const cols = await client.query(`
       SELECT column_name FROM information_schema.columns 
       WHERE table_name = 'esf7_regular_sections' 
@@ -277,14 +285,19 @@ async function main() {
     `);
 
     console.log("==========================================================");
-    console.log(`🎉 SUCCESS in ${((Date.now() - startTime) / 1000).toFixed(2)}s!`);
+    console.log(
+      `🎉 SUCCESS in ${((Date.now() - startTime) / 1000).toFixed(2)}s!`,
+    );
     console.log(`- Total Sections: ${totalCount.rows[0].count}`);
     console.log(`- Schools Covered: ${schoolCount.rows[0].count}`);
-    console.log(`- Sections with Assigned Advisers: ${adviserCount.rows[0].count}`);
-    console.log(`- Columns Present: ${cols.rows.map(r => r.column_name).join(', ')}`);
+    console.log(
+      `- Sections with Assigned Advisers: ${adviserCount.rows[0].count}`,
+    );
+    console.log(
+      `- Columns Present: ${cols.rows.map((r) => r.column_name).join(", ")}`,
+    );
     console.log(`- Sample Sections:\n`, JSON.stringify(sample.rows, null, 2));
     console.log("==========================================================");
-
   } catch (err) {
     console.error("❌ Rebuild failed:", err);
     process.exit(1);

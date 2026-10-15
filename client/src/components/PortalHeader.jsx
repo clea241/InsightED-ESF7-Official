@@ -1,5 +1,11 @@
 import React, { useState } from "react";
-import { FiArrowLeft, FiLogOut, FiRotateCcw, FiMap, FiSave } from "react-icons/fi";
+import {
+  FiArrowLeft,
+  FiLogOut,
+  FiRotateCcw,
+  FiMap,
+  FiSave,
+} from "react-icons/fi";
 import { useAuth } from "../context/AuthContext";
 import { useApp } from "../context/AppContext";
 import { checkBeforeLeave, isAnyScreenDirty } from "../services/dirtyGuard";
@@ -51,12 +57,12 @@ export default function PortalHeader({
   const dynamicBureauText =
     bureauText ||
     (schoolInfo && schoolInfo.schoolName
-      ? (displaySchoolId
-          ? `${String(schoolInfo.schoolName).toUpperCase()} • ${displaySchoolId} • ${schoolInfo.schoolYear || "SY 2026-2027"}`
-          : `${String(schoolInfo.schoolName).toUpperCase()} • ${schoolInfo.schoolYear || "SY 2026-2027"}`)
-      : (displaySchoolId
-          ? `PURO INTEGRATED SCHOOL • ${displaySchoolId} • SY 2026-2027`
-          : "PURO INTEGRATED SCHOOL • SY 2026-2027"));
+      ? displaySchoolId
+        ? `${String(schoolInfo.schoolName).toUpperCase()} • ${displaySchoolId} • ${schoolInfo.schoolYear || "SY 2026-2027"}`
+        : `${String(schoolInfo.schoolName).toUpperCase()} • ${schoolInfo.schoolYear || "SY 2026-2027"}`
+      : displaySchoolId
+        ? `PURO INTEGRATED SCHOOL • ${displaySchoolId} • SY 2026-2027`
+        : "PURO INTEGRATED SCHOOL • SY 2026-2027");
 
   const handleLogoutClick = async () => {
     if (isAnyScreenDirty()) {
@@ -229,7 +235,9 @@ export default function PortalHeader({
                     "0 4px 12px rgba(37, 99, 235, 0.35)";
                 }}
               >
-                <FiArrowLeft style={{ fontSize: "15px", color: "#FFFFFF", flexShrink: 0 }} />
+                <FiArrowLeft
+                  style={{ fontSize: "15px", color: "#FFFFFF", flexShrink: 0 }}
+                />
                 <span>{backText}</span>
               </button>
             ) : showLogout ? (
@@ -274,7 +282,11 @@ export default function PortalHeader({
                 title="Log out of InsightED"
               >
                 <FiLogOut
-                  style={{ fontSize: "14px", transform: "scaleX(-1)", flexShrink: 0 }}
+                  style={{
+                    fontSize: "14px",
+                    transform: "scaleX(-1)",
+                    flexShrink: 0,
+                  }}
                 />
                 <span>Logout</span>
               </button>

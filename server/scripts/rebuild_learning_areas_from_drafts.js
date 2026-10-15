@@ -1,6 +1,6 @@
 /**
  * Clean Slate Rebuild of esf7_personnel_learning_areas from authentic school_drafts and profiles
- * 
+ *
  * Rules:
  * - Strictly isolated to insighted_esf7 (Azure DB).
  * - Option A: 1:1 with id = personnel_id (1 to 351,762).
@@ -9,14 +9,14 @@
  * - Preserves FOREIGN KEY and UNIQUE(personnel_id) constraints.
  */
 
-const { Pool } = require('../node_modules/pg');
+const { Pool } = require("../node_modules/pg");
 
 const pool = new Pool({
-  host: 'stride-posgre-prod-01.postgres.database.azure.com',
+  host: "stride-posgre-prod-01.postgres.database.azure.com",
   port: 5432,
-  user: 'Administrator1',
-  password: 'pRZTbQ2T1JD7',
-  database: 'insighted_esf7',
+  user: "Administrator1",
+  password: "pRZTbQ2T1JD7",
+  database: "insighted_esf7",
   ssl: { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
@@ -29,7 +29,9 @@ async function main() {
 
   try {
     console.log("==========================================================");
-    console.log("⚡ CLEAN SLATE REBUILD: esf7_personnel_learning_areas (Option A)");
+    console.log(
+      "⚡ CLEAN SLATE REBUILD: esf7_personnel_learning_areas (Option A)",
+    );
     console.log("==========================================================");
 
     // 1. Create safety backup
@@ -53,7 +55,9 @@ async function main() {
     console.log("   ✅ Table truncated.");
 
     // 4. Initial insert: 1:1 from esf7_personnel_profile using profile payload
-    console.log("4. Ingesting base records (id = personnel_id) from esf7_personnel_profile...");
+    console.log(
+      "4. Ingesting base records (id = personnel_id) from esf7_personnel_profile...",
+    );
     const baseInsert = await client.query(`
       INSERT INTO esf7_personnel_learning_areas (
         id,
@@ -75,10 +79,14 @@ async function main() {
         NOW()
       FROM esf7_personnel_profile p;
     `);
-    console.log(`   ✅ Inserted ${baseInsert.rowCount} base personnel rows into esf7_personnel_learning_areas.`);
+    console.log(
+      `   ✅ Inserted ${baseInsert.rowCount} base personnel rows into esf7_personnel_learning_areas.`,
+    );
 
     // 5. Overlay latest maps from school_drafts for schools with active drafts
-    console.log("5. Overlaying latest authentic learningAreaMap from school_drafts...");
+    console.log(
+      "5. Overlaying latest authentic learningAreaMap from school_drafts...",
+    );
     const overlayResult = await client.query(`
       WITH draft_teachers AS (
         SELECT 
@@ -114,10 +122,14 @@ async function main() {
       WHERE la.personnel_id = mu.personnel_id
         AND la.matrix_data = '{}'::jsonb;
     `);
-    console.log(`   ✅ Overlaid ${overlayResult.rowCount} additional active drafts from school_drafts.`);
+    console.log(
+      `   ✅ Overlaid ${overlayResult.rowCount} additional active drafts from school_drafts.`,
+    );
 
     // 6. Verification
-    const countCheck = await client.query(`SELECT count(*) FROM esf7_personnel_learning_areas;`);
+    const countCheck = await client.query(
+      `SELECT count(*) FROM esf7_personnel_learning_areas;`,
+    );
     const populatedCheck = await client.query(`
       SELECT count(*) FROM esf7_personnel_learning_areas 
       WHERE matrix_data IS NOT NULL AND matrix_data != '{}'::jsonb;
@@ -135,13 +147,19 @@ async function main() {
     `);
 
     console.log("==========================================================");
-    console.log(`🎉 SUCCESS in ${((Date.now() - startTime) / 1000).toFixed(2)}s!`);
+    console.log(
+      `🎉 SUCCESS in ${((Date.now() - startTime) / 1000).toFixed(2)}s!`,
+    );
     console.log(`- Total Records: ${countCheck.rows[0].count}`);
     console.log(`- Populated Matrices: ${populatedCheck.rows[0].count}`);
-    console.log(`- Columns: ${colsCheck.rows.map(r => r.column_name).join(', ')}`);
-    console.log(`- Sample Populated Matrix:\n`, JSON.stringify(sampleCheck.rows[0], null, 2));
+    console.log(
+      `- Columns: ${colsCheck.rows.map((r) => r.column_name).join(", ")}`,
+    );
+    console.log(
+      `- Sample Populated Matrix:\n`,
+      JSON.stringify(sampleCheck.rows[0], null, 2),
+    );
     console.log("==========================================================");
-
   } catch (err) {
     console.error("❌ Rebuild failed:", err);
     process.exit(1);

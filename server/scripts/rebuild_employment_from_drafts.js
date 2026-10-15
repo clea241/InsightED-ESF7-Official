@@ -1,6 +1,6 @@
 /**
  * Clean Slate Rebuild of esf7_personnel_employment from authentic personnel profiles
- * 
+ *
  * Rules:
  * - Strictly isolated to insighted_esf7 (Azure DB).
  * - Primary Key `id` matches `personnel_id` 1:1 (Sequential '1' to 'N').
@@ -8,14 +8,14 @@
  * - Enforces DepEd business rules (Cook -> SBFP, valid step increments, safe date parsing).
  */
 
-const { Pool } = require('../node_modules/pg');
+const { Pool } = require("../node_modules/pg");
 
 const pool = new Pool({
-  host: 'stride-posgre-prod-01.postgres.database.azure.com',
+  host: "stride-posgre-prod-01.postgres.database.azure.com",
   port: 5432,
-  user: 'Administrator1',
-  password: 'pRZTbQ2T1JD7',
-  database: 'insighted_esf7',
+  user: "Administrator1",
+  password: "pRZTbQ2T1JD7",
+  database: "insighted_esf7",
   ssl: { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
@@ -37,8 +37,12 @@ async function main() {
       CREATE TABLE IF NOT EXISTS esf7_personnel_employment_backup_20261013_v2 AS
       SELECT * FROM esf7_personnel_employment;
     `);
-    const backupCount = await client.query("SELECT count(*) FROM esf7_personnel_employment_backup_20261013_v2");
-    console.log(`  ✓ Safety backup ready with ${backupCount.rows[0].count} rows.`);
+    const backupCount = await client.query(
+      "SELECT count(*) FROM esf7_personnel_employment_backup_20261013_v2",
+    );
+    console.log(
+      `  ✓ Safety backup ready with ${backupCount.rows[0].count} rows.`,
+    );
 
     // 2. Truncate table
     console.log("\n[Step 2/4] Truncating esf7_personnel_employment...");
@@ -46,7 +50,9 @@ async function main() {
     console.log("  ✓ Table cleanly truncated.");
 
     // 3. Insert standardized employment records
-    console.log("\n[Step 3/4] Ingesting 351,762 standardized employment records (Option B: id = personnel_id)...");
+    console.log(
+      "\n[Step 3/4] Ingesting 351,762 standardized employment records (Option B: id = personnel_id)...",
+    );
     const tInsert = Date.now();
     const insertRes = await client.query(`
       INSERT INTO esf7_personnel_employment (
@@ -105,13 +111,19 @@ async function main() {
       FROM esf7_personnel_profile p;
     `);
 
-    console.log(`  ✓ Inserted ${insertRes.rowCount} rows in ${((Date.now() - tInsert)/1000).toFixed(1)}s!`);
+    console.log(
+      `  ✓ Inserted ${insertRes.rowCount} rows in ${((Date.now() - tInsert) / 1000).toFixed(1)}s!`,
+    );
 
     // 4. Verification
     console.log("\n[Step 4/4] Verifying table integrity and sample records...");
-    const countRes = await client.query("SELECT count(*) FROM esf7_personnel_employment");
-    const minMaxRes = await client.query("SELECT min(id::bigint) as min_id, max(id::bigint) as max_id FROM esf7_personnel_employment");
-    
+    const countRes = await client.query(
+      "SELECT count(*) FROM esf7_personnel_employment",
+    );
+    const minMaxRes = await client.query(
+      "SELECT min(id::bigint) as min_id, max(id::bigint) as max_id FROM esf7_personnel_employment",
+    );
+
     // Check 1:1 match with profile
     const matchCheck = await client.query(`
       SELECT count(*) as mismatched
@@ -138,8 +150,12 @@ async function main() {
     console.log("\n==========================================================");
     console.log(`🎉 REBUILD COMPLETE IN ${totalDuration}s!`);
     console.log(`✓ Total Employment Records: ${countRes.rows[0].count}`);
-    console.log(`✓ ID Range: ${minMaxRes.rows[0].min_id} to ${minMaxRes.rows[0].max_id}`);
-    console.log(`✓ Mismatched / Orphaned records: ${matchCheck.rows[0].mismatched}`);
+    console.log(
+      `✓ ID Range: ${minMaxRes.rows[0].min_id} to ${minMaxRes.rows[0].max_id}`,
+    );
+    console.log(
+      `✓ Mismatched / Orphaned records: ${matchCheck.rows[0].mismatched}`,
+    );
     console.log("==========================================================");
 
     console.log("\nFirst 5 records:");
@@ -147,8 +163,7 @@ async function main() {
 
     console.log("\nLast 5 records:");
     console.table(last5.rows);
-
-  } catch(err) {
+  } catch (err) {
     console.error("FATAL ERROR DURING EMPLOYMENT REBUILD:", err);
   } finally {
     client.release();

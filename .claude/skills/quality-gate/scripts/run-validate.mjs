@@ -32,11 +32,13 @@ try {
   process.exit(1);
 }
 const scripts = pkg.scripts || {};
-const pm = fs.existsSync(path.join(root, "pnpm-lock.yaml"))
-  ? "pnpm"
-  : fs.existsSync(path.join(root, "yarn.lock"))
-    ? "yarn"
-    : "npm";
+const pm = fs.existsSync(path.join(root, "package-lock.json"))
+  ? "npm"
+  : fs.existsSync(path.join(root, "pnpm-lock.yaml"))
+    ? "pnpm"
+    : fs.existsSync(path.join(root, "yarn.lock"))
+      ? "yarn"
+      : "npm";
 const win = process.platform === "win32";
 
 const PLAN = [

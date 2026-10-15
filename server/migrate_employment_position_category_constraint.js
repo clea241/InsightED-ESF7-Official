@@ -1,7 +1,9 @@
 const db = require("./db");
 
 async function run() {
-  console.log("=== Migrating esf7_personnel_employment_position_category_check ===");
+  console.log(
+    "=== Migrating esf7_personnel_employment_position_category_check ===",
+  );
 
   try {
     // 1. Check existing rows
@@ -26,10 +28,14 @@ async function run() {
         'teaching', 'non-teaching', 'non_teaching', 'NON_TEACHING'
       );
     `);
-    console.log(`Normalized ${updateRes.rowCount || 0} legacy rows to canonical values.`);
+    console.log(
+      `Normalized ${updateRes.rowCount || 0} legacy rows to canonical values.`,
+    );
 
     // 3. Drop existing constraint
-    console.log("Dropping existing constraint esf7_personnel_employment_position_category_check...");
+    console.log(
+      "Dropping existing constraint esf7_personnel_employment_position_category_check...",
+    );
     await db.query(`
       ALTER TABLE esf7_personnel_employment 
       DROP CONSTRAINT IF EXISTS esf7_personnel_employment_position_category_check;

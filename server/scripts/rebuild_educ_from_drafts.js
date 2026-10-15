@@ -1,6 +1,6 @@
 /**
  * Clean Slate Rebuild of esf7_perssonel_educ from authentic personnel profiles
- * 
+ *
  * Rules:
  * - Strictly isolated to insighted_esf7 (Azure DB).
  * - Drops `raw_payload` column as requested by user.
@@ -14,14 +14,14 @@
  *   - prc_specialization, shs_track, vocational_course, vocational_level
  */
 
-const { Pool } = require('../node_modules/pg');
+const { Pool } = require("../node_modules/pg");
 
 const pool = new Pool({
-  host: 'stride-posgre-prod-01.postgres.database.azure.com',
+  host: "stride-posgre-prod-01.postgres.database.azure.com",
   port: 5432,
-  user: 'Administrator1',
-  password: 'pRZTbQ2T1JD7',
-  database: 'insighted_esf7',
+  user: "Administrator1",
+  password: "pRZTbQ2T1JD7",
+  database: "insighted_esf7",
   ssl: { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
@@ -43,12 +43,20 @@ async function main() {
       CREATE TABLE IF NOT EXISTS esf7_perssonel_educ_backup_20261013 AS
       SELECT * FROM esf7_perssonel_educ;
     `);
-    const backupCount = await client.query("SELECT count(*) FROM esf7_perssonel_educ_backup_20261013");
-    console.log(`  ✓ Safety backup ready with ${backupCount.rows[0].count} rows.`);
+    const backupCount = await client.query(
+      "SELECT count(*) FROM esf7_perssonel_educ_backup_20261013",
+    );
+    console.log(
+      `  ✓ Safety backup ready with ${backupCount.rows[0].count} rows.`,
+    );
 
     // 2. Drop raw_payload column
-    console.log("\n[Step 2/5] Dropping raw_payload column from esf7_perssonel_educ...");
-    await client.query("ALTER TABLE esf7_perssonel_educ DROP COLUMN IF EXISTS raw_payload;");
+    console.log(
+      "\n[Step 2/5] Dropping raw_payload column from esf7_perssonel_educ...",
+    );
+    await client.query(
+      "ALTER TABLE esf7_perssonel_educ DROP COLUMN IF EXISTS raw_payload;",
+    );
     console.log("  ✓ raw_payload column dropped.");
 
     // 3. Truncate table
@@ -57,7 +65,9 @@ async function main() {
     console.log("  ✓ Table cleanly truncated.");
 
     // 4. Ingest standardized records (Option B: id = personnel_id)
-    console.log("\n[Step 4/5] Ingesting 351,762 standardized education records (id = personnel_id)...");
+    console.log(
+      "\n[Step 4/5] Ingesting 351,762 standardized education records (id = personnel_id)...",
+    );
     const tInsert = Date.now();
 
     const insertRes = await client.query(`
@@ -163,12 +173,18 @@ async function main() {
       FROM esf7_personnel_profile p;
     `);
 
-    console.log(`  ✓ Inserted ${insertRes.rowCount} rows in ${((Date.now() - tInsert)/1000).toFixed(1)}s!`);
+    console.log(
+      `  ✓ Inserted ${insertRes.rowCount} rows in ${((Date.now() - tInsert) / 1000).toFixed(1)}s!`,
+    );
 
     // 5. Verification
     console.log("\n[Step 5/5] Verifying table integrity and sample records...");
-    const countRes = await client.query("SELECT count(*) FROM esf7_perssonel_educ");
-    const minMaxRes = await client.query("SELECT min(id::bigint) as min_id, max(id::bigint) as max_id FROM esf7_perssonel_educ");
+    const countRes = await client.query(
+      "SELECT count(*) FROM esf7_perssonel_educ",
+    );
+    const minMaxRes = await client.query(
+      "SELECT min(id::bigint) as min_id, max(id::bigint) as max_id FROM esf7_perssonel_educ",
+    );
 
     // Check raw_payload is gone
     const rawColCheck = await client.query(`
@@ -203,9 +219,15 @@ async function main() {
     console.log("\n==========================================================");
     console.log(`🎉 REBUILD COMPLETE IN ${totalDuration}s!`);
     console.log(`✓ Total Education Records: ${countRes.rows[0].count}`);
-    console.log(`✓ ID Range: ${minMaxRes.rows[0].min_id} to ${minMaxRes.rows[0].max_id}`);
-    console.log(`✓ raw_payload column dropped: ${rawColCheck.rows[0].count === '0' ? 'YES' : 'NO'}`);
-    console.log(`✓ Mismatched / Orphaned records: ${matchCheck.rows[0].mismatched}`);
+    console.log(
+      `✓ ID Range: ${minMaxRes.rows[0].min_id} to ${minMaxRes.rows[0].max_id}`,
+    );
+    console.log(
+      `✓ raw_payload column dropped: ${rawColCheck.rows[0].count === "0" ? "YES" : "NO"}`,
+    );
+    console.log(
+      `✓ Mismatched / Orphaned records: ${matchCheck.rows[0].mismatched}`,
+    );
     console.log("==========================================================");
 
     console.log("\nFirst 5 records:");
@@ -213,8 +235,7 @@ async function main() {
 
     console.log("\nLast 5 records:");
     console.table(last5.rows);
-
-  } catch(err) {
+  } catch (err) {
     console.error("FATAL ERROR DURING EDUCATION REBUILD:", err);
   } finally {
     client.release();

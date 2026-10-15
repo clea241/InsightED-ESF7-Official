@@ -1,6 +1,6 @@
 const { Pool } = require("pg");
 const path = require("path");
-require("./loadEnv"); });
+require("./loadEnv");
 
 const db = new Pool({
   connectionString:

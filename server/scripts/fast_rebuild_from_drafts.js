@@ -1,38 +1,48 @@
 /**
  * Fast Pure-SQL Clean Slate Rebuild of esf7_personnel_profile, employment, educ, and workloads
- * 
+ *
  * Refined Features:
  * 1. PRN is 100% Unique: Uses authentic DepEd numeric PRN where available, and 'PRN-' || global_id for missing/duplicates.
  * 2. School IDs: Completely resolves UUID session keys (e.g. 00f9494d-97ef-4174-b...) to authentic 6-digit DepEd IDs from payload.schoolInfo.schoolId.
  * 3. Restores and re-links all workload rows.
  */
 
-const { Client } = require('../node_modules/pg');
+const { Client } = require("../node_modules/pg");
 
 async function main() {
   const client = new Client({
-    host: 'stride-posgre-prod-01.postgres.database.azure.com',
+    host: "stride-posgre-prod-01.postgres.database.azure.com",
     port: 5432,
-    user: 'Administrator1',
-    password: 'pRZTbQ2T1JD7',
-    database: 'insighted_esf7',
-    ssl: { rejectUnauthorized: false }
+    user: "Administrator1",
+    password: "pRZTbQ2T1JD7",
+    database: "insighted_esf7",
+    ssl: { rejectUnauthorized: false },
   });
 
   const overallStart = Date.now();
 
   try {
     console.log("==========================================================");
-    console.log("⚡ FAST CLEAN SLATE REBUILD: insighted_esf7 (Unique PRN + Resolved School IDs)");
+    console.log(
+      "⚡ FAST CLEAN SLATE REBUILD: insighted_esf7 (Unique PRN + Resolved School IDs)",
+    );
     console.log("==========================================================");
     await client.connect();
 
     // 1. Verify safety backups
     console.log("\n[Step 1/5] Verifying safety backups...");
-    const bProf = await client.query("SELECT count(*) FROM esf7_personnel_profile_backup_20261013");
-    const bEmp = await client.query("SELECT count(*) FROM esf7_personnel_employment_backup_20261013");
-    const bWkl = await client.query("SELECT count(*) FROM esf7_workload_rows_backup_20261013");
-    console.log(`  ✓ Backup verified: ${bProf.rows[0].count} profiles, ${bEmp.rows[0].count} employment, ${bWkl.rows[0].count} workloads.`);
+    const bProf = await client.query(
+      "SELECT count(*) FROM esf7_personnel_profile_backup_20261013",
+    );
+    const bEmp = await client.query(
+      "SELECT count(*) FROM esf7_personnel_employment_backup_20261013",
+    );
+    const bWkl = await client.query(
+      "SELECT count(*) FROM esf7_workload_rows_backup_20261013",
+    );
+    console.log(
+      `  ✓ Backup verified: ${bProf.rows[0].count} profiles, ${bEmp.rows[0].count} employment, ${bWkl.rows[0].count} workloads.`,
+    );
 
     // 2. Truncate table
     console.log("\n[Step 2/5] Truncating esf7_personnel_profile CASCADE...");
@@ -54,7 +64,9 @@ async function main() {
     `);
 
     // 3. Build staging table with resolved school IDs and unique PRNs
-    console.log("\n[Step 3/5] Extracting & deduplicating authentic teachers from school_drafts into staging...");
+    console.log(
+      "\n[Step 3/5] Extracting & deduplicating authentic teachers from school_drafts into staging...",
+    );
     const tExtract = Date.now();
     await client.query(`DROP TABLE IF EXISTS tmp_staging_personnel;`);
     await client.query(`
@@ -109,15 +121,25 @@ async function main() {
       SELECT * FROM deduped_personnel;
     `);
 
-    await client.query(`CREATE INDEX idx_tmp_staging_p_id ON tmp_staging_personnel(global_id);`);
-    await client.query(`CREATE INDEX idx_tmp_staging_school ON tmp_staging_personnel(school_id);`);
+    await client.query(
+      `CREATE INDEX idx_tmp_staging_p_id ON tmp_staging_personnel(global_id);`,
+    );
+    await client.query(
+      `CREATE INDEX idx_tmp_staging_school ON tmp_staging_personnel(school_id);`,
+    );
 
-    const stagingCountRes = await client.query("SELECT count(*) FROM tmp_staging_personnel");
+    const stagingCountRes = await client.query(
+      "SELECT count(*) FROM tmp_staging_personnel",
+    );
     const totalTeachers = stagingCountRes.rows[0].count;
-    console.log(`  ✓ Staging ready in ${((Date.now() - tExtract)/1000).toFixed(1)}s! Extracted ${totalTeachers} deduplicated teachers.`);
+    console.log(
+      `  ✓ Staging ready in ${((Date.now() - tExtract) / 1000).toFixed(1)}s! Extracted ${totalTeachers} deduplicated teachers.`,
+    );
 
     // 4. Ingest into esf7_personnel_profile, esf7_personnel_employment, esf7_perssonel_educ
-    console.log("\n[Step 4/5] Ingesting normalized records (profile, employment, educ)...");
+    console.log(
+      "\n[Step 4/5] Ingesting normalized records (profile, employment, educ)...",
+    );
     const tIngest = Date.now();
 
     // 4a. esf7_personnel_profile
@@ -212,10 +234,14 @@ async function main() {
         NOW()
       FROM tmp_staging_personnel;
     `);
-    console.log(`  ✓ All normalized tables populated in ${((Date.now() - tIngest)/1000).toFixed(1)}s!`);
+    console.log(
+      `  ✓ All normalized tables populated in ${((Date.now() - tIngest) / 1000).toFixed(1)}s!`,
+    );
 
     // 5. Restore workload rows
-    console.log("\n[Step 5/5] Restoring & re-linking workload rows from backup...");
+    console.log(
+      "\n[Step 5/5] Restoring & re-linking workload rows from backup...",
+    );
     const tWkl = Date.now();
     await client.query(`
       INSERT INTO esf7_workload_rows (
@@ -247,8 +273,12 @@ async function main() {
       ON CONFLICT (id) DO NOTHING;
     `);
 
-    const wklCountRes = await client.query("SELECT count(*) FROM esf7_workload_rows");
-    console.log(`  ✓ Workload rows restored in ${((Date.now() - tWkl)/1000).toFixed(1)}s! Total active workloads: ${wklCountRes.rows[0].count}`);
+    const wklCountRes = await client.query(
+      "SELECT count(*) FROM esf7_workload_rows",
+    );
+    console.log(
+      `  ✓ Workload rows restored in ${((Date.now() - tWkl) / 1000).toFixed(1)}s! Total active workloads: ${wklCountRes.rows[0].count}`,
+    );
 
     // Drop staging table
     await client.query(`DROP TABLE IF EXISTS tmp_staging_personnel;`);
@@ -256,11 +286,12 @@ async function main() {
     const totalDuration = ((Date.now() - overallStart) / 1000).toFixed(1);
     console.log("\n==========================================================");
     console.log(`🎉 FAST REBUILD COMPLETE IN ${totalDuration}s!`);
-    console.log(`✓ Total Personnel: ${totalTeachers} (IDs from 1 to ${totalTeachers})`);
+    console.log(
+      `✓ Total Personnel: ${totalTeachers} (IDs from 1 to ${totalTeachers})`,
+    );
     console.log(`✓ Total Workloads Re-linked: ${wklCountRes.rows[0].count}`);
     console.log("==========================================================");
-
-  } catch(err) {
+  } catch (err) {
     console.error("FATAL ERROR DURING FAST REBUILD:", err);
   } finally {
     await client.end();

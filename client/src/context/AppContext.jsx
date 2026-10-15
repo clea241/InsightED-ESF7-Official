@@ -3146,7 +3146,8 @@ const sanitizeClassSectionList = (list) => {
         grade_level: cleanGrade,
       };
 
-      let cleanSectionName = sanitized.sectionName || sanitized.section_name || "";
+      let cleanSectionName =
+        sanitized.sectionName || sanitized.section_name || "";
       if (
         (!cleanSectionName ||
           cleanSectionName.startsWith("sec-draft-") ||
@@ -3606,10 +3607,19 @@ export const AppProvider = ({ children }) => {
         await setLocalDraft(draftKey, draftData);
         // School profile, personnel roster, personnel profile, and organized classes save directly to normalized tables;
         // remove the connection and write to school_drafts for these nodes.
-        const isNormalizedNode = ["school", "roster", "profile", "classes"].includes(nodeId);
+        const isNormalizedNode = [
+          "school",
+          "roster",
+          "profile",
+          "classes",
+        ].includes(nodeId);
         if (!isNormalizedNode) {
           markDraftDirty();
-          await saveDraft(schoolInfo.schoolId, schoolInfo.schoolYear, draftData);
+          await saveDraft(
+            schoolInfo.schoolId,
+            schoolInfo.schoolYear,
+            draftData,
+          );
           clearDraftError();
         }
 
@@ -4084,7 +4094,7 @@ export const AppProvider = ({ children }) => {
     const rawRes = await api.getPersonnel(activeSchoolId);
     const list = Array.isArray(rawRes)
       ? rawRes
-      : (rawRes?.data || rawRes?.personnel || []);
+      : rawRes?.data || rawRes?.personnel || [];
     if (!Array.isArray(list)) return [];
 
     // The server flags records whose roster came from the cache (not confirmed saved) and why the real tables were skipped.
@@ -4801,9 +4811,14 @@ export const AppProvider = ({ children }) => {
           // ensure stale tombstone keys (especially name or recycled ID) do not suppress them.
           if (Array.isArray(dbList) && dbList.length > 0) {
             dbList.forEach((p) => {
-              const pId = String(p.id || "").trim().toLowerCase();
-              const pPrn = String(p.prn || "").trim().toLowerCase();
-              const pName = `${String(p.firstName || p.first_name || "").trim()} ${String(p.lastName || p.last_name || "").trim()}`.toLowerCase();
+              const pId = String(p.id || "")
+                .trim()
+                .toLowerCase();
+              const pPrn = String(p.prn || "")
+                .trim()
+                .toLowerCase();
+              const pName =
+                `${String(p.firstName || p.first_name || "").trim()} ${String(p.lastName || p.last_name || "").trim()}`.toLowerCase();
               if (pName && pName !== "teacher staff") {
                 deletedSet.delete(pName);
               }
@@ -4845,7 +4860,11 @@ export const AppProvider = ({ children }) => {
             if (isNonGenericKey(empKey) && deletedSet.has(empKey)) return true;
             if (stripId && isNonGenericKey(stripId) && deletedSet.has(stripId))
               return true;
-            if (stripPrn && isNonGenericKey(stripPrn) && deletedSet.has(stripPrn))
+            if (
+              stripPrn &&
+              isNonGenericKey(stripPrn) &&
+              deletedSet.has(stripPrn)
+            )
               return true;
 
             // Only match nameKey if record has NO unique ID or PRN in deletedSet
@@ -5146,7 +5165,10 @@ export const AppProvider = ({ children }) => {
                     await setLocalDraft(canonicalDraftKey, activeDraft);
                   }
                 } catch (err) {
-                  console.warn("[Draft Sync] Failed to purge discarded draft keys:", err);
+                  console.warn(
+                    "[Draft Sync] Failed to purge discarded draft keys:",
+                    err,
+                  );
                 }
               }
             }
@@ -5732,7 +5754,9 @@ export const AppProvider = ({ children }) => {
       let modified = false;
       const updatedSecs = classSections.map((sec) => {
         let updatedSec = { ...sec };
-        const rawName = String(updatedSec.sectionName || updatedSec.section_name || "").trim();
+        const rawName = String(
+          updatedSec.sectionName || updatedSec.section_name || "",
+        ).trim();
         const isSyntheticName =
           !rawName ||
           rawName.startsWith("sec-draft-") ||
@@ -5796,7 +5820,6 @@ export const AppProvider = ({ children }) => {
       }
     }
   }, [personnel, classSections]);
-
 
   // Poll requests every 10 seconds while logged in. Always calls the LATEST refreshRequests through a ref (a closure
   // captured at login would keep using whatever school state existed then), stops after a 401/403, and backs off
@@ -5943,7 +5966,8 @@ export const AppProvider = ({ children }) => {
           );
           if (!keepLocal) {
             // User chose server version: update in place without page reload
-            if (serverPayload.schoolInfo) setSchoolInfo(serverPayload.schoolInfo);
+            if (serverPayload.schoolInfo)
+              setSchoolInfo(serverPayload.schoolInfo);
             if (Array.isArray(serverPayload.personnel))
               setPersonnel(serverPayload.personnel);
             if (Array.isArray(serverPayload.classSections))
@@ -6103,16 +6127,23 @@ export const AppProvider = ({ children }) => {
       if (!latest) return;
       try {
         const idbOk = await setLocalDraft(latest.key, latest.data);
-        if (idbOk === false) throw new Error("IndexedDB returned failure status");
+        if (idbOk === false)
+          throw new Error("IndexedDB returned failure status");
       } catch (idbErr) {
-        console.warn("[ServerLock] IndexedDB save failed, trying localStorage fallback:", idbErr);
+        console.warn(
+          "[ServerLock] IndexedDB save failed, trying localStorage fallback:",
+          idbErr,
+        );
         try {
           localStorage.setItem(
             `insighted_fallback_${latest.key}`,
             JSON.stringify(latest.data),
           );
         } catch (localErr) {
-          console.error("[ServerLock] Dual storage failure: draft is not protected on this device", localErr);
+          console.error(
+            "[ServerLock] Dual storage failure: draft is not protected on this device",
+            localErr,
+          );
           reportError(localErr, {
             action: "Local device draft backup during server outage",
             handler: "onServerLock fallback",
@@ -6798,7 +6829,8 @@ export const AppProvider = ({ children }) => {
       showToast(
         options.skipApiUpdate
           ? "Changes saved locally."
-          : (options.toastMessage || "Changes saved locally & synced to database."),
+          : options.toastMessage ||
+              "Changes saved locally & synced to database.",
       );
     }
     return { ok: true };
@@ -6825,9 +6857,13 @@ export const AppProvider = ({ children }) => {
         p.firstName &&
         p.lastName &&
         p.firstName.toUpperCase().trim() ===
-          String(newPerson.firstName || "").toUpperCase().trim() &&
+          String(newPerson.firstName || "")
+            .toUpperCase()
+            .trim() &&
         p.lastName.toUpperCase().trim() ===
-          String(newPerson.lastName || "").toUpperCase().trim(),
+          String(newPerson.lastName || "")
+            .toUpperCase()
+            .trim(),
     );
     if (existing) {
       setActivePersonnelId(existing.id);
@@ -6942,10 +6978,14 @@ export const AppProvider = ({ children }) => {
     const addedKeys = [
       String(newId).toLowerCase(),
       newRecord.prn ? String(newRecord.prn).toLowerCase() : "",
-      `${newRecord.firstName || ""} ${newRecord.lastName || ""}`.trim().toLowerCase(),
+      `${newRecord.firstName || ""} ${newRecord.lastName || ""}`
+        .trim()
+        .toLowerCase(),
     ].filter(Boolean);
     setDeletedPersonnelIds((prev) =>
-      prev.filter((dKey) => !addedKeys.includes(String(dKey).trim().toLowerCase())),
+      prev.filter(
+        (dKey) => !addedKeys.includes(String(dKey).trim().toLowerCase()),
+      ),
     );
 
     showToast("Personnel added to draft locally.");
@@ -6962,7 +7002,7 @@ export const AppProvider = ({ children }) => {
     );
     const targetId = target ? target.id : id;
     const targetPrn = target ? target.prn : null;
-    const targetLegacy = target ? (target.legacy_id || target.legacyId) : null;
+    const targetLegacy = target ? target.legacy_id || target.legacyId : null;
     const targetEmpNo = target?.employeeNo || target?.employee_no || "";
 
     const allTargetKeys = Array.from(
@@ -7124,7 +7164,11 @@ export const AppProvider = ({ children }) => {
     }
   };
 
-  const toggleSchoolHead = async (id, isSchoolHead, isMainSh = isSchoolHead) => {
+  const toggleSchoolHead = async (
+    id,
+    isSchoolHead,
+    isMainSh = isSchoolHead,
+  ) => {
     const targetPerson = personnel.find(
       (item) => String(item.id) === String(id),
     );
@@ -7169,9 +7213,14 @@ export const AppProvider = ({ children }) => {
 
     if (targetPerson && typeof api !== "undefined" && api.toggleSchoolHead) {
       try {
-        await api.toggleSchoolHead(id, Boolean(isSchoolHead), Boolean(isMainSh), {
-          schoolId: schoolInfo?.schoolId || schoolInfo?.school_id,
-        });
+        await api.toggleSchoolHead(
+          id,
+          Boolean(isSchoolHead),
+          Boolean(isMainSh),
+          {
+            schoolId: schoolInfo?.schoolId || schoolInfo?.school_id,
+          },
+        );
       } catch (e) {
         reportError(e, {
           action: `Updating the School Head flag for ${id}`,
@@ -7189,8 +7238,16 @@ export const AppProvider = ({ children }) => {
     );
   };
 
-  const designateSchoolHeadsConfig = async ({ hasMultipleHeads, mainHeadId, assignments }) => {
-    const assignedIds = new Set(Object.values(assignments || {}).filter(Boolean).map(String));
+  const designateSchoolHeadsConfig = async ({
+    hasMultipleHeads,
+    mainHeadId,
+    assignments,
+  }) => {
+    const assignedIds = new Set(
+      Object.values(assignments || {})
+        .filter(Boolean)
+        .map(String),
+    );
 
     // Validate that none of the assigned personnel are non-teaching
     for (const [lvl, pId] of Object.entries(assignments || {})) {
@@ -7202,8 +7259,8 @@ export const AppProvider = ({ children }) => {
           .replace(/[^a-z]/g, "");
         if (typeStr === "nonteaching") {
           showToast(
-            `⚠️ ${target.firstName || ''} ${target.lastName || ''} is Non-Teaching and cannot be designated as School Head.`,
-            "error"
+            `⚠️ ${target.firstName || ""} ${target.lastName || ""} is Non-Teaching and cannot be designated as School Head.`,
+            "error",
           );
           return false;
         }
@@ -7940,7 +7997,10 @@ export const AppProvider = ({ children }) => {
       }),
     );
 
-    if (targetSec && (strAdvisorId !== undefined || sectionName !== undefined)) {
+    if (
+      targetSec &&
+      (strAdvisorId !== undefined || sectionName !== undefined)
+    ) {
       setPersonnel((prevPersonnel) => {
         return prevPersonnel.map((p) => {
           let rows = Array.isArray(p.workloadRows) ? [...p.workloadRows] : [];
@@ -8405,7 +8465,10 @@ export const AppProvider = ({ children }) => {
       setDeletedSectionIds((prev) =>
         Array.from(new Set([...prev, String(id)])),
       );
-      if (!String(id).startsWith("local-") && !String(id).startsWith("sec-new-")) {
+      if (
+        !String(id).startsWith("local-") &&
+        !String(id).startsWith("sec-new-")
+      ) {
         try {
           if (api && api.deleteSection) {
             api.deleteSection(id).catch((delErr) => {
@@ -8668,7 +8731,10 @@ export const AppProvider = ({ children }) => {
     if (!confirmReset) return;
 
     if (schoolInfo && schoolInfo.schoolId && schoolInfo.schoolYear) {
-      const canonicalKey = getSchoolDraftKey(schoolInfo.schoolId, schoolInfo.schoolYear);
+      const canonicalKey = getSchoolDraftKey(
+        schoolInfo.schoolId,
+        schoolInfo.schoolYear,
+      );
       await deleteLocalDraftWithLegacy(canonicalKey, [
         `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear}`,
         `draft_${cleanSchoolId(schoolInfo.schoolId)}_${schoolInfo.schoolYear}`,
@@ -8811,7 +8877,10 @@ export const AppProvider = ({ children }) => {
 
   const fetchPersonnel = async () => {
     if (schoolInfo && schoolInfo.schoolId && schoolInfo.schoolYear) {
-      const canonicalKey = getSchoolDraftKey(schoolInfo.schoolId, schoolInfo.schoolYear);
+      const canonicalKey = getSchoolDraftKey(
+        schoolInfo.schoolId,
+        schoolInfo.schoolYear,
+      );
       await deleteLocalDraftWithLegacy(canonicalKey, [
         `draft_${schoolInfo.schoolId}_${schoolInfo.schoolYear}`,
         `draft_${cleanSchoolId(schoolInfo.schoolId)}_${schoolInfo.schoolYear}`,

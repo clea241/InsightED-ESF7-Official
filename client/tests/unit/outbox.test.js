@@ -42,7 +42,10 @@ describe("Outbox Service Layer", () => {
     });
 
     expect(entry2).toBeDefined();
-    const entries = await getOutboxEntries({ schoolId: "302261", user: "teacher1" });
+    const entries = await getOutboxEntries({
+      schoolId: "302261",
+      user: "teacher1",
+    });
     expect(entries.length).toBe(1);
     expect(entries[0].payload.schoolName).toBe("Sample High Updated");
     expect(entries[0].lastError).toBe("HTTP 500");
@@ -78,8 +81,13 @@ describe("Outbox Service Layer", () => {
       payload: { test: true },
     });
 
-    await markOutboxAttempt(entry.id, { error: new Error("Simulated failure") });
-    const list = await getOutboxEntries({ schoolId: "302261", user: "teacher1" });
+    await markOutboxAttempt(entry.id, {
+      error: new Error("Simulated failure"),
+    });
+    const list = await getOutboxEntries({
+      schoolId: "302261",
+      user: "teacher1",
+    });
     expect(list[0].attempts).toBe(1);
     expect(list[0].lastError).toBe("Simulated failure");
     expect(list[0].kind).toBe("failed");
@@ -105,7 +113,10 @@ describe("Outbox Service Layer", () => {
       payload: { name: "Test" },
     });
 
-    let entries = await getOutboxEntries({ schoolId: "302261", user: "teacher1" });
+    let entries = await getOutboxEntries({
+      schoolId: "302261",
+      user: "teacher1",
+    });
     expect(entries.length).toBe(2);
 
     // Remove by direct ID
@@ -145,7 +156,10 @@ describe("Outbox Service Layer", () => {
     });
 
     expect(remaining.length).toBe(0);
-    const inOutbox = await getOutboxEntries({ schoolId: "302261", user: "teacher1" });
+    const inOutbox = await getOutboxEntries({
+      schoolId: "302261",
+      user: "teacher1",
+    });
     expect(inOutbox.length).toBe(0);
   });
 

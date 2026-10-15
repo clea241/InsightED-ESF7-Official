@@ -36,7 +36,9 @@ export const findAllRosterSchoolHeads = (personnel) =>
  * @returns {Array<string>} List of educational levels (e.g. ['Elementary'], ['Elementary', 'Junior High School'], etc.)
  */
 export function getEducationalLevelsFromMCOC(mcoc, curricularOffering) {
-  const s = String(mcoc || "").toUpperCase().trim();
+  const s = String(mcoc || "")
+    .toUpperCase()
+    .trim();
 
   // 1. Check for 3 levels (All Offering / K-12)
   if (
@@ -44,7 +46,10 @@ export function getEducationalLevelsFromMCOC(mcoc, curricularOffering) {
     s.includes("K TO 12") ||
     s.includes("K-12") ||
     s.includes("COMPREHENSIVE") ||
-    ((s.includes("ELEM") || s.includes("ES") || s.includes("PRIMARY") || s.includes("KINDER")) &&
+    ((s.includes("ELEM") ||
+      s.includes("ES") ||
+      s.includes("PRIMARY") ||
+      s.includes("KINDER")) &&
       (s.includes("JHS") || s.includes("JUNIOR")) &&
       (s.includes("SHS") || s.includes("SENIOR")))
   ) {
@@ -130,8 +135,12 @@ export function getEducationalLevelsFromMCOC(mcoc, curricularOffering) {
       ? curricularOffering.split(",").map((x) => x.toUpperCase().trim())
       : [];
 
-  const hasElem = list.some((x) => x.includes("ELEM") || x.includes("ES") || x.includes("KINDER"));
-  const hasJhs = list.some((x) => x.includes("JHS") || x.includes("JUNIOR") || x.includes("SEC"));
+  const hasElem = list.some(
+    (x) => x.includes("ELEM") || x.includes("ES") || x.includes("KINDER"),
+  );
+  const hasJhs = list.some(
+    (x) => x.includes("JHS") || x.includes("JUNIOR") || x.includes("SEC"),
+  );
   const hasShs = list.some((x) => x.includes("SHS") || x.includes("SENIOR"));
 
   if (hasElem && hasJhs && hasShs) {

@@ -7,8 +7,14 @@ const { loadAllowanceRules } = require("../../utils/sharedRules");
 const { codec } = require("../../utils/payloadExtras");
 
 function generateAllowanceId(schoolId, personnelId) {
-  const cleanSid = String(schoolId || "").replace(/^SCH-/i, "").trim().slice(0, 10);
-  const cleanPid = String(personnelId || "").replace(/^PER-/i, "").trim().slice(-12);
+  const cleanSid = String(schoolId || "")
+    .replace(/^SCH-/i, "")
+    .trim()
+    .slice(0, 10);
+  const cleanPid = String(personnelId || "")
+    .replace(/^PER-/i, "")
+    .trim()
+    .slice(-12);
   const rand = crypto.randomBytes(3).toString("hex");
   return `ALW-${cleanSid}-${cleanPid}-${rand}`;
 }

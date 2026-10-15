@@ -123,13 +123,16 @@ const configuredOrigins = rawOrigins
   .map((o) => o.trim())
   .filter(Boolean);
 
-const corsAllowlist = Array.from(new Set([...defaultAllowedOrigins, ...configuredOrigins]));
+const corsAllowlist = Array.from(
+  new Set([...defaultAllowedOrigins, ...configuredOrigins]),
+);
 
 function isAllowedOrigin(origin) {
   if (!origin) return true; // Non-browser / curl / internal
   if (corsAllowlist.includes(origin)) return true;
   // Allow all DepEd official subdomains
-  if (/^https:\/\/([a-zA-Z0-9-]+\.)*deped\.gov\.ph(:\d+)?$/.test(origin)) return true;
+  if (/^https:\/\/([a-zA-Z0-9-]+\.)*deped\.gov\.ph(:\d+)?$/.test(origin))
+    return true;
   // Allow localhost / 127.0.0.1 on any port
   if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
   return false;
@@ -512,7 +515,10 @@ const initDB = async () => {
       )
       .catch(() => ({ rows: [] }));
 
-    if (tableCheck.rows.length === 0 || process.env.FORCE_INIT_SCHEMA === "true") {
+    if (
+      tableCheck.rows.length === 0 ||
+      process.env.FORCE_INIT_SCHEMA === "true"
+    ) {
       const schemaPath = path.join(__dirname, "schema.sql");
       if (fs.existsSync(schemaPath)) {
         const sql = fs.readFileSync(schemaPath, "utf8");
@@ -520,7 +526,9 @@ const initDB = async () => {
         console.log("✅ Database schema initialized successfully.");
       }
     } else {
-      console.log("ℹ️ Database schema already verified (skipping redundant DDL).");
+      console.log(
+        "ℹ️ Database schema already verified (skipping redundant DDL).",
+      );
     }
 
     const esf7DbCheck = await db
@@ -772,7 +780,7 @@ const startServer = (port) => {
     await initDB();
     redisQueue.startMonitor(); // so queue mode / Redis reachability are accurate in /api/health even without a local worker
 
-    console.log('ℹ️ Submissions queue worker permanently deactivated.');
+    console.log("ℹ️ Submissions queue worker permanently deactivated.");
 
     if (process.send) {
       process.send("ready");

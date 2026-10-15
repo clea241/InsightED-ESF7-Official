@@ -107,17 +107,7 @@ router.post("/batch", async (req, res) => {
            (id, personnel_id, school_id, school_year, task_category, task_name, calendar_dates, start_time, end_time)
            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)
            RETURNING *`,
-          [
-            taskId,
-            pId,
-            schoolId,
-            schoolYear,
-            cat,
-            tName,
-            cDates,
-            sTime,
-            eTime,
-          ],
+          [taskId, pId, schoolId, schoolYear, cat, tName, cDates, sTime, eTime],
         );
         insertedRows.push(formatExtraTaskRecord(insertRes.rows[0]));
       }

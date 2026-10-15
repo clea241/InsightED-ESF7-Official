@@ -1,6 +1,6 @@
 /**
  * Clean Slate Rebuild of esf7_personnel_ld_trainings from authentic personnel profiles
- * 
+ *
  * Rules:
  * - Strictly isolated to insighted_esf7 (Azure DB).
  * - Drops `raw_payload` column as requested by user.
@@ -10,14 +10,14 @@
  * - Creates alias views for 'esf7_personnel_ld' and 'esf7_personnel_l&d' for DBeaver convenience.
  */
 
-const { Pool } = require('../node_modules/pg');
+const { Pool } = require("../node_modules/pg");
 
 const pool = new Pool({
-  host: 'stride-posgre-prod-01.postgres.database.azure.com',
+  host: "stride-posgre-prod-01.postgres.database.azure.com",
   port: 5432,
-  user: 'Administrator1',
-  password: 'pRZTbQ2T1JD7',
-  database: 'insighted_esf7',
+  user: "Administrator1",
+  password: "pRZTbQ2T1JD7",
+  database: "insighted_esf7",
   ssl: { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
@@ -39,12 +39,20 @@ async function main() {
       CREATE TABLE IF NOT EXISTS esf7_personnel_ld_trainings_backup_20261013 AS
       SELECT * FROM esf7_personnel_ld_trainings;
     `);
-    const backupCount = await client.query("SELECT count(*) FROM esf7_personnel_ld_trainings_backup_20261013");
-    console.log(`  ✓ Safety backup ready with ${backupCount.rows[0].count} rows.`);
+    const backupCount = await client.query(
+      "SELECT count(*) FROM esf7_personnel_ld_trainings_backup_20261013",
+    );
+    console.log(
+      `  ✓ Safety backup ready with ${backupCount.rows[0].count} rows.`,
+    );
 
     // 2. Drop raw_payload column
-    console.log("\n[Step 2/5] Dropping raw_payload column from esf7_personnel_ld_trainings...");
-    await client.query("ALTER TABLE esf7_personnel_ld_trainings DROP COLUMN IF EXISTS raw_payload;");
+    console.log(
+      "\n[Step 2/5] Dropping raw_payload column from esf7_personnel_ld_trainings...",
+    );
+    await client.query(
+      "ALTER TABLE esf7_personnel_ld_trainings DROP COLUMN IF EXISTS raw_payload;",
+    );
     console.log("  ✓ raw_payload column dropped.");
 
     // 3. Truncate table
@@ -113,18 +121,32 @@ async function main() {
       SELECT * FROM numbered_trainings;
     `);
 
-    console.log(`  ✓ Inserted ${insertRes.rowCount} training records in ${((Date.now() - tInsert)/1000).toFixed(1)}s!`);
+    console.log(
+      `  ✓ Inserted ${insertRes.rowCount} training records in ${((Date.now() - tInsert) / 1000).toFixed(1)}s!`,
+    );
 
     // 5. Create alias views
-    console.log("\n[Step 5/5] Creating alias views 'esf7_personnel_ld' and 'esf7_personnel_l&d' for DBeaver...");
-    await client.query(`CREATE OR REPLACE VIEW esf7_personnel_ld AS SELECT * FROM esf7_personnel_ld_trainings;`);
-    await client.query(`CREATE OR REPLACE VIEW "esf7_personnel_l&d" AS SELECT * FROM esf7_personnel_ld_trainings;`);
+    console.log(
+      "\n[Step 5/5] Creating alias views 'esf7_personnel_ld' and 'esf7_personnel_l&d' for DBeaver...",
+    );
+    await client.query(
+      `CREATE OR REPLACE VIEW esf7_personnel_ld AS SELECT * FROM esf7_personnel_ld_trainings;`,
+    );
+    await client.query(
+      `CREATE OR REPLACE VIEW "esf7_personnel_l&d" AS SELECT * FROM esf7_personnel_ld_trainings;`,
+    );
     console.log("  ✓ Alias views created successfully.");
 
     // Verification
-    const countRes = await client.query("SELECT count(*) FROM esf7_personnel_ld_trainings");
-    const teachersCount = await client.query("SELECT count(distinct personnel_id) FROM esf7_personnel_ld_trainings");
-    const minMaxRes = await client.query("SELECT min(id::bigint) as min_id, max(id::bigint) as max_id FROM esf7_personnel_ld_trainings");
+    const countRes = await client.query(
+      "SELECT count(*) FROM esf7_personnel_ld_trainings",
+    );
+    const teachersCount = await client.query(
+      "SELECT count(distinct personnel_id) FROM esf7_personnel_ld_trainings",
+    );
+    const minMaxRes = await client.query(
+      "SELECT min(id::bigint) as min_id, max(id::bigint) as max_id FROM esf7_personnel_ld_trainings",
+    );
 
     const rawColCheck = await client.query(`
       SELECT count(*) 
@@ -144,14 +166,17 @@ async function main() {
     console.log(`🎉 REBUILD COMPLETE IN ${totalDuration}s!`);
     console.log(`✓ Total L&D Training Records: ${countRes.rows[0].count}`);
     console.log(`✓ Teachers with Trainings: ${teachersCount.rows[0].count}`);
-    console.log(`✓ ID Range: ${minMaxRes.rows[0].min_id} to ${minMaxRes.rows[0].max_id}`);
-    console.log(`✓ raw_payload column dropped: ${rawColCheck.rows[0].count === '0' ? 'YES' : 'NO'}`);
+    console.log(
+      `✓ ID Range: ${minMaxRes.rows[0].min_id} to ${minMaxRes.rows[0].max_id}`,
+    );
+    console.log(
+      `✓ raw_payload column dropped: ${rawColCheck.rows[0].count === "0" ? "YES" : "NO"}`,
+    );
     console.log("==========================================================");
 
     console.log("\nSample training records:");
     console.table(first5.rows);
-
-  } catch(err) {
+  } catch (err) {
     console.error("FATAL ERROR DURING L&D TRAININGS REBUILD:", err);
   } finally {
     client.release();

@@ -43,7 +43,8 @@ function broadcastChange() {
 }
 
 function getStorage() {
-  if (typeof window !== "undefined" && window.localStorage) return window.localStorage;
+  if (typeof window !== "undefined" && window.localStorage)
+    return window.localStorage;
   if (typeof localStorage !== "undefined") return localStorage;
   return null;
 }
@@ -103,7 +104,9 @@ function isQuotaError(err) {
   return (
     err.name === "QuotaExceededError" ||
     err.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
-    String(err.message || "").toLowerCase().includes("quota")
+    String(err.message || "")
+      .toLowerCase()
+      .includes("quota")
   );
 }
 
@@ -181,12 +184,28 @@ async function handleQuotaExceeded(error, unsentPayload) {
  * Generate a coalescing stable key for an outbox entry.
  * (school + user + term + module + personnelId)
  */
-export function buildStableKey({ schoolId, user, term, module, personnelId = null }) {
-  const sid = String(schoolId || "").trim().toLowerCase();
-  const usr = String(user || "").trim().toLowerCase();
-  const t = String(term || "").trim().toLowerCase();
-  const mod = String(module || "").trim().toLowerCase();
-  const pid = personnelId ? `::${String(personnelId).trim().toLowerCase()}` : "";
+export function buildStableKey({
+  schoolId,
+  user,
+  term,
+  module,
+  personnelId = null,
+}) {
+  const sid = String(schoolId || "")
+    .trim()
+    .toLowerCase();
+  const usr = String(user || "")
+    .trim()
+    .toLowerCase();
+  const t = String(term || "")
+    .trim()
+    .toLowerCase();
+  const mod = String(module || "")
+    .trim()
+    .toLowerCase();
+  const pid = personnelId
+    ? `::${String(personnelId).trim().toLowerCase()}`
+    : "";
   return `${sid}::${usr}::${t}::${mod}${pid}`;
 }
 
@@ -194,7 +213,10 @@ export function buildStableKey({ schoolId, user, term, module, personnelId = nul
  * Generate uuid v4
  */
 export function generateMutationId() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
     return crypto.randomUUID();
   }
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
@@ -224,7 +246,13 @@ export async function upsertOutboxEntry({
 }) {
   if (!module || !payload) return null;
 
-  const stableKey = buildStableKey({ schoolId, user, term, module, personnelId });
+  const stableKey = buildStableKey({
+    schoolId,
+    user,
+    term,
+    module,
+    personnelId,
+  });
   const mutationId = id || generateMutationId();
   const now = new Date().toISOString();
 
@@ -241,7 +269,8 @@ export async function upsertOutboxEntry({
     payload,
     baseVersion: baseVersion ?? null,
     lastError: lastError ? String(lastError) : null,
-    attempts: typeof attempts === "number" ? attempts : kind === "failed" ? 1 : 0,
+    attempts:
+      typeof attempts === "number" ? attempts : kind === "failed" ? 1 : 0,
     createdAt: now,
     updatedAt: now,
     stableKey,
@@ -280,7 +309,10 @@ export async function upsertOutboxEntry({
     if (isQuotaError(err)) {
       handleQuotaExceeded(err, entry);
     }
-    console.warn("[Outbox] IndexedDB upsert failed, writing to localStorage fallback:", err);
+    console.warn(
+      "[Outbox] IndexedDB upsert failed, writing to localStorage fallback:",
+      err,
+    );
 
     try {
       const list = getFallbackList();
@@ -311,7 +343,10 @@ export async function removeOutboxEntry(id) {
     await db.delete(STORE_NAME, id);
     broadcastChange();
   } catch (err) {
-    console.warn("[Outbox] IndexedDB delete failed, falling back to localStorage:", err);
+    console.warn(
+      "[Outbox] IndexedDB delete failed, falling back to localStorage:",
+      err,
+    );
   }
 
   try {
@@ -350,7 +385,13 @@ export function syncBeforeUnloadOnFailedState(hasFailed) {
 /**
  * Remove an entry by its stable key components or options object.
  */
-export async function removeOutboxEntryByModule(arg1, user, module, term = null, personnelId = null) {
+export async function removeOutboxEntryByModule(
+  arg1,
+  user,
+  module,
+  term = null,
+  personnelId = null,
+) {
   let sId, usr, mod, t, pid;
   if (typeof arg1 === "object" && arg1 !== null) {
     sId = arg1.schoolId;
@@ -365,7 +406,13 @@ export async function removeOutboxEntryByModule(arg1, user, module, term = null,
     t = term;
     pid = personnelId;
   }
-  const targetKey = buildStableKey({ schoolId: sId, user: usr, term: t, module: mod, personnelId: pid });
+  const targetKey = buildStableKey({
+    schoolId: sId,
+    user: usr,
+    term: t,
+    module: mod,
+    personnelId: pid,
+  });
   try {
     const db = await getDB();
     const tx = db.transaction(STORE_NAME, "readwrite");
@@ -381,7 +428,8 @@ export async function removeOutboxEntryByModule(arg1, user, module, term = null,
       for (const entry of allEntries) {
         if (
           entry.module === mod &&
-          String(entry.personnelId || "").toLowerCase() === String(pid).toLowerCase()
+          String(entry.personnelId || "").toLowerCase() ===
+            String(pid).toLowerCase()
         ) {
           await store.delete(entry.id);
         }
@@ -400,7 +448,8 @@ export async function removeOutboxEntryByModule(arg1, user, module, term = null,
       if (
         pid &&
         item.module === mod &&
-        String(item.personnelId || "").toLowerCase() === String(pid).toLowerCase()
+        String(item.personnelId || "").toLowerCase() ===
+          String(pid).toLowerCase()
       ) {
         return false;
       }
@@ -422,7 +471,10 @@ export async function getOutboxEntries(filter = {}) {
     const db = await getDB();
     entries = await db.getAll(STORE_NAME);
   } catch (err) {
-    console.warn("[Outbox] IndexedDB read failed, falling back to localStorage:", err);
+    console.warn(
+      "[Outbox] IndexedDB read failed, falling back to localStorage:",
+      err,
+    );
     entries = getFallbackList();
   }
 
@@ -433,11 +485,15 @@ export async function getOutboxEntries(filter = {}) {
 
   if (filter.schoolId) {
     const cleanSid = String(filter.schoolId).trim().toLowerCase();
-    entries = entries.filter((e) => String(e.schoolId).trim().toLowerCase() === cleanSid);
+    entries = entries.filter(
+      (e) => String(e.schoolId).trim().toLowerCase() === cleanSid,
+    );
   }
   if (filter.user) {
     const cleanUser = String(filter.user).trim().toLowerCase();
-    entries = entries.filter((e) => String(e.user).trim().toLowerCase() === cleanUser);
+    entries = entries.filter(
+      (e) => String(e.user).trim().toLowerCase() === cleanUser,
+    );
   }
   if (filter.kind) {
     entries = entries.filter((e) => e.kind === filter.kind);
@@ -447,7 +503,12 @@ export async function getOutboxEntries(filter = {}) {
   }
   if (filter.personnelId) {
     const cleanPid = String(filter.personnelId).trim().toLowerCase();
-    entries = entries.filter((e) => String(e.personnelId || "").trim().toLowerCase() === cleanPid);
+    entries = entries.filter(
+      (e) =>
+        String(e.personnelId || "")
+          .trim()
+          .toLowerCase() === cleanPid,
+    );
   }
 
   const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
@@ -467,7 +528,9 @@ export async function getOutboxEntries(filter = {}) {
  */
 export async function markOutboxAttempt(id, { error }) {
   if (!id) return;
-  const errMsg = error?.message || (typeof error === "string" ? error : "Unknown save error");
+  const errMsg =
+    error?.message ||
+    (typeof error === "string" ? error : "Unknown save error");
   try {
     const db = await getDB();
     const entry = await db.get(STORE_NAME, id);
@@ -550,7 +613,10 @@ export async function reconcileOutboxWithDatabase({
     const dbSection = dbBaseline[mod];
 
     // If identical to database, save effectively completed: delete silently
-    if (dbSection && normalizeJson(entry.payload) === normalizeJson(dbSection)) {
+    if (
+      dbSection &&
+      normalizeJson(entry.payload) === normalizeJson(dbSection)
+    ) {
       await removeOutboxEntry(entry.id);
       continue;
     }
@@ -627,7 +693,9 @@ export async function retryOutboxEntry(entryOrId) {
     if (mod === "school_profile") {
       res = await api.updateCurricularConfig(entry.payload);
       if (!res || res.success !== true) {
-        throw new Error(res?.error || "Server did not confirm school configuration save");
+        throw new Error(
+          res?.error || "Server did not confirm school configuration save",
+        );
       }
     } else if (mod === "workload") {
       res = await api.saveWorkloadBatch(entry.payload);
@@ -923,7 +991,9 @@ export async function autoSyncOutboxOnSectionOpen({
               import("./errorAlert.js")
                 .then(({ showFeedbackToast }) => {
                   if (showFeedbackToast) {
-                    showFeedbackToast("Synced offline changes with the server database.");
+                    showFeedbackToast(
+                      "Synced offline changes with the server database.",
+                    );
                   }
                 })
                 .catch(() => {});
@@ -941,4 +1011,3 @@ export async function autoSyncOutboxOnSectionOpen({
     return false;
   }
 }
-

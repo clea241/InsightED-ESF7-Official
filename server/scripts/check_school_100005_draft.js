@@ -1,11 +1,11 @@
-const { Pool } = require('../node_modules/pg');
+const { Pool } = require("../node_modules/pg");
 
 const pool = new Pool({
-  host: 'stride-posgre-prod-01.postgres.database.azure.com',
+  host: "stride-posgre-prod-01.postgres.database.azure.com",
   port: 5432,
-  user: 'Administrator1',
-  password: 'pRZTbQ2T1JD7',
-  database: 'insighted_esf7',
+  user: "Administrator1",
+  password: "pRZTbQ2T1JD7",
+  database: "insighted_esf7",
   ssl: { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
@@ -26,7 +26,7 @@ async function main() {
       FROM school_drafts 
       WHERE school_id = '100005';
     `);
-    console.log('Draft keys for 100005:');
+    console.log("Draft keys for 100005:");
     const row = res.rows[0];
     console.log({
       sections_count: row?.sections?.length,
@@ -37,12 +37,12 @@ async function main() {
       aral_count: row?.aral?.length,
       sned_count: row?.sned?.length,
     });
-    if (row?.sections) console.log('sections:', row.sections);
-    if (row?.class_sections) console.log('classSections:', row.class_sections);
-    if (row?.organized_classes) console.log('organizedClasses:', row.organized_classes);
-    if (row?.classes) console.log('classes:', row.classes);
-    if (row?.sned) console.log('sned:', row.sned);
-
+    if (row?.sections) console.log("sections:", row.sections);
+    if (row?.class_sections) console.log("classSections:", row.class_sections);
+    if (row?.organized_classes)
+      console.log("organizedClasses:", row.organized_classes);
+    if (row?.classes) console.log("classes:", row.classes);
+    if (row?.sned) console.log("sned:", row.sned);
   } finally {
     client.release();
     await pool.end();

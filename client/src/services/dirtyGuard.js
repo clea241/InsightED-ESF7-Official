@@ -66,21 +66,24 @@ export const flushAllDirtyGuards = async () => {
       try {
         await config.onFlush();
       } catch (err) {
-        console.warn(`[dirtyGuard] Error running onFlush for screen ${screenId}:`, err);
+        console.warn(
+          `[dirtyGuard] Error running onFlush for screen ${screenId}:`,
+          err,
+        );
       }
     }
   }
 };
 
-import {
-  upsertOutboxEntry,
-} from "./outbox";
+import { upsertOutboxEntry } from "./outbox";
 
 /**
  * Snapshot all dirty registered guards to the local outbox as crash-safety 'unsaved' entries.
  * Only writes dirty sections, never writes when clean.
  */
-export const snapshotDirtyGuardsToOutbox = async (reason = "visibilitychange") => {
+export const snapshotDirtyGuardsToOutbox = async (
+  reason = "visibilitychange",
+) => {
   for (const [screenId, config] of guards.entries()) {
     try {
       const isDirty =

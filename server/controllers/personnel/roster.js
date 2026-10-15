@@ -11,7 +11,6 @@ const {
   formatCanonicalPrn,
 } = require("./common");
 
-
 router.get("/", async (req, res) => {
   try {
     let schoolId =
@@ -840,7 +839,6 @@ router.get("/", async (req, res) => {
 
 // GET /api/personnel/autofill-template
 
-
 /**
  * POST /bulk
  * Saves / commits all active personnel on the roster into esf7_personnel_profile
@@ -856,28 +854,44 @@ router.post("/bulk", async (req, res) => {
       req.body.school_id ||
       "108348";
     const cleanSchoolId = String(schoolId).replace(/^SCH-/i, "").trim();
-    const schoolYear = req.body.schoolYear || req.body.school_year || "SY 26-27";
+    const schoolYear =
+      req.body.schoolYear || req.body.school_year || "SY 26-27";
     const personnelList = req.body.personnelList || req.body.personnel || [];
 
     if (!Array.isArray(personnelList) || personnelList.length === 0) {
-      return res.json({ success: true, count: 0, message: "No personnel to save." });
+      return res.json({
+        success: true,
+        count: 0,
+        message: "No personnel to save.",
+      });
     }
 
     await client.query("BEGIN");
     let savedCount = 0;
 
     const maxIdRes = await client.query(
-      "SELECT MAX(id::bigint) AS max_id FROM esf7_personnel_profile WHERE id ~ '^[0-9]+$'"
+      "SELECT MAX(id::bigint) AS max_id FROM esf7_personnel_profile WHERE id ~ '^[0-9]+$'",
     );
-    let nextNumericId = maxIdRes.rows[0]?.max_id ? BigInt(maxIdRes.rows[0].max_id) : 843140n;
+    let nextNumericId = maxIdRes.rows[0]?.max_id
+      ? BigInt(maxIdRes.rows[0].max_id)
+      : 843140n;
 
     for (let idx = 0; idx < personnelList.length; idx++) {
       const p = personnelList[idx];
       const seq = idx + 1;
 
-      const fName = String(p.firstName || p.first_name || p.first || "TEACHER").toUpperCase().trim();
-      const lName = String(p.lastName || p.last_name || p.last || ("STAFF " + seq)).toUpperCase().trim();
-      const mName = String(p.middleName || p.middle_name || p.middle || "").toUpperCase().trim() || null;
+      const fName = String(p.firstName || p.first_name || p.first || "TEACHER")
+        .toUpperCase()
+        .trim();
+      const lName = String(
+        p.lastName || p.last_name || p.last || "STAFF " + seq,
+      )
+        .toUpperCase()
+        .trim();
+      const mName =
+        String(p.middleName || p.middle_name || p.middle || "")
+          .toUpperCase()
+          .trim() || null;
       const ext = p.nameExtension || p.name_extension || null;
 
       // Check if personnel already exists in this school by ID, legacy_id, PRN, or full name
@@ -890,7 +904,7 @@ router.post("/bulk", async (req, res) => {
              OR (first_name = $4 AND last_name = $5)
            )
          LIMIT 1`,
-        [cleanSchoolId, String(p.id || ''), String(p.prn || ''), fName, lName]
+        [cleanSchoolId, String(p.id || ""), String(p.prn || ""), fName, lName],
       );
 
       let pId = p.id;
@@ -899,7 +913,15 @@ router.post("/bulk", async (req, res) => {
         pId = existingRes.rows[0].id;
         prn = existingRes.rows[0].prn || formatCanonicalPrn(p.prn, seq);
       } else {
-        if (!pId || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pId) || pId.startsWith("PER-") || pId.startsWith("local-p-") || !/^\d+$/.test(pId)) {
+        if (
+          !pId ||
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+            pId,
+          ) ||
+          pId.startsWith("PER-") ||
+          pId.startsWith("local-p-") ||
+          !/^\d+$/.test(pId)
+        ) {
           nextNumericId += 1n;
           pId = nextNumericId.toString();
         }
@@ -907,9 +929,11 @@ router.post("/bulk", async (req, res) => {
       }
       const salutation = String(p.salutation || "MR.").toUpperCase();
       const pType = String(p.type || "teaching").toLowerCase();
-      const sex = String(p.sexAtBirth || p.sex_at_birth || p.gender || "MALE").toUpperCase();
+      const sex = String(
+        p.sexAtBirth || p.sex_at_birth || p.gender || "MALE",
+      ).toUpperCase();
       const bDate = p.birthdate || null;
-      const age = p.age ? Number(p.age) : (calculateAge(bDate) || null);
+      const age = p.age ? Number(p.age) : calculateAge(bDate) || null;
       const tin = p.tin || null;
       const noTin = Boolean(p.noTin || p.no_tin);
       const civilStatus = p.civilStatus || p.civil_status || null;
@@ -921,7 +945,9 @@ router.post("/bulk", async (req, res) => {
       const empNo = p.employeeNo || p.employee_no || null;
       const depedEmail = p.depedEmail || p.deped_email || null;
       const noEmail = Boolean(p.noDepedEmail || p.no_deped_email);
-      const allowDisc = Boolean(p.allowEmailDiscrepancy || p.allow_email_discrepancy);
+      const allowDisc = Boolean(
+        p.allowEmailDiscrepancy || p.allow_email_discrepancy,
+      );
       const isHead = Boolean(p.isSchoolHead || p.is_school_head);
       const isMainSh = isHead
         ? Boolean(
@@ -1011,17 +1037,20 @@ router.post("/bulk", async (req, res) => {
       ]);
 
       // Upsert into esf7_personnel_employment
-      const pos = p.position || p.plantilla_position || p.position_title || "TEACHER I";
+      const pos =
+        p.position || p.plantilla_position || p.position_title || "TEACHER I";
       const posCat = p.positionCategory || p.position_category || "TEACHING";
       const step = sanitizeStepIncrement(p.stepIncrement || p.step_increment);
       const fund = p.fundSource || p.fund_source || "NATIONAL";
-      const appt = p.natureOfAppointment || p.nature_of_appointment || "REGULAR PERMANENT";
+      const appt =
+        p.natureOfAppointment || p.nature_of_appointment || "REGULAR PERMANENT";
       const hiring = p.hiringArrangement || p.hiring_arrangement || "REGULAR";
 
       const crypto = require("crypto");
       const empId = crypto.randomUUID();
 
-      await client.query(`
+      await client.query(
+        `
         INSERT INTO esf7_personnel_employment (
           id, personnel_id, position_category, position, step_increment,
           fund_source, nature_of_appointment, hiring_arrangement, updated_at
@@ -1037,16 +1066,9 @@ router.post("/bulk", async (req, res) => {
           nature_of_appointment = EXCLUDED.nature_of_appointment,
           hiring_arrangement = EXCLUDED.hiring_arrangement,
           updated_at = NOW();
-      `, [
-        empId,
-        pId,
-        posCat,
-        pos,
-        step,
-        fund,
-        appt,
-        hiring,
-      ]);
+      `,
+        [empId, pId, posCat, pos, step, fund, appt, hiring],
+      );
 
       savedCount++;
     }
@@ -1055,7 +1077,10 @@ router.post("/bulk", async (req, res) => {
     res.json({
       success: true,
       count: savedCount,
-      message: "Successfully saved " + savedCount + " personnel into esf7_personnel_profile.",
+      message:
+        "Successfully saved " +
+        savedCount +
+        " personnel into esf7_personnel_profile.",
     });
   } catch (err) {
     await client.query("ROLLBACK");
@@ -1068,7 +1093,12 @@ router.post("/bulk", async (req, res) => {
 
 // PUT /api/personnel/:id/school-head — Dedicated endpoint to toggle or designate a School Head
 router.put("/:id/school-head", async (req, res) => {
-  console.log("--> [PUT /api/personnel/:id/school-head] hit with params:", req.params, "body:", req.body);
+  console.log(
+    "--> [PUT /api/personnel/:id/school-head] hit with params:",
+    req.params,
+    "body:",
+    req.body,
+  );
   const targetId = String(req.params.id || "").trim();
   const schoolId =
     getSchoolIdFromRequest(req) ||
@@ -1077,15 +1107,20 @@ router.put("/:id/school-head", async (req, res) => {
     req.body?.schoolId ||
     req.body?.school_id ||
     "";
-  let cleanSchoolId = String(schoolId).replace(/^SCH-/i, "").trim();  const isSchoolHead = Boolean(req.body?.isSchoolHead ?? req.body?.is_school_head);
+  let cleanSchoolId = String(schoolId).replace(/^SCH-/i, "").trim();
+  const isSchoolHead = Boolean(
+    req.body?.isSchoolHead ?? req.body?.is_school_head,
+  );
   const isMainSh = isSchoolHead
     ? Boolean(req.body?.isMainSh ?? req.body?.is_main_sh ?? true)
     : false;
   const hasMultipleHeads = Boolean(req.body?.hasMultipleHeads);
-  const schoolHeadLevel = req.body?.schoolHeadLevel || req.body?.school_head_level || null;
+  const schoolHeadLevel =
+    req.body?.schoolHeadLevel || req.body?.school_head_level || null;
 
   try {
-    const pool = db.pool || (typeof db.getPool === "function" ? db.getPool() : null);
+    const pool =
+      db.pool || (typeof db.getPool === "function" ? db.getPool() : null);
     if (!pool || typeof pool.connect !== "function") {
       throw new Error("Database pool unavailable");
     }
@@ -1128,7 +1163,12 @@ router.put("/:id/school-head", async (req, res) => {
       // 2. Update the target personnel in esf7_personnel_profile
       await client.query(
         "UPDATE esf7_personnel_profile SET is_school_head = $1, is_main_sh = $2, school_head_level = $3, updated_at = NOW() WHERE id = $4 OR legacy_id = $4 OR prn = $4",
-        [isSchoolHead, isMainSh, isSchoolHead ? schoolHeadLevel : null, targetId],
+        [
+          isSchoolHead,
+          isMainSh,
+          isSchoolHead ? schoolHeadLevel : null,
+          targetId,
+        ],
       );
 
       // 3. Keep school_drafts in sync so drafts also reflect the School Head state
@@ -1186,20 +1226,34 @@ router.put("/:id/school-head", async (req, res) => {
             });
 
             if (pld.schoolInfo) {
-              if (!pld.schoolInfo.schoolHeadConfig) pld.schoolInfo.schoolHeadConfig = {};
-              pld.schoolInfo.schoolHeadConfig.hasMultipleHeads = hasMultipleHeads;
+              if (!pld.schoolInfo.schoolHeadConfig)
+                pld.schoolInfo.schoolHeadConfig = {};
+              pld.schoolInfo.schoolHeadConfig.hasMultipleHeads =
+                hasMultipleHeads;
               if (!hasMultipleHeads) {
-                pld.schoolInfo.schoolHeadConfig.mainHeadId = isSchoolHead ? targetId : null;
-                pld.schoolInfo.schoolHeadConfig.assignments = isSchoolHead ? { All: targetId } : {};
+                pld.schoolInfo.schoolHeadConfig.mainHeadId = isSchoolHead
+                  ? targetId
+                  : null;
+                pld.schoolInfo.schoolHeadConfig.assignments = isSchoolHead
+                  ? { All: targetId }
+                  : {};
               } else if (isMainSh) {
                 pld.schoolInfo.schoolHeadConfig.mainHeadId = targetId;
               } else if (!isSchoolHead) {
-                if (String(pld.schoolInfo.schoolHeadConfig.mainHeadId) === String(targetId)) {
+                if (
+                  String(pld.schoolInfo.schoolHeadConfig.mainHeadId) ===
+                  String(targetId)
+                ) {
                   pld.schoolInfo.schoolHeadConfig.mainHeadId = null;
                 }
                 if (pld.schoolInfo.schoolHeadConfig.assignments) {
-                  for (const k of Object.keys(pld.schoolInfo.schoolHeadConfig.assignments)) {
-                    if (String(pld.schoolInfo.schoolHeadConfig.assignments[k]) === String(targetId)) {
+                  for (const k of Object.keys(
+                    pld.schoolInfo.schoolHeadConfig.assignments,
+                  )) {
+                    if (
+                      String(pld.schoolInfo.schoolHeadConfig.assignments[k]) ===
+                      String(targetId)
+                    ) {
                       delete pld.schoolInfo.schoolHeadConfig.assignments[k];
                     }
                   }
@@ -1254,9 +1308,10 @@ router.delete("/:id", async (req, res) => {
     // A. Query existing details to construct persistent tombstone
     let existingRec = null;
     const profRes = await db
-      .query(`SELECT * FROM esf7_personnel_profile WHERE id = $1 OR legacy_id = $1 OR prn = $1`, [
-        targetId,
-      ])
+      .query(
+        `SELECT * FROM esf7_personnel_profile WHERE id = $1 OR legacy_id = $1 OR prn = $1`,
+        [targetId],
+      )
       .catch(() => ({ rows: [] }));
 
     if (profRes.rows.length > 0) {
@@ -1415,7 +1470,9 @@ router.delete("/:id", async (req, res) => {
                     ? String(validTargetId).toLowerCase()
                     : "";
                   const tPrn = validPrn ? String(validPrn).toLowerCase() : "";
-                  const tEmp = validEmpNo ? String(validEmpNo).toLowerCase() : "";
+                  const tEmp = validEmpNo
+                    ? String(validEmpNo).toLowerCase()
+                    : "";
                   const tName = validName ? validName.toLowerCase() : "";
                   const matchesAlias = allPersonnelIds.some((k) => {
                     const lk = String(k).trim().toLowerCase();
@@ -1433,7 +1490,9 @@ router.delete("/:id", async (req, res) => {
               }
               if (Array.isArray(pld.classSections)) {
                 pld.classSections = pld.classSections.map((sec) => {
-                  const secAdv = String(sec.advisorId || "").trim().toLowerCase();
+                  const secAdv = String(sec.advisorId || "")
+                    .trim()
+                    .toLowerCase();
                   const matchesAdv = allPersonnelIds.some(
                     (k) => String(k).trim().toLowerCase() === secAdv,
                   );
@@ -1462,8 +1521,9 @@ router.delete("/:id", async (req, res) => {
                     if (
                       allPersonnelIds.some(
                         (k) =>
-                          String(shc.assignments[level]).trim().toLowerCase() ===
-                          String(k).trim().toLowerCase(),
+                          String(shc.assignments[level])
+                            .trim()
+                            .toLowerCase() === String(k).trim().toLowerCase(),
                       )
                     ) {
                       delete shc.assignments[level];
@@ -1508,7 +1568,9 @@ router.delete("/:id", async (req, res) => {
       let pCounter = 2;
 
       if (validTargetId) {
-        matchCriteria.push("(id::text = $" + pCounter + " OR employee_no = $" + pCounter + ")");
+        matchCriteria.push(
+          "(id::text = $" + pCounter + " OR employee_no = $" + pCounter + ")",
+        );
         matchParams.push(validTargetId);
         pCounter++;
       }
@@ -1518,16 +1580,33 @@ router.delete("/:id", async (req, res) => {
         pCounter++;
       }
       if (fName && lName) {
-        matchCriteria.push("(UPPER(TRIM(first)) = $" + pCounter + " AND UPPER(TRIM(last)) = $" + (pCounter + 1) + ")");
-        matchParams.push(String(fName).trim().toUpperCase(), String(lName).trim().toUpperCase());
+        matchCriteria.push(
+          "(UPPER(TRIM(first)) = $" +
+            pCounter +
+            " AND UPPER(TRIM(last)) = $" +
+            (pCounter + 1) +
+            ")",
+        );
+        matchParams.push(
+          String(fName).trim().toUpperCase(),
+          String(lName).trim().toUpperCase(),
+        );
         pCounter += 2;
       }
 
       if (matchCriteria.length > 0) {
-        const updateSql = "UPDATE esf7_database SET deleted = true WHERE (school_id = $1 OR schoool_id = $1) AND (" + matchCriteria.join(" OR ") + ")";
-        await (db.insightEdPool || db).query(updateSql, matchParams).catch(() => {});
+        const updateSql =
+          "UPDATE esf7_database SET deleted = true WHERE (school_id = $1 OR schoool_id = $1) AND (" +
+          matchCriteria.join(" OR ") +
+          ")";
+        await (db.insightEdPool || db)
+          .query(updateSql, matchParams)
+          .catch(() => {});
         await db.query(updateSql, matchParams).catch(() => {});
-        console.log("[Roster Delete] Flagged deleted = true in esf7_database for " + (cleanFullName || targetId));
+        console.log(
+          "[Roster Delete] Flagged deleted = true in esf7_database for " +
+            (cleanFullName || targetId),
+        );
       }
     } catch (e) {
       console.warn("[esf7_database update warning]:", e.message);
@@ -1586,38 +1665,198 @@ router.delete("/:id", async (req, res) => {
 
       // 2. Cascade delete from all child tables
       await Promise.all([
-        pool.query(`DELETE FROM esf7_workload_rows WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_workload_row WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_shs_workload_rows WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_admin_task WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_related_task WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_personnel_employment WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_personnel_education WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_personnel_educ WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_perssonel_educ WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_personnel_learning_areas WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_personnel_learning_area WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_personnel_ld_trainings WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_personnel_trainings WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_personnel_ld WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM "esf7_personnel_l&d" WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_personnel_designations WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_personnel_designation WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_personnel_extra_tasks WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_personnel_allowances WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_personnel_allowance WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_overload_late_undertime WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM overload_late_undertime WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_overload_no_work WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM overload_absences WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM overload_pay_and_reason WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_work_immersion WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_personnel_node_status WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_room_submissions_staging WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_personnel_submission WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_requests WHERE personnel_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM clustered_personnel WHERE prn = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
-        pool.query(`DELETE FROM esf7_personnel_id_mapping WHERE legacy_id = ANY($1::text[]) OR new_id = ANY($1::text[])`, [allPersonnelIds]).catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_workload_rows WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_workload_row WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_shs_workload_rows WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_admin_task WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_related_task WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_personnel_employment WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_personnel_education WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_personnel_educ WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_perssonel_educ WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_personnel_learning_areas WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_personnel_learning_area WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_personnel_ld_trainings WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_personnel_trainings WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_personnel_ld WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM "esf7_personnel_l&d" WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_personnel_designations WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_personnel_designation WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_personnel_extra_tasks WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_personnel_allowances WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_personnel_allowance WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_overload_late_undertime WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM overload_late_undertime WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_overload_no_work WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM overload_absences WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM overload_pay_and_reason WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_work_immersion WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_personnel_node_status WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_room_submissions_staging WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_personnel_submission WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_requests WHERE personnel_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM clustered_personnel WHERE prn = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
+        pool
+          .query(
+            `DELETE FROM esf7_personnel_id_mapping WHERE legacy_id = ANY($1::text[]) OR new_id = ANY($1::text[])`,
+            [allPersonnelIds],
+          )
+          .catch(() => {}),
       ]);
 
       // 3. Delete parent profile record LAST (after child records are cleared)
@@ -1644,4 +1883,3 @@ router.delete("/:id", async (req, res) => {
   }
 });
 module.exports = router;
-

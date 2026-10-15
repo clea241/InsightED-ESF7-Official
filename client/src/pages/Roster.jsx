@@ -664,10 +664,7 @@ export default function Roster() {
           refreshPersonnelList().catch(() => {});
         }
         if (showToast) {
-          showToast(
-            "Offline personnel changes synced to database.",
-            "success",
-          );
+          showToast("Offline personnel changes synced to database.", "success");
         }
       },
     });
@@ -685,8 +682,14 @@ export default function Roster() {
   });
   const [sdoHeadError, setSdoHeadError] = useState("");
   const [isSavingSdoHead, setIsSavingSdoHead] = useState(false);
-  const currentHead = useMemo(() => findRosterSchoolHead(personnel), [personnel]);
-  const allRosterHeads = useMemo(() => findAllRosterSchoolHeads(personnel), [personnel]);
+  const currentHead = useMemo(
+    () => findRosterSchoolHead(personnel),
+    [personnel],
+  );
+  const allRosterHeads = useMemo(
+    () => findAllRosterSchoolHeads(personnel),
+    [personnel],
+  );
   const rosterHasHead = Boolean(currentHead);
   const [isChangeHeadModalOpen, setIsChangeHeadModalOpen] = useState(false);
   const [headSearchQuery, setHeadSearchQuery] = useState("");
@@ -694,9 +697,14 @@ export default function Roster() {
   const educationalLevels = useMemo(() => {
     return getEducationalLevelsFromMCOC(
       schoolInfo?.mcoc || schoolInfo?.raw_payload?.mcoc,
-      schoolInfo?.curricularOffering || schoolInfo?.curricular_offering
+      schoolInfo?.curricularOffering || schoolInfo?.curricular_offering,
     );
-  }, [schoolInfo?.mcoc, schoolInfo?.raw_payload?.mcoc, schoolInfo?.curricularOffering, schoolInfo?.curricular_offering]);
+  }, [
+    schoolInfo?.mcoc,
+    schoolInfo?.raw_payload?.mcoc,
+    schoolInfo?.curricularOffering,
+    schoolInfo?.curricular_offering,
+  ]);
 
   // Modal multiple heads configuration state: null = unanswered, true = yes, false = no
   const [modalHasMultipleHeads, setModalHasMultipleHeads] = useState(null);
@@ -731,7 +739,7 @@ export default function Roster() {
           const initialAssign = {};
           levels.forEach((lvl) => {
             const found = currentHeads.find(
-              (h) => h.schoolHeadLevel === lvl || h.school_head_level === lvl
+              (h) => h.schoolHeadLevel === lvl || h.school_head_level === lvl,
             );
             if (found) initialAssign[lvl] = String(found.id);
           });
@@ -741,7 +749,10 @@ export default function Roster() {
             });
           }
           setModalHeadAssignments(initialAssign);
-          const mainH = currentHeads.find((h) => h.isMainSchoolHead || h.is_main_school_head) || currentHeads[0];
+          const mainH =
+            currentHeads.find(
+              (h) => h.isMainSchoolHead || h.is_main_school_head,
+            ) || currentHeads[0];
           setModalMainHeadId(mainH ? String(mainH.id) : null);
           setActiveLevelSlot(levels[0]);
         } else {
@@ -1264,8 +1275,14 @@ export default function Roster() {
       let aValue = a[sortConfig.key];
       let bValue = b[sortConfig.key];
       if (sortConfig.key === "name" || sortConfig.key === "lastName") {
-        aValue = `${a.lastName || ""}, ${a.firstName || ""} ${a.middleName || ""}`.trim().toLowerCase();
-        bValue = `${b.lastName || ""}, ${b.firstName || ""} ${b.middleName || ""}`.trim().toLowerCase();
+        aValue =
+          `${a.lastName || ""}, ${a.firstName || ""} ${a.middleName || ""}`
+            .trim()
+            .toLowerCase();
+        bValue =
+          `${b.lastName || ""}, ${b.firstName || ""} ${b.middleName || ""}`
+            .trim()
+            .toLowerCase();
       } else if (typeof aValue === "boolean") {
         aValue = aValue ? 1 : 0;
         bValue = bValue ? 1 : 0;
@@ -1346,7 +1363,14 @@ export default function Roster() {
                 View and manage all school staff members.
               </p>
             </div>
-            <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: "8px",
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
               <button
                 className="btn secondary"
                 type="button"
@@ -1462,7 +1486,9 @@ export default function Roster() {
                 boxShadow: "0 2px 8px rgba(16, 185, 129, 0.06)",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "14px" }}
+              >
                 <div
                   style={{
                     width: "44px",
@@ -1480,7 +1506,14 @@ export default function Roster() {
                   <FiUserCheck size={22} />
                 </div>
                 <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      flexWrap: "wrap",
+                    }}
+                  >
                     <span
                       style={{
                         fontSize: "11px",
@@ -1514,7 +1547,14 @@ export default function Roster() {
                   </div>
 
                   {allRosterHeads.length > 1 ? (
-                    <div style={{ marginTop: "6px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                    <div
+                      style={{
+                        marginTop: "6px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "6px",
+                      }}
+                    >
                       {allRosterHeads.map((h, idx) => {
                         const isMain =
                           h.isMainSchoolHead ||
@@ -1523,26 +1563,36 @@ export default function Roster() {
 
                         // Resolve educational level title accurately
                         let headLevel =
-                          h.schoolHeadLevel ||
-                          h.school_head_level ||
-                          null;
+                          h.schoolHeadLevel || h.school_head_level || null;
 
-                        if (!headLevel && schoolInfo?.schoolHeadConfig?.assignments) {
-                          const match = Object.entries(schoolInfo.schoolHeadConfig.assignments).find(
+                        if (
+                          !headLevel &&
+                          schoolInfo?.schoolHeadConfig?.assignments
+                        ) {
+                          const match = Object.entries(
+                            schoolInfo.schoolHeadConfig.assignments,
+                          ).find(
                             ([lvl, pId]) =>
                               String(pId) === String(h.id) ||
                               (h.prn && String(pId) === String(h.prn)) ||
-                              (h.legacy_id && String(pId) === String(h.legacy_id))
+                              (h.legacy_id &&
+                                String(pId) === String(h.legacy_id)),
                           );
                           if (match) headLevel = match[0];
                         }
 
-                        if (!headLevel && Array.isArray(educationalLevels) && educationalLevels[idx]) {
+                        if (
+                          !headLevel &&
+                          Array.isArray(educationalLevels) &&
+                          educationalLevels[idx]
+                        ) {
                           headLevel = educationalLevels[idx];
                         }
 
                         const levelTitle = headLevel
-                          ? (/head$/i.test(headLevel.trim()) ? headLevel.trim() : `${headLevel.trim()} Head`)
+                          ? /head$/i.test(headLevel.trim())
+                            ? headLevel.trim()
+                            : `${headLevel.trim()} Head`
                           : "School Head";
 
                         return (
@@ -1576,8 +1626,16 @@ export default function Roster() {
                                 ★ Main Head
                               </span>
                             )}
-                            <strong style={{ color: "#0f172a" }}>{formatPersonnelName(h)}</strong>
-                            <span style={{ fontSize: "12px", color: isMain ? "#b45309" : "#475569", fontWeight: "700" }}>
+                            <strong style={{ color: "#0f172a" }}>
+                              {formatPersonnelName(h)}
+                            </strong>
+                            <span
+                              style={{
+                                fontSize: "12px",
+                                color: isMain ? "#b45309" : "#475569",
+                                fontWeight: "700",
+                              }}
+                            >
                               • {levelTitle}
                             </span>
                           </div>
@@ -1586,8 +1644,17 @@ export default function Roster() {
                     </div>
                   ) : (
                     <>
-                      <h3 style={{ margin: "2px 0 0", fontSize: "16px", fontWeight: "800", color: "#0f172a" }}>
-                        {currentHead ? formatPersonnelName(currentHead) : sdoSchoolHead?.name}
+                      <h3
+                        style={{
+                          margin: "2px 0 0",
+                          fontSize: "16px",
+                          fontWeight: "800",
+                          color: "#0f172a",
+                        }}
+                      >
+                        {currentHead
+                          ? formatPersonnelName(currentHead)
+                          : sdoSchoolHead?.name}
                       </h3>
                       <div
                         style={{
@@ -1616,7 +1683,9 @@ export default function Roster() {
                   )}
                 </div>
               </div>
-              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <div
+                style={{ display: "flex", gap: "8px", alignItems: "center" }}
+              >
                 <button
                   type="button"
                   className="btn secondary"
@@ -1636,7 +1705,10 @@ export default function Roster() {
                   }}
                   title="Change who is designated as School Head"
                 >
-                  <FiRefreshCw size={13} /> {allRosterHeads.length > 1 ? "Change School Heads" : "Change School Head"}
+                  <FiRefreshCw size={13} />{" "}
+                  {allRosterHeads.length > 1
+                    ? "Change School Heads"
+                    : "Change School Head"}
                 </button>
               </div>
             </div>
@@ -1656,7 +1728,9 @@ export default function Roster() {
                 boxShadow: "0 2px 10px rgba(220, 38, 38, 0.08)",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "14px" }}
+              >
                 <div
                   style={{
                     width: "44px",
@@ -1674,29 +1748,75 @@ export default function Roster() {
                   <FiAlertCircle size={22} />
                 </div>
                 <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span style={{ fontSize: "11px", fontWeight: "800", color: "#991b1b", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: "800",
+                        color: "#991b1b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                      }}
+                    >
                       Institutional Compliance
                     </span>
-                    <span style={{ background: "#fee2e2", color: "#b91c1c", border: "1px solid #fca5a5", borderRadius: "999px", padding: "1px 8px", fontSize: "10px", fontWeight: "700" }}>
+                    <span
+                      style={{
+                        background: "#fee2e2",
+                        color: "#b91c1c",
+                        border: "1px solid #fca5a5",
+                        borderRadius: "999px",
+                        padding: "1px 8px",
+                        fontSize: "10px",
+                        fontWeight: "700",
+                      }}
+                    >
                       Required for eSF7
                     </span>
                   </div>
-                  <h4 style={{ margin: "2px 0 0", fontSize: "15px", fontWeight: "800", color: "#991b1b" }}>
+                  <h4
+                    style={{
+                      margin: "2px 0 0",
+                      fontSize: "15px",
+                      fontWeight: "800",
+                      color: "#991b1b",
+                    }}
+                  >
                     No School Head Currently Designated
                   </h4>
-                  <p style={{ margin: "2px 0 0", fontSize: "12px", color: "#b91c1c" }}>
-                    DepEd guidelines require an official School Head (Principal, TIC, or Head Teacher) before saving.
+                  <p
+                    style={{
+                      margin: "2px 0 0",
+                      fontSize: "12px",
+                      color: "#b91c1c",
+                    }}
+                  >
+                    DepEd guidelines require an official School Head (Principal,
+                    TIC, or Head Teacher) before saving.
                   </p>
                 </div>
               </div>
-              <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "8px",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
                 <button
                   type="button"
                   className="btn"
                   onClick={() => setIsChangeHeadModalOpen(true)}
                   style={{
-                    background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                    background:
+                      "linear-gradient(135deg, #059669 0%, #047857 100%)",
                     color: "white",
                     border: 0,
                     borderRadius: "8px",
@@ -1925,363 +2045,389 @@ export default function Roster() {
                         Plantilla Position
                       </button>
                     </th>
-                    <th style={{ width: "90px", textAlign: "center" }}>Actions</th>
+                    <th style={{ width: "90px", textAlign: "center" }}>
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredPersonnel.map((p) => {
-                    const isHead = Boolean(p.isSchoolHead === true || p.is_school_head === true);
+                    const isHead = Boolean(
+                      p.isSchoolHead === true || p.is_school_head === true,
+                    );
                     return (
-                    <tr
-                      key={p.id}
-                      className="roster-row"
-                      style={isHead ? { background: "rgba(240, 253, 244, 0.75)" } : undefined}
-                    >
-                      <td>
-                        <span
-                          onClick={() => {
-                            setActivePersonnelId(p.id);
-                            setActiveView("profile");
-                          }}
-                          style={{
-                            fontWeight: 600,
-                            color: "#0f172a",
-                            cursor: "pointer",
-                            transition: "color 0.15s ease",
-                          }}
-                          title="Click to view Personnel Profile"
-                          onMouseEnter={(e) => (e.currentTarget.style.color = "#0284c7")}
-                          onMouseLeave={(e) => (e.currentTarget.style.color = "#0f172a")}
-                        >
-                          {formatPersonnelName(p)}
-                        </span>
-                        {isHead && (allRosterHeads.length <= 1 || p.isMainSchoolHead || p.is_main_school_head || String(p.id) === String(currentHead?.id)) && (
+                      <tr
+                        key={p.id}
+                        className="roster-row"
+                        style={
+                          isHead
+                            ? { background: "rgba(240, 253, 244, 0.75)" }
+                            : undefined
+                        }
+                      >
+                        <td>
                           <span
-                            style={{
-                              marginLeft: "8px",
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: "4px",
-                              padding: "2px 8px",
-                              background: "#fef3c7",
-                              color: "#92400e",
-                              border: "1px solid #fcd34d",
-                              borderRadius: "6px",
-                              fontSize: "10px",
-                              fontWeight: "800",
-                              textTransform: "uppercase",
-                              verticalAlign: "middle",
+                            onClick={() => {
+                              setActivePersonnelId(p.id);
+                              setActiveView("profile");
                             }}
-                            title="Main School Head / DepEd eSF7 Signatory"
-                          >
-                            <FiUserCheck size={11} /> Main School Head
-                          </span>
-                        )}
-                        {p.isDraft && (
-                          <span
                             style={{
-                              marginLeft: "6px",
-                              display: "inline-flex",
-                              alignItems: "center",
-                              padding: "2px 6px",
-                              background: "#FEF3C7",
-                              color: "#D97706",
-                              border: "1px solid #FCD34D",
-                              borderRadius: "6px",
-                              fontSize: "10px",
-                              fontWeight: "bold",
-                              textTransform: "uppercase",
+                              fontWeight: 600,
+                              color: "#0f172a",
+                              cursor: "pointer",
+                              transition: "color 0.15s ease",
                             }}
+                            title="Click to view Personnel Profile"
+                            onMouseEnter={(e) =>
+                              (e.currentTarget.style.color = "#0284c7")
+                            }
+                            onMouseLeave={(e) =>
+                              (e.currentTarget.style.color = "#0f172a")
+                            }
                           >
-                            Draft
+                            {formatPersonnelName(p)}
                           </span>
-                        )}
-                        {(() => {
-                          const isRejected = (() => {
-                            if (
-                              p.reassignmentStatus === "rejected" ||
-                              p.requestStatus === "rejected"
-                            )
-                              return true;
-                            const depStatus = String(
-                              p.deploymentStatus || p.deployment_status || "",
-                            ).toUpperCase();
-                            if (depStatus.includes("REJECTED")) return true;
-
-                            const pId = String(p.id || "")
-                              .replace(/^(PER-|PRN-)/i, "")
-                              .trim();
-                            const prn = String(p.prn || p.profilingCode || "")
-                              .replace(/^PRN-/i, "")
-                              .trim();
-                            const pFn = String(
-                              p.firstName || p.first_name || "",
-                            )
-                              .trim()
-                              .toUpperCase();
-                            const pLn = String(p.lastName || p.last_name || "")
-                              .trim()
-                              .toUpperCase();
-
-                            const allReqs = [
-                              ...(outgoingRequests || []),
-                              ...(requestHistory || []),
-                            ];
-                            const matched = allReqs.find((req) => {
-                              const reqPId = String(
-                                req.personnel_id || req.personnelId || "",
+                          {isHead &&
+                            (allRosterHeads.length <= 1 ||
+                              p.isMainSchoolHead ||
+                              p.is_main_school_head ||
+                              String(p.id) === String(currentHead?.id)) && (
+                              <span
+                                style={{
+                                  marginLeft: "8px",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "4px",
+                                  padding: "2px 8px",
+                                  background: "#fef3c7",
+                                  color: "#92400e",
+                                  border: "1px solid #fcd34d",
+                                  borderRadius: "6px",
+                                  fontSize: "10px",
+                                  fontWeight: "800",
+                                  textTransform: "uppercase",
+                                  verticalAlign: "middle",
+                                }}
+                                title="Main School Head / DepEd eSF7 Signatory"
+                              >
+                                <FiUserCheck size={11} /> Main School Head
+                              </span>
+                            )}
+                          {p.isDraft && (
+                            <span
+                              style={{
+                                marginLeft: "6px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                padding: "2px 6px",
+                                background: "#FEF3C7",
+                                color: "#D97706",
+                                border: "1px solid #FCD34D",
+                                borderRadius: "6px",
+                                fontSize: "10px",
+                                fontWeight: "bold",
+                                textTransform: "uppercase",
+                              }}
+                            >
+                              Draft
+                            </span>
+                          )}
+                          {(() => {
+                            const isRejected = (() => {
+                              if (
+                                p.reassignmentStatus === "rejected" ||
+                                p.requestStatus === "rejected"
                               )
+                                return true;
+                              const depStatus = String(
+                                p.deploymentStatus || p.deployment_status || "",
+                              ).toUpperCase();
+                              if (depStatus.includes("REJECTED")) return true;
+
+                              const pId = String(p.id || "")
                                 .replace(/^(PER-|PRN-)/i, "")
                                 .trim();
-                              if (
-                                pId &&
-                                reqPId &&
-                                (pId === reqPId ||
-                                  reqPId.endsWith(pId) ||
-                                  pId.endsWith(reqPId))
+                              const prn = String(p.prn || p.profilingCode || "")
+                                .replace(/^PRN-/i, "")
+                                .trim();
+                              const pFn = String(
+                                p.firstName || p.first_name || "",
                               )
-                                return true;
-                              if (
-                                prn &&
-                                reqPId &&
-                                (prn === reqPId ||
-                                  reqPId.endsWith(prn) ||
-                                  prn.endsWith(reqPId))
+                                .trim()
+                                .toUpperCase();
+                              const pLn = String(
+                                p.lastName || p.last_name || "",
                               )
-                                return true;
-                              const reqName = String(
-                                req.personnel_name || req.personnelName || "",
-                              ).toUpperCase();
-                              if (
-                                pLn &&
-                                pFn &&
-                                reqName &&
-                                reqName.includes(pLn) &&
-                                reqName.includes(pFn)
-                              )
-                                return true;
-                              return false;
-                            });
+                                .trim()
+                                .toUpperCase();
 
-                            return matched
-                              ? String(matched.status || "").toLowerCase() ===
-                                  "rejected"
-                              : false;
-                          })();
-
-                          if (isRejected) {
-                            return (
-                              <span
-                                style={{
-                                  marginLeft: "6px",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  padding: "2px 8px",
-                                  background: "#FEE2E2",
-                                  color: "#DC2626",
-                                  border: "1px solid #F87171",
-                                  borderRadius: "6px",
-                                  fontSize: "10px",
-                                  fontWeight: "bold",
-                                  textTransform: "uppercase",
-                                }}
-                                title="Inter-School Reassignment Request Rejected by Target School"
-                              >
-                                <FiAlertCircle
-                                  size={10}
-                                  style={{ marginRight: "3px" }}
-                                />{" "}
-                                REJECTED
-                              </span>
-                            );
-                          }
-
-                          if (
-                            p.isShared ||
-                            String(
-                              p.deploymentStatus || p.deployment_status || "",
-                            )
-                              .toUpperCase()
-                              .includes("BORROWED")
-                          ) {
-                            return (
-                              <span
-                                style={{
-                                  marginLeft: "6px",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  padding: "2px 6px",
-                                  background: String(
-                                    p.deploymentStatus ||
-                                      p.deployment_status ||
-                                      "",
-                                  )
-                                    .toUpperCase()
-                                    .includes("BORROWED")
-                                    ? "#FEF3C7"
-                                    : "#e0e7ff",
-                                  color: String(
-                                    p.deploymentStatus ||
-                                      p.deployment_status ||
-                                      "",
-                                  )
-                                    .toUpperCase()
-                                    .includes("BORROWED")
-                                    ? "#92400E"
-                                    : "#3730a3",
-                                  border: String(
-                                    p.deploymentStatus ||
-                                      p.deployment_status ||
-                                      "",
-                                  )
-                                    .toUpperCase()
-                                    .includes("BORROWED")
-                                    ? "1px solid #FCD34D"
-                                    : "1px solid #c7d2fe",
-                                  borderRadius: "6px",
-                                  fontSize: "10px",
-                                  fontWeight: "bold",
-                                  textTransform: "uppercase",
-                                }}
-                                title={
-                                  String(
-                                    p.deploymentStatus ||
-                                      p.deployment_status ||
-                                      "",
-                                  )
-                                    .toUpperCase()
-                                    .includes("BORROWED")
-                                    ? "Borrowed from Mother School"
-                                    : "Shared Personnel"
-                                }
-                              >
-                                {String(
-                                  p.deploymentStatus ||
-                                    p.deployment_status ||
-                                    "",
+                              const allReqs = [
+                                ...(outgoingRequests || []),
+                                ...(requestHistory || []),
+                              ];
+                              const matched = allReqs.find((req) => {
+                                const reqPId = String(
+                                  req.personnel_id || req.personnelId || "",
                                 )
-                                  .toUpperCase()
-                                  .includes("BORROWED") ? (
-                                  <>
-                                    <FiTag
-                                      size={10}
-                                      style={{ marginRight: "3px" }}
-                                    />{" "}
-                                    BORROWED
-                                  </>
-                                ) : (
-                                  <>
-                                    <FiLink
-                                      size={10}
-                                      style={{ marginRight: "3px" }}
-                                    />{" "}
-                                    SHARED
-                                  </>
-                                )}
-                              </span>
-                            );
-                          }
+                                  .replace(/^(PER-|PRN-)/i, "")
+                                  .trim();
+                                if (
+                                  pId &&
+                                  reqPId &&
+                                  (pId === reqPId ||
+                                    reqPId.endsWith(pId) ||
+                                    pId.endsWith(reqPId))
+                                )
+                                  return true;
+                                if (
+                                  prn &&
+                                  reqPId &&
+                                  (prn === reqPId ||
+                                    reqPId.endsWith(prn) ||
+                                    prn.endsWith(reqPId))
+                                )
+                                  return true;
+                                const reqName = String(
+                                  req.personnel_name || req.personnelName || "",
+                                ).toUpperCase();
+                                if (
+                                  pLn &&
+                                  pFn &&
+                                  reqName &&
+                                  reqName.includes(pLn) &&
+                                  reqName.includes(pFn)
+                                )
+                                  return true;
+                                return false;
+                              });
 
-                          return null;
-                        })()}
-                      </td>
-                      <td>{p.depedEmail}</td>
-                      <td>
-                        {(() => {
-                          const isCanon = isCanonicalPosition(p.position);
-                          if (!isCanon) {
+                              return matched
+                                ? String(matched.status || "").toLowerCase() ===
+                                    "rejected"
+                                : false;
+                            })();
+
+                            if (isRejected) {
+                              return (
+                                <span
+                                  style={{
+                                    marginLeft: "6px",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    padding: "2px 8px",
+                                    background: "#FEE2E2",
+                                    color: "#DC2626",
+                                    border: "1px solid #F87171",
+                                    borderRadius: "6px",
+                                    fontSize: "10px",
+                                    fontWeight: "bold",
+                                    textTransform: "uppercase",
+                                  }}
+                                  title="Inter-School Reassignment Request Rejected by Target School"
+                                >
+                                  <FiAlertCircle
+                                    size={10}
+                                    style={{ marginRight: "3px" }}
+                                  />{" "}
+                                  REJECTED
+                                </span>
+                              );
+                            }
+
+                            if (
+                              p.isShared ||
+                              String(
+                                p.deploymentStatus || p.deployment_status || "",
+                              )
+                                .toUpperCase()
+                                .includes("BORROWED")
+                            ) {
+                              return (
+                                <span
+                                  style={{
+                                    marginLeft: "6px",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    padding: "2px 6px",
+                                    background: String(
+                                      p.deploymentStatus ||
+                                        p.deployment_status ||
+                                        "",
+                                    )
+                                      .toUpperCase()
+                                      .includes("BORROWED")
+                                      ? "#FEF3C7"
+                                      : "#e0e7ff",
+                                    color: String(
+                                      p.deploymentStatus ||
+                                        p.deployment_status ||
+                                        "",
+                                    )
+                                      .toUpperCase()
+                                      .includes("BORROWED")
+                                      ? "#92400E"
+                                      : "#3730a3",
+                                    border: String(
+                                      p.deploymentStatus ||
+                                        p.deployment_status ||
+                                        "",
+                                    )
+                                      .toUpperCase()
+                                      .includes("BORROWED")
+                                      ? "1px solid #FCD34D"
+                                      : "1px solid #c7d2fe",
+                                    borderRadius: "6px",
+                                    fontSize: "10px",
+                                    fontWeight: "bold",
+                                    textTransform: "uppercase",
+                                  }}
+                                  title={
+                                    String(
+                                      p.deploymentStatus ||
+                                        p.deployment_status ||
+                                        "",
+                                    )
+                                      .toUpperCase()
+                                      .includes("BORROWED")
+                                      ? "Borrowed from Mother School"
+                                      : "Shared Personnel"
+                                  }
+                                >
+                                  {String(
+                                    p.deploymentStatus ||
+                                      p.deployment_status ||
+                                      "",
+                                  )
+                                    .toUpperCase()
+                                    .includes("BORROWED") ? (
+                                    <>
+                                      <FiTag
+                                        size={10}
+                                        style={{ marginRight: "3px" }}
+                                      />{" "}
+                                      BORROWED
+                                    </>
+                                  ) : (
+                                    <>
+                                      <FiLink
+                                        size={10}
+                                        style={{ marginRight: "3px" }}
+                                      />{" "}
+                                      SHARED
+                                    </>
+                                  )}
+                                </span>
+                              );
+                            }
+
+                            return null;
+                          })()}
+                        </td>
+                        <td>{p.depedEmail}</td>
+                        <td>
+                          {(() => {
+                            const isCanon = isCanonicalPosition(p.position);
+                            if (!isCanon) {
+                              return (
+                                <span
+                                  style={{
+                                    color: "#94a3b8",
+                                    fontStyle: "italic",
+                                    fontSize: "12px",
+                                  }}
+                                >
+                                  —
+                                </span>
+                              );
+                            }
+                            const pType =
+                              getCategoryForCanonicalPosition(p.position) ||
+                              detectPersonnelTypeFromPosition(
+                                p.position || "",
+                              ) ||
+                              p.type ||
+                              "teaching";
                             return (
                               <span
-                                style={{
-                                  color: "#94a3b8",
-                                  fontStyle: "italic",
-                                  fontSize: "12px",
-                                }}
+                                className={`category-badge category-${pType}`}
                               >
-                                —
+                                {pType === "teaching"
+                                  ? "Teaching"
+                                  : pType === "teaching-related"
+                                    ? "Related"
+                                    : "Non-Teaching"}
                               </span>
                             );
-                          }
-                          const pType =
-                            getCategoryForCanonicalPosition(p.position) ||
-                            detectPersonnelTypeFromPosition(p.position || "") ||
-                            p.type ||
-                            "teaching";
-                          return (
+                          })()}
+                        </td>
+                        <td>
+                          {isCanonicalPosition(p.position) ? (
+                            p.position
+                          ) : (
                             <span
-                              className={`category-badge category-${pType}`}
-                            >
-                              {pType === "teaching"
-                                ? "Teaching"
-                                : pType === "teaching-related"
-                                  ? "Related"
-                                  : "Non-Teaching"}
-                            </span>
-                          );
-                        })()}
-                      </td>
-                      <td>
-                        {isCanonicalPosition(p.position) ? (
-                          p.position
-                        ) : (
-                          <span
-                            style={{
-                              color: "#94a3b8",
-                              fontStyle: "italic",
-                              fontSize: "12px",
-                            }}
-                          >
-                            —
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        <div style={{ display: "flex", gap: "5px", justifyContent: "center" }}>
-                          {p.isDraft && (
-                            <button
-                              className="btn"
                               style={{
-                                minHeight: "34px",
-                                padding: "6px 12px",
+                                color: "#94a3b8",
+                                fontStyle: "italic",
                                 fontSize: "12px",
-                                background: "#D97706",
-                                color: "white",
-                                border: 0,
-                              }}
-                              onClick={async () => {
-                                await commitDraftPersonnel(p.id);
                               }}
                             >
-                              Save
-                            </button>
+                              —
+                            </span>
                           )}
-                          <button
-                            className="btn danger"
+                        </td>
+                        <td>
+                          <div
                             style={{
-                              minHeight: "34px",
-                              padding: "6px 10px",
-                              fontSize: "12px",
-                              display: "inline-flex",
-                              alignItems: "center",
+                              display: "flex",
+                              gap: "5px",
                               justifyContent: "center",
                             }}
-                            title="Delete Personnel"
-                            onClick={async () => {
-                              if (
-                                await showConfirm(
-                                  "Delete Personnel?",
-                                  `Are you sure you want to delete ${p.firstName} ${p.lastName}?`,
-                                )
-                              ) {
-                                deletePersonnel(p.id);
-                              }
-                            }}
                           >
-                            <FiTrash2 size={13} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                            {p.isDraft && (
+                              <button
+                                className="btn"
+                                style={{
+                                  minHeight: "34px",
+                                  padding: "6px 12px",
+                                  fontSize: "12px",
+                                  background: "#D97706",
+                                  color: "white",
+                                  border: 0,
+                                }}
+                                onClick={async () => {
+                                  await commitDraftPersonnel(p.id);
+                                }}
+                              >
+                                Save
+                              </button>
+                            )}
+                            <button
+                              className="btn danger"
+                              style={{
+                                minHeight: "34px",
+                                padding: "6px 10px",
+                                fontSize: "12px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                              title="Delete Personnel"
+                              onClick={async () => {
+                                if (
+                                  await showConfirm(
+                                    "Delete Personnel?",
+                                    `Are you sure you want to delete ${p.firstName} ${p.lastName}?`,
+                                  )
+                                ) {
+                                  deletePersonnel(p.id);
+                                }
+                              }}
+                            >
+                              <FiTrash2 size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
                     );
                   })}
                 </tbody>
@@ -2854,7 +3000,8 @@ export default function Roster() {
                   <strong>Current Status:</strong> No School Head is currently
                   selected.
                   <div style={{ marginTop: "4px", color: "#7f1d1d" }}>
-                    Please select an official <strong>School Head</strong> from qualified teaching personnel or designate an SDO OIC.
+                    Please select an official <strong>School Head</strong> from
+                    qualified teaching personnel or designate an SDO OIC.
                   </div>
                 </div>
               </div>
@@ -2966,7 +3113,9 @@ export default function Roster() {
                 background: "linear-gradient(to right, #f8fafc, #ffffff)",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "12px" }}
+              >
                 <div
                   style={{
                     width: "42px",
@@ -2984,7 +3133,14 @@ export default function Roster() {
                   <FiUserCheck size={22} />
                 </div>
                 <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      flexWrap: "wrap",
+                    }}
+                  >
                     <h3
                       id="select-head-modal-title"
                       style={{
@@ -3050,7 +3206,15 @@ export default function Roster() {
             </div>
 
             {/* Modal Body Container with Scroll */}
-            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+            <div
+              style={{
+                flex: 1,
+                minHeight: 0,
+                overflowY: "auto",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
               {/* Question Banner for 2 or 3 educational levels */}
               {educationalLevels.length > 1 && (
                 <div
@@ -3065,15 +3229,32 @@ export default function Roster() {
                     gap: "10px",
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <FiInfo size={16} style={{ color: "#2563eb", flexShrink: 0 }} />
-                    <span style={{ fontSize: "13px", fontWeight: "800", color: "#1e293b" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <FiInfo
+                      size={16}
+                      style={{ color: "#2563eb", flexShrink: 0 }}
+                    />
+                    <span
+                      style={{
+                        fontSize: "13px",
+                        fontWeight: "800",
+                        color: "#1e293b",
+                      }}
+                    >
                       {educationalLevels.length === 2
                         ? "Do you have two School Heads for these educational levels?"
                         : "Do you have three School Heads, one for each educational level?"}
                     </span>
                   </div>
-                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                  <div
+                    style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}
+                  >
                     <button
                       type="button"
                       onClick={() => {
@@ -3084,9 +3265,18 @@ export default function Roster() {
                         flex: 1,
                         padding: "10px 14px",
                         borderRadius: "10px",
-                        border: modalHasMultipleHeads === true ? "2px solid #059669" : "1.5px solid #cbd5e1",
-                        background: modalHasMultipleHeads === true ? "#ecfdf5" : "#ffffff",
-                        color: modalHasMultipleHeads === true ? "#065f46" : "#475569",
+                        border:
+                          modalHasMultipleHeads === true
+                            ? "2px solid #059669"
+                            : "1.5px solid #cbd5e1",
+                        background:
+                          modalHasMultipleHeads === true
+                            ? "#ecfdf5"
+                            : "#ffffff",
+                        color:
+                          modalHasMultipleHeads === true
+                            ? "#065f46"
+                            : "#475569",
                         fontWeight: "700",
                         fontSize: "12px",
                         cursor: "pointer",
@@ -3109,9 +3299,18 @@ export default function Roster() {
                         flex: 1,
                         padding: "10px 14px",
                         borderRadius: "10px",
-                        border: modalHasMultipleHeads === false ? "2px solid #059669" : "1.5px solid #cbd5e1",
-                        background: modalHasMultipleHeads === false ? "#ecfdf5" : "#ffffff",
-                        color: modalHasMultipleHeads === false ? "#065f46" : "#475569",
+                        border:
+                          modalHasMultipleHeads === false
+                            ? "2px solid #059669"
+                            : "1.5px solid #cbd5e1",
+                        background:
+                          modalHasMultipleHeads === false
+                            ? "#ecfdf5"
+                            : "#ffffff",
+                        color:
+                          modalHasMultipleHeads === false
+                            ? "#065f46"
+                            : "#475569",
                         fontWeight: "700",
                         fontSize: "12px",
                         cursor: "pointer",
@@ -3129,136 +3328,196 @@ export default function Roster() {
               )}
 
               {/* Multiple Educational Level Slots: ONLY shown IF THEY CLICK YES */}
-              {modalHasMultipleHeads === true && educationalLevels.length > 1 && (
-                <div style={{ margin: "14px 24px 0", display: "flex", flexDirection: "column", gap: "8px" }}>
-                  <div style={{ fontSize: "11px", fontWeight: "800", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                    Select candidate for each educational level:
-                  </div>
+              {modalHasMultipleHeads === true &&
+                educationalLevels.length > 1 && (
                   <div
                     style={{
-                      display: "grid",
-                      gridTemplateColumns:
-                        educationalLevels.length > 2
-                          ? "repeat(auto-fit, minmax(160px, 1fr))"
-                          : "repeat(2, 1fr)",
-                      gap: "10px",
+                      margin: "14px 24px 0",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
                     }}
                   >
-                    {educationalLevels.map((lvl) => {
-                      const assignedId = modalHeadAssignments[lvl];
-                      const assignedPerson = personnel.find((p) => String(p.id) === String(assignedId));
-                      const isActiveSlot = activeLevelSlot === lvl;
-                      const isMain = String(modalMainHeadId) === String(assignedId) && Boolean(assignedId);
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: "800",
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                      }}
+                    >
+                      Select candidate for each educational level:
+                    </div>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                          educationalLevels.length > 2
+                            ? "repeat(auto-fit, minmax(160px, 1fr))"
+                            : "repeat(2, 1fr)",
+                        gap: "10px",
+                      }}
+                    >
+                      {educationalLevels.map((lvl) => {
+                        const assignedId = modalHeadAssignments[lvl];
+                        const assignedPerson = personnel.find(
+                          (p) => String(p.id) === String(assignedId),
+                        );
+                        const isActiveSlot = activeLevelSlot === lvl;
+                        const isMain =
+                          String(modalMainHeadId) === String(assignedId) &&
+                          Boolean(assignedId);
 
-                      return (
-                        <div
-                          key={lvl}
-                          onClick={() => setActiveLevelSlot(lvl)}
-                          style={{
-                            border: isActiveSlot
-                              ? "2px solid #059669"
-                              : assignedPerson
-                                ? "1.5px solid #bbf7d0"
-                                : "1.5px dashed #cbd5e1",
-                            background: isActiveSlot
-                              ? "#f0fdf4"
-                              : assignedPerson
-                                ? "#f8fafc"
-                                : "#ffffff",
-                            borderRadius: "12px",
-                            padding: "10px 12px",
-                            cursor: "pointer",
-                            transition: "all 0.15s ease",
-                            display: "flex",
-                            flexDirection: "column",
-                            justifyContent: "space-between",
-                            minHeight: "72px",
-                          }}
-                        >
-                          <div>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-                              <span
+                        return (
+                          <div
+                            key={lvl}
+                            onClick={() => setActiveLevelSlot(lvl)}
+                            style={{
+                              border: isActiveSlot
+                                ? "2px solid #059669"
+                                : assignedPerson
+                                  ? "1.5px solid #bbf7d0"
+                                  : "1.5px dashed #cbd5e1",
+                              background: isActiveSlot
+                                ? "#f0fdf4"
+                                : assignedPerson
+                                  ? "#f8fafc"
+                                  : "#ffffff",
+                              borderRadius: "12px",
+                              padding: "10px 12px",
+                              cursor: "pointer",
+                              transition: "all 0.15s ease",
+                              display: "flex",
+                              flexDirection: "column",
+                              justifyContent: "space-between",
+                              minHeight: "72px",
+                            }}
+                          >
+                            <div>
+                              <div
                                 style={{
-                                  fontSize: "11px",
-                                  fontWeight: "800",
-                                  color: isActiveSlot ? "#059669" : "#475569",
-                                  textTransform: "uppercase",
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  marginBottom: "4px",
                                 }}
                               >
-                                {lvl} Head
-                              </span>
-                              {isMain && (
                                 <span
                                   style={{
-                                    background: "#fef3c7",
-                                    color: "#92400e",
-                                    border: "1px solid #fcd34d",
-                                    borderRadius: "999px",
-                                    padding: "0 6px",
-                                    fontSize: "9px",
+                                    fontSize: "11px",
                                     fontWeight: "800",
+                                    color: isActiveSlot ? "#059669" : "#475569",
+                                    textTransform: "uppercase",
                                   }}
                                 >
-                                  ★ Main Head
+                                  {lvl} Head
                                 </span>
+                                {isMain && (
+                                  <span
+                                    style={{
+                                      background: "#fef3c7",
+                                      color: "#92400e",
+                                      border: "1px solid #fcd34d",
+                                      borderRadius: "999px",
+                                      padding: "0 6px",
+                                      fontSize: "9px",
+                                      fontWeight: "800",
+                                    }}
+                                  >
+                                    ★ Main Head
+                                  </span>
+                                )}
+                              </div>
+                              {assignedPerson ? (
+                                <div>
+                                  <div
+                                    style={{
+                                      fontWeight: "700",
+                                      fontSize: "13px",
+                                      color: "#0f172a",
+                                      lineHeight: "1.3",
+                                    }}
+                                  >
+                                    {formatPersonnelName(assignedPerson)}
+                                  </div>
+                                  <div
+                                    style={{
+                                      fontSize: "11px",
+                                      color: "#64748b",
+                                      marginTop: "2px",
+                                    }}
+                                  >
+                                    {assignedPerson.position || "Faculty"}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div
+                                  style={{
+                                    fontSize: "11px",
+                                    color: "#94a3b8",
+                                    fontStyle: "italic",
+                                    marginTop: "4px",
+                                  }}
+                                >
+                                  + Click to choose candidate below
+                                </div>
                               )}
                             </div>
-                            {assignedPerson ? (
-                              <div>
-                                <div style={{ fontWeight: "700", fontSize: "13px", color: "#0f172a", lineHeight: "1.3" }}>
-                                  {formatPersonnelName(assignedPerson)}
-                                </div>
-                                <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>
-                                  {assignedPerson.position || "Faculty"}
-                                </div>
-                              </div>
-                            ) : (
-                              <div style={{ fontSize: "11px", color: "#94a3b8", fontStyle: "italic", marginTop: "4px" }}>
-                                + Click to choose candidate below
+                            {assignedPerson && (
+                              <div
+                                style={{
+                                  marginTop: "6px",
+                                  display: "flex",
+                                  justifyContent: "flex-end",
+                                }}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setModalHeadAssignments((prev) => {
+                                      const next = { ...prev };
+                                      delete next[lvl];
+                                      return next;
+                                    });
+                                    setActiveLevelSlot(lvl);
+                                    if (
+                                      String(modalMainHeadId) ===
+                                      String(assignedId)
+                                    ) {
+                                      const remaining = Object.entries(
+                                        modalHeadAssignments,
+                                      ).find(([l, id]) => l !== lvl && id);
+                                      setModalMainHeadId(
+                                        remaining ? String(remaining[1]) : null,
+                                      );
+                                    }
+                                  }}
+                                  style={{
+                                    background: "#f1f5f9",
+                                    border: "1px solid #cbd5e1",
+                                    borderRadius: "6px",
+                                    color: "#334155",
+                                    fontSize: "11px",
+                                    fontWeight: "700",
+                                    cursor: "pointer",
+                                    padding: "3px 8px",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "3px",
+                                  }}
+                                >
+                                  <FiEdit2 size={11} /> Change
+                                </button>
                               </div>
                             )}
                           </div>
-                          {assignedPerson && (
-                            <div style={{ marginTop: "6px", display: "flex", justifyContent: "flex-end" }}>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setModalHeadAssignments((prev) => {
-                                    const next = { ...prev };
-                                    delete next[lvl];
-                                    return next;
-                                  });
-                                  setActiveLevelSlot(lvl);
-                                  if (String(modalMainHeadId) === String(assignedId)) {
-                                    const remaining = Object.entries(modalHeadAssignments).find(([l, id]) => l !== lvl && id);
-                                    setModalMainHeadId(remaining ? String(remaining[1]) : null);
-                                  }
-                                }}
-                                style={{
-                                  background: "#f1f5f9",
-                                  border: "1px solid #cbd5e1",
-                                  borderRadius: "6px",
-                                  color: "#334155",
-                                  fontSize: "11px",
-                                  fontWeight: "700",
-                                  cursor: "pointer",
-                                  padding: "3px 8px",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: "3px",
-                                }}
-                              >
-                                <FiEdit2 size={11} /> Change
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
               {/* Dedicated View: Who is the Main School Head? Shown when ALL level slots are assigned */}
               {allMultipleSlotsAssigned && (
@@ -3278,7 +3537,8 @@ export default function Roster() {
                   {/* Step Header Banner */}
                   <div
                     style={{
-                      background: "linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)",
+                      background:
+                        "linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)",
                       border: "1px solid #bbf7d0",
                       borderRadius: "12px",
                       padding: "14px 16px",
@@ -3304,24 +3564,56 @@ export default function Roster() {
                       <FiStar size={18} />
                     </div>
                     <div>
-                      <div style={{ fontSize: "14px", fontWeight: "800", color: "#065f46" }}>
+                      <div
+                        style={{
+                          fontSize: "14px",
+                          fontWeight: "800",
+                          color: "#065f46",
+                        }}
+                      >
                         Select Main School Head (Official Signatory)
                       </div>
-                      <div style={{ fontSize: "12px", color: "#047857", marginTop: "2px", lineHeight: "1.45" }}>
-                        Both educational levels have designated heads. Choose which School Head will serve as the <strong>Official Main Signatory</strong> on DepEd eSF7 school forms.
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          color: "#047857",
+                          marginTop: "2px",
+                          lineHeight: "1.45",
+                        }}
+                      >
+                        Both educational levels have designated heads. Choose
+                        which School Head will serve as the{" "}
+                        <strong>Official Main Signatory</strong> on DepEd eSF7
+                        school forms.
                       </div>
                     </div>
                   </div>
 
                   {/* Signatory Cards List */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                    <div style={{ fontSize: "11px", fontWeight: "800", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "10px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: "800",
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                      }}
+                    >
                       Select Main Signatory:
                     </div>
                     {educationalLevels.map((lvl) => {
                       const pId = modalHeadAssignments[lvl];
                       if (!pId) return null;
-                      const p = personnel.find((item) => String(item.id) === String(pId));
+                      const p = personnel.find(
+                        (item) => String(item.id) === String(pId),
+                      );
                       if (!p) return null;
                       const isMain = String(modalMainHeadId) === String(pId);
 
@@ -3335,24 +3627,38 @@ export default function Roster() {
                             justifyContent: "space-between",
                             padding: "14px 18px",
                             borderRadius: "12px",
-                            border: isMain ? "2px solid #059669" : "1.5px solid #e2e8f0",
+                            border: isMain
+                              ? "2px solid #059669"
+                              : "1.5px solid #e2e8f0",
                             background: isMain ? "#f0fdf4" : "#ffffff",
                             cursor: "pointer",
-                            transition: "all 0.18s cubic-bezier(0.16, 1, 0.3, 1)",
+                            transition:
+                              "all 0.18s cubic-bezier(0.16, 1, 0.3, 1)",
                             boxShadow: isMain
                               ? "0 4px 16px rgba(5, 150, 105, 0.12)"
                               : "0 1px 3px rgba(15, 23, 42, 0.04)",
                           }}
                         >
                           {/* Left: Radio + Info */}
-                          <div style={{ display: "flex", alignItems: "center", gap: "14px", flex: 1, minWidth: 0, marginRight: "12px" }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "14px",
+                              flex: 1,
+                              minWidth: 0,
+                              marginRight: "12px",
+                            }}
+                          >
                             {/* Custom Radio Button */}
                             <div
                               style={{
                                 width: "20px",
                                 height: "20px",
                                 borderRadius: "50%",
-                                border: isMain ? "2px solid #059669" : "2px solid #cbd5e1",
+                                border: isMain
+                                  ? "2px solid #059669"
+                                  : "2px solid #cbd5e1",
                                 background: isMain ? "#059669" : "#ffffff",
                                 display: "flex",
                                 alignItems: "center",
@@ -3398,7 +3704,9 @@ export default function Roster() {
                                     borderRadius: "999px",
                                     background: isMain ? "#dcfce7" : "#e0f2fe",
                                     color: isMain ? "#15803d" : "#0369a1",
-                                    border: isMain ? "1px solid #86efac" : "1px solid #bae6fd",
+                                    border: isMain
+                                      ? "1px solid #86efac"
+                                      : "1px solid #bae6fd",
                                     textTransform: "uppercase",
                                     letterSpacing: "0.4px",
                                   }}
@@ -3406,7 +3714,13 @@ export default function Roster() {
                                   {lvl} Head
                                 </span>
                                 {p.position && (
-                                  <span style={{ fontSize: "12px", color: "#64748b", fontWeight: "500" }}>
+                                  <span
+                                    style={{
+                                      fontSize: "12px",
+                                      color: "#64748b",
+                                      fontWeight: "500",
+                                    }}
+                                  >
                                     {p.position}
                                   </span>
                                 )}
@@ -3428,10 +3742,12 @@ export default function Roster() {
                                   color: "#ffffff",
                                   fontWeight: "800",
                                   fontSize: "12px",
-                                  boxShadow: "0 2px 6px rgba(5, 150, 105, 0.25)",
+                                  boxShadow:
+                                    "0 2px 6px rgba(5, 150, 105, 0.25)",
                                 }}
                               >
-                                <FiCheck size={13} strokeWidth={3} /> Main Signatory
+                                <FiCheck size={13} strokeWidth={3} /> Main
+                                Signatory
                               </span>
                             ) : (
                               <button
@@ -3485,441 +3801,517 @@ export default function Roster() {
                       gap: "8px",
                     }}
                   >
-                    <FiCheckCircle size={15} style={{ color: "#059669", flexShrink: 0 }} />
+                    <FiCheckCircle
+                      size={15}
+                      style={{ color: "#059669", flexShrink: 0 }}
+                    />
                     <span>
-                      Ready to finalize. Click <strong>Confirm & Save School Heads</strong> below to commit designations.
+                      Ready to finalize. Click{" "}
+                      <strong>Confirm & Save School Heads</strong> below to
+                      commit designations.
                     </span>
                   </div>
                 </div>
               )}
 
               {/* Single Head Guidance Notice: ONLY shown IF THEY CLICK NO */}
-              {modalHasMultipleHeads === false && educationalLevels.length > 1 && (
-                <div
-                  style={{
-                    margin: "12px 24px 0",
-                    padding: "10px 14px",
-                    background: "#f0fdf4",
-                    border: "1px solid #bbf7d0",
-                    borderRadius: "10px",
-                    fontSize: "12px",
-                    color: "#166534",
-                  }}
-                >
-                  <strong>Single Head Mode:</strong> The selected School Head will serve as the Main School Head across all applicable educational levels ({educationalLevels.join(" & ")}).
-                </div>
-              )}
+              {modalHasMultipleHeads === false &&
+                educationalLevels.length > 1 && (
+                  <div
+                    style={{
+                      margin: "12px 24px 0",
+                      padding: "10px 14px",
+                      background: "#f0fdf4",
+                      border: "1px solid #bbf7d0",
+                      borderRadius: "10px",
+                      fontSize: "12px",
+                      color: "#166534",
+                    }}
+                  >
+                    <strong>Single Head Mode:</strong> The selected School Head
+                    will serve as the Main School Head across all applicable
+                    educational levels ({educationalLevels.join(" & ")}).
+                  </div>
+                )}
 
               {/* Unanswered State Prompt Card */}
-              {educationalLevels.length > 1 && modalHasMultipleHeads === null && (
-                <div
-                  style={{
-                    margin: "24px",
-                    padding: "24px 20px",
-                    textAlign: "center",
-                    background: "#f8fafc",
-                    borderRadius: "14px",
-                    border: "1.5px dashed #cbd5e1",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    gap: "8px",
-                  }}
-                >
+              {educationalLevels.length > 1 &&
+                modalHasMultipleHeads === null && (
                   <div
                     style={{
-                      width: "44px",
-                      height: "44px",
-                      borderRadius: "12px",
-                      background: "#e0f2fe",
-                      color: "#0284c7",
+                      margin: "24px",
+                      padding: "24px 20px",
+                      textAlign: "center",
+                      background: "#f8fafc",
+                      borderRadius: "14px",
+                      border: "1.5px dashed #cbd5e1",
                       display: "flex",
+                      flexDirection: "column",
                       alignItems: "center",
-                      justifyContent: "center",
+                      gap: "8px",
                     }}
                   >
-                    <FiInfo size={22} />
+                    <div
+                      style={{
+                        width: "44px",
+                        height: "44px",
+                        borderRadius: "12px",
+                        background: "#e0f2fe",
+                        color: "#0284c7",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <FiInfo size={22} />
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "14px",
+                        fontWeight: "700",
+                        color: "#1e293b",
+                      }}
+                    >
+                      Please answer the question above
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: "#64748b",
+                        maxWidth: "420px",
+                        lineHeight: "1.5",
+                      }}
+                    >
+                      Select <strong>Yes</strong> if your school has separate
+                      School Heads for each educational level (
+                      {educationalLevels.join(" & ")}), or <strong>No</strong>{" "}
+                      if one School Head oversees all levels.
+                    </div>
                   </div>
-                  <div style={{ fontSize: "14px", fontWeight: "700", color: "#1e293b" }}>
-                    Please answer the question above
-                  </div>
-                  <div style={{ fontSize: "12px", color: "#64748b", maxWidth: "420px", lineHeight: "1.5" }}>
-                    Select <strong>Yes</strong> if your school has separate School Heads for each educational level ({educationalLevels.join(" & ")}), or <strong>No</strong> if one School Head oversees all levels.
-                  </div>
-                </div>
-              )}
+                )}
 
               {/* Search & Candidates Section: ONLY shown when offering 1 level, OR single head mode, OR multiple heads with unassigned slots */}
-              {!allMultipleSlotsAssigned && (educationalLevels.length === 1 || modalHasMultipleHeads !== null) && (
-                <>
-                  {/* Search Input Bar */}
-              <div
-                style={{
-                  margin: "14px 24px 0",
-                  padding: "0",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "12px",
-                }}
-              >
-                <div
-                  style={{
-                    position: "relative",
-                    flex: 1,
-                    display: "flex",
-                    alignItems: "center",
-                  }}
-                >
-                  <FiSearch
-                    size={16}
-                    style={{
-                      position: "absolute",
-                      left: "14px",
-                      color: "#94a3b8",
-                    }}
-                  />
-                  <input
-                    type="text"
-                    placeholder={
-                      modalHasMultipleHeads && activeLevelSlot
-                        ? `Search candidate for ${activeLevelSlot} Head...`
-                        : "Search qualified candidates by name, position, or email..."
-                    }
-                    value={headSearchQuery}
-                    onChange={(e) => setHeadSearchQuery(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "10px 14px 10px 40px",
-                      fontSize: "13px",
-                      borderRadius: "10px",
-                      border: "1.5px solid #cbd5e1",
-                      background: "#ffffff",
-                      outline: "none",
-                    }}
-                  />
-                </div>
-                <span
-                  style={{
-                    fontSize: "12px",
-                    fontWeight: "700",
-                    color: "#64748b",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {qualifiedHeadCandidates.length} eligible
-                </span>
-              </div>
-
-              {/* Candidate List */}
-              <div
-                style={{
-                  flex: 1,
-                  minHeight: 0,
-                  overflowY: "auto",
-                  padding: "12px 24px 16px",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "8px",
-                }}
-              >
-                {qualifiedHeadCandidates.length === 0 ? (
-                  <div
-                    style={{
-                      padding: "36px 16px",
-                      textAlign: "center",
-                      color: "#94a3b8",
-                    }}
-                  >
-                    <FiAlertCircle size={32} style={{ margin: "0 auto 8px" }} />
-                    <p style={{ margin: 0, fontSize: "14px", fontWeight: "600" }}>
-                      No qualified teaching personnel found matching &quot;{headSearchQuery}&quot;
-                    </p>
-                    <p style={{ margin: "4px 0 0", fontSize: "12px" }}>
-                      Note: DepEd policy restricts School Head designation to teaching and teaching-related staff.
-                    </p>
-                  </div>
-                ) : (
-                  qualifiedHeadCandidates.map((p) => {
-                    const pIdStr = String(p.id);
-
-                    // Check multiple head assignments
-                    const assignedEntry = Object.entries(modalHeadAssignments).find(
-                      ([lvl, id]) => String(id) === pIdStr
-                    );
-                    const assignedLevel = assignedEntry ? assignedEntry[0] : null;
-
-                    // Single head check
-                    const isSingleCurrent = Boolean(
-                      !modalHasMultipleHeads &&
-                        (p.isSchoolHead === true ||
-                          p.is_school_head === true ||
-                          (currentHead && String(currentHead.id) === pIdStr))
-                    );
-
-                    const isAssignedToActiveSlot = Boolean(
-                      modalHasMultipleHeads && activeLevelSlot && modalHeadAssignments[activeLevelSlot] === pIdStr
-                    );
-                    const isAssignedToOtherSlot = Boolean(
-                      modalHasMultipleHeads && assignedLevel && assignedLevel !== activeLevelSlot
-                    );
-
-                    const pType =
-                      getCategoryForCanonicalPosition(p.position) ||
-                      detectPersonnelTypeFromPosition(p.position || "") ||
-                      p.type ||
-                      "teaching";
-
-                    return (
+              {!allMultipleSlotsAssigned &&
+                (educationalLevels.length === 1 ||
+                  modalHasMultipleHeads !== null) && (
+                  <>
+                    {/* Search Input Bar */}
+                    <div
+                      style={{
+                        margin: "14px 24px 0",
+                        padding: "0",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "12px",
+                      }}
+                    >
                       <div
-                        key={p.id}
                         style={{
+                          position: "relative",
+                          flex: 1,
                           display: "flex",
                           alignItems: "center",
-                          justifyContent: "space-between",
-                          padding: "11px 16px",
-                          borderRadius: "12px",
-                          border:
-                            isAssignedToActiveSlot || isSingleCurrent
-                              ? "1.5px solid #86efac"
-                              : isAssignedToOtherSlot
-                                ? "1px solid #e2e8f0"
-                                : "1px solid #e2e8f0",
-                          background:
-                            isAssignedToActiveSlot || isSingleCurrent
-                              ? "#f0fdf4"
-                              : isAssignedToOtherSlot
-                                ? "#f8fafc"
-                                : "#ffffff",
-                          opacity: isAssignedToOtherSlot ? 0.75 : 1,
-                          transition: "all 0.15s ease",
                         }}
                       >
-                        <div style={{ flex: 1, minWidth: 0, marginRight: "12px" }}>
-                          <div
+                        <FiSearch
+                          size={16}
+                          style={{
+                            position: "absolute",
+                            left: "14px",
+                            color: "#94a3b8",
+                          }}
+                        />
+                        <input
+                          type="text"
+                          placeholder={
+                            modalHasMultipleHeads && activeLevelSlot
+                              ? `Search candidate for ${activeLevelSlot} Head...`
+                              : "Search qualified candidates by name, position, or email..."
+                          }
+                          value={headSearchQuery}
+                          onChange={(e) => setHeadSearchQuery(e.target.value)}
+                          style={{
+                            width: "100%",
+                            padding: "10px 14px 10px 40px",
+                            fontSize: "13px",
+                            borderRadius: "10px",
+                            border: "1.5px solid #cbd5e1",
+                            background: "#ffffff",
+                            outline: "none",
+                          }}
+                        />
+                      </div>
+                      <span
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: "700",
+                          color: "#64748b",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {qualifiedHeadCandidates.length} eligible
+                      </span>
+                    </div>
+
+                    {/* Candidate List */}
+                    <div
+                      style={{
+                        flex: 1,
+                        minHeight: 0,
+                        overflowY: "auto",
+                        padding: "12px 24px 16px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "8px",
+                      }}
+                    >
+                      {qualifiedHeadCandidates.length === 0 ? (
+                        <div
+                          style={{
+                            padding: "36px 16px",
+                            textAlign: "center",
+                            color: "#94a3b8",
+                          }}
+                        >
+                          <FiAlertCircle
+                            size={32}
+                            style={{ margin: "0 auto 8px" }}
+                          />
+                          <p
                             style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "8px",
-                              flexWrap: "wrap",
+                              margin: 0,
+                              fontSize: "14px",
+                              fontWeight: "600",
                             }}
                           >
-                            <span
+                            No qualified teaching personnel found matching
+                            &quot;{headSearchQuery}&quot;
+                          </p>
+                          <p style={{ margin: "4px 0 0", fontSize: "12px" }}>
+                            Note: DepEd policy restricts School Head designation
+                            to teaching and teaching-related staff.
+                          </p>
+                        </div>
+                      ) : (
+                        qualifiedHeadCandidates.map((p) => {
+                          const pIdStr = String(p.id);
+
+                          // Check multiple head assignments
+                          const assignedEntry = Object.entries(
+                            modalHeadAssignments,
+                          ).find(([lvl, id]) => String(id) === pIdStr);
+                          const assignedLevel = assignedEntry
+                            ? assignedEntry[0]
+                            : null;
+
+                          // Single head check
+                          const isSingleCurrent = Boolean(
+                            !modalHasMultipleHeads &&
+                            (p.isSchoolHead === true ||
+                              p.is_school_head === true ||
+                              (currentHead &&
+                                String(currentHead.id) === pIdStr)),
+                          );
+
+                          const isAssignedToActiveSlot = Boolean(
+                            modalHasMultipleHeads &&
+                            activeLevelSlot &&
+                            modalHeadAssignments[activeLevelSlot] === pIdStr,
+                          );
+                          const isAssignedToOtherSlot = Boolean(
+                            modalHasMultipleHeads &&
+                            assignedLevel &&
+                            assignedLevel !== activeLevelSlot,
+                          );
+
+                          const pType =
+                            getCategoryForCanonicalPosition(p.position) ||
+                            detectPersonnelTypeFromPosition(p.position || "") ||
+                            p.type ||
+                            "teaching";
+
+                          return (
+                            <div
+                              key={p.id}
                               style={{
-                                fontWeight: "700",
-                                fontSize: "14px",
-                                color: "#0f172a",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                padding: "11px 16px",
+                                borderRadius: "12px",
+                                border:
+                                  isAssignedToActiveSlot || isSingleCurrent
+                                    ? "1.5px solid #86efac"
+                                    : isAssignedToOtherSlot
+                                      ? "1px solid #e2e8f0"
+                                      : "1px solid #e2e8f0",
+                                background:
+                                  isAssignedToActiveSlot || isSingleCurrent
+                                    ? "#f0fdf4"
+                                    : isAssignedToOtherSlot
+                                      ? "#f8fafc"
+                                      : "#ffffff",
+                                opacity: isAssignedToOtherSlot ? 0.75 : 1,
+                                transition: "all 0.15s ease",
                               }}
                             >
-                              {formatPersonnelName(p)}
-                            </span>
-                            {isSingleCurrent && (
-                              <span
+                              <div
                                 style={{
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: "4px",
-                                  padding: "2px 8px",
-                                  background: "#dcfce7",
-                                  color: "#15803d",
-                                  border: "1px solid #86efac",
-                                  borderRadius: "6px",
-                                  fontSize: "10px",
-                                  fontWeight: "800",
-                                  textTransform: "uppercase",
+                                  flex: 1,
+                                  minWidth: 0,
+                                  marginRight: "12px",
                                 }}
                               >
-                                <FiCheckCircle size={10} /> Active Head
-                              </span>
-                            )}
-                            {assignedLevel && (
-                              <span
-                                style={{
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: "4px",
-                                  padding: "2px 8px",
-                                  background: "#dcfce7",
-                                  color: "#15803d",
-                                  border: "1px solid #86efac",
-                                  borderRadius: "6px",
-                                  fontSize: "10px",
-                                  fontWeight: "800",
-                                  textTransform: "uppercase",
-                                }}
-                              >
-                                {assignedLevel} Head
-                              </span>
-                            )}
-                            <span
-                              className={`category-badge category-${pType}`}
-                              style={{ fontSize: "10px", padding: "2px 8px" }}
-                            >
-                              {pType === "teaching"
-                                ? "Teaching"
-                                : pType === "teaching-related"
-                                  ? "Related"
-                                  : "Non-Teaching"}
-                            </span>
-                          </div>
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: "12px",
-                              marginTop: "4px",
-                              fontSize: "12px",
-                              color: "#64748b",
-                            }}
-                          >
-                            <span>{p.position || "—"}</span>
-                            {p.depedEmail && <span>• {p.depedEmail}</span>}
-                          </div>
-                        </div>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "8px",
+                                    flexWrap: "wrap",
+                                  }}
+                                >
+                                  <span
+                                    style={{
+                                      fontWeight: "700",
+                                      fontSize: "14px",
+                                      color: "#0f172a",
+                                    }}
+                                  >
+                                    {formatPersonnelName(p)}
+                                  </span>
+                                  {isSingleCurrent && (
+                                    <span
+                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "4px",
+                                        padding: "2px 8px",
+                                        background: "#dcfce7",
+                                        color: "#15803d",
+                                        border: "1px solid #86efac",
+                                        borderRadius: "6px",
+                                        fontSize: "10px",
+                                        fontWeight: "800",
+                                        textTransform: "uppercase",
+                                      }}
+                                    >
+                                      <FiCheckCircle size={10} /> Active Head
+                                    </span>
+                                  )}
+                                  {assignedLevel && (
+                                    <span
+                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "4px",
+                                        padding: "2px 8px",
+                                        background: "#dcfce7",
+                                        color: "#15803d",
+                                        border: "1px solid #86efac",
+                                        borderRadius: "6px",
+                                        fontSize: "10px",
+                                        fontWeight: "800",
+                                        textTransform: "uppercase",
+                                      }}
+                                    >
+                                      {assignedLevel} Head
+                                    </span>
+                                  )}
+                                  <span
+                                    className={`category-badge category-${pType}`}
+                                    style={{
+                                      fontSize: "10px",
+                                      padding: "2px 8px",
+                                    }}
+                                  >
+                                    {pType === "teaching"
+                                      ? "Teaching"
+                                      : pType === "teaching-related"
+                                        ? "Related"
+                                        : "Non-Teaching"}
+                                  </span>
+                                </div>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    gap: "12px",
+                                    marginTop: "4px",
+                                    fontSize: "12px",
+                                    color: "#64748b",
+                                  }}
+                                >
+                                  <span>{p.position || "—"}</span>
+                                  {p.depedEmail && (
+                                    <span>• {p.depedEmail}</span>
+                                  )}
+                                </div>
+                              </div>
 
-                        <div>
-                          {modalHasMultipleHeads ? (
-                            isAssignedToActiveSlot ? (
-                              <button
-                                type="button"
-                                className="btn secondary"
-                                onClick={() => {
-                                  setModalHeadAssignments((prev) => {
-                                    const next = { ...prev };
-                                    delete next[activeLevelSlot];
-                                    return next;
-                                  });
-                                  if (String(modalMainHeadId) === pIdStr) {
-                                    const remaining = Object.entries(modalHeadAssignments).find(
-                                      ([l, id]) => l !== activeLevelSlot && id
-                                    );
-                                    setModalMainHeadId(remaining ? String(remaining[1]) : null);
-                                  }
-                                }}
-                                style={{
-                                  padding: "6px 12px",
-                                  fontSize: "12px",
-                                  fontWeight: "700",
-                                  color: "#dc2626",
-                                  border: "1px solid #fca5a5",
-                                  background: "#ffffff",
-                                  borderRadius: "8px",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                Clear
-                              </button>
-                            ) : isAssignedToOtherSlot ? (
-                              <button
-                                type="button"
-                                disabled
-                                style={{
-                                  padding: "6px 12px",
-                                  fontSize: "11px",
-                                  fontWeight: "700",
-                                  color: "#94a3b8",
-                                  border: "1px solid #e2e8f0",
-                                  background: "#f1f5f9",
-                                  borderRadius: "8px",
-                                  cursor: "not-allowed",
-                                }}
-                              >
-                                Assigned to {assignedLevel}
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                className="btn"
-                                onClick={() => {
-                                  const targetSlot = activeLevelSlot || educationalLevels.find((l) => !modalHeadAssignments[l]) || educationalLevels[0];
-                                  setModalHeadAssignments((prev) => ({
-                                    ...prev,
-                                    [targetSlot]: pIdStr,
-                                  }));
-                                  if (!modalMainHeadId) {
-                                    setModalMainHeadId(pIdStr);
-                                  }
-                                  // Auto advance to next unassigned slot
-                                  const nextUnassigned = educationalLevels.find(
-                                    (l) => l !== targetSlot && !modalHeadAssignments[l]
-                                  );
-                                  if (nextUnassigned) {
-                                    setActiveLevelSlot(nextUnassigned);
-                                  }
-                                }}
-                                style={{
-                                  padding: "6px 14px",
-                                  fontSize: "12px",
-                                  fontWeight: "700",
-                                  background: "#059669",
-                                  color: "#ffffff",
-                                  border: "none",
-                                  borderRadius: "8px",
-                                  cursor: "pointer",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: "5px",
-                                }}
-                              >
-                                <FiUserCheck size={13} /> Assign as {activeLevelSlot || "Head"}
-                              </button>
-                            )
-                          ) : (
-                            /* Single Head Mode Action */
-                            isSingleCurrent ? (
-                              <button
-                                type="button"
-                                className="btn secondary"
-                                onClick={async () => {
-                                  await designateSchoolHeadsConfig({
-                                    hasMultipleHeads: false,
-                                    mainHeadId: null,
-                                    assignments: {},
-                                  });
-                                  if (showToast) showToast("School Head designation removed.", "info");
-                                }}
-                                style={{
-                                  padding: "6px 14px",
-                                  fontSize: "12px",
-                                  fontWeight: "700",
-                                  color: "#dc2626",
-                                  border: "1px solid #fca5a5",
-                                  background: "#ffffff",
-                                  borderRadius: "8px",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                Remove
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                className="btn"
-                                onClick={() => setConfirmDesignateTarget(p)}
-                                style={{
-                                  padding: "7px 16px",
-                                  fontSize: "12px",
-                                  fontWeight: "700",
-                                  background: "#059669",
-                                  color: "#ffffff",
-                                  border: "none",
-                                  borderRadius: "8px",
-                                  cursor: "pointer",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: "5px",
-                                }}
-                              >
-                                <FiUserCheck size={13} /> Designate
-                              </button>
-                            )
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
+                              <div>
+                                {modalHasMultipleHeads ? (
+                                  isAssignedToActiveSlot ? (
+                                    <button
+                                      type="button"
+                                      className="btn secondary"
+                                      onClick={() => {
+                                        setModalHeadAssignments((prev) => {
+                                          const next = { ...prev };
+                                          delete next[activeLevelSlot];
+                                          return next;
+                                        });
+                                        if (
+                                          String(modalMainHeadId) === pIdStr
+                                        ) {
+                                          const remaining = Object.entries(
+                                            modalHeadAssignments,
+                                          ).find(
+                                            ([l, id]) =>
+                                              l !== activeLevelSlot && id,
+                                          );
+                                          setModalMainHeadId(
+                                            remaining
+                                              ? String(remaining[1])
+                                              : null,
+                                          );
+                                        }
+                                      }}
+                                      style={{
+                                        padding: "6px 12px",
+                                        fontSize: "12px",
+                                        fontWeight: "700",
+                                        color: "#dc2626",
+                                        border: "1px solid #fca5a5",
+                                        background: "#ffffff",
+                                        borderRadius: "8px",
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      Clear
+                                    </button>
+                                  ) : isAssignedToOtherSlot ? (
+                                    <button
+                                      type="button"
+                                      disabled
+                                      style={{
+                                        padding: "6px 12px",
+                                        fontSize: "11px",
+                                        fontWeight: "700",
+                                        color: "#94a3b8",
+                                        border: "1px solid #e2e8f0",
+                                        background: "#f1f5f9",
+                                        borderRadius: "8px",
+                                        cursor: "not-allowed",
+                                      }}
+                                    >
+                                      Assigned to {assignedLevel}
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="btn"
+                                      onClick={() => {
+                                        const targetSlot =
+                                          activeLevelSlot ||
+                                          educationalLevels.find(
+                                            (l) => !modalHeadAssignments[l],
+                                          ) ||
+                                          educationalLevels[0];
+                                        setModalHeadAssignments((prev) => ({
+                                          ...prev,
+                                          [targetSlot]: pIdStr,
+                                        }));
+                                        if (!modalMainHeadId) {
+                                          setModalMainHeadId(pIdStr);
+                                        }
+                                        // Auto advance to next unassigned slot
+                                        const nextUnassigned =
+                                          educationalLevels.find(
+                                            (l) =>
+                                              l !== targetSlot &&
+                                              !modalHeadAssignments[l],
+                                          );
+                                        if (nextUnassigned) {
+                                          setActiveLevelSlot(nextUnassigned);
+                                        }
+                                      }}
+                                      style={{
+                                        padding: "6px 14px",
+                                        fontSize: "12px",
+                                        fontWeight: "700",
+                                        background: "#059669",
+                                        color: "#ffffff",
+                                        border: "none",
+                                        borderRadius: "8px",
+                                        cursor: "pointer",
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "5px",
+                                      }}
+                                    >
+                                      <FiUserCheck size={13} /> Assign as{" "}
+                                      {activeLevelSlot || "Head"}
+                                    </button>
+                                  )
+                                ) : /* Single Head Mode Action */
+                                isSingleCurrent ? (
+                                  <button
+                                    type="button"
+                                    className="btn secondary"
+                                    onClick={async () => {
+                                      await designateSchoolHeadsConfig({
+                                        hasMultipleHeads: false,
+                                        mainHeadId: null,
+                                        assignments: {},
+                                      });
+                                      if (showToast)
+                                        showToast(
+                                          "School Head designation removed.",
+                                          "info",
+                                        );
+                                    }}
+                                    style={{
+                                      padding: "6px 14px",
+                                      fontSize: "12px",
+                                      fontWeight: "700",
+                                      color: "#dc2626",
+                                      border: "1px solid #fca5a5",
+                                      background: "#ffffff",
+                                      borderRadius: "8px",
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    Remove
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="btn"
+                                    onClick={() => setConfirmDesignateTarget(p)}
+                                    style={{
+                                      padding: "7px 16px",
+                                      fontSize: "12px",
+                                      fontWeight: "700",
+                                      background: "#059669",
+                                      color: "#ffffff",
+                                      border: "none",
+                                      borderRadius: "8px",
+                                      cursor: "pointer",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "5px",
+                                    }}
+                                  >
+                                    <FiUserCheck size={13} /> Designate
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </>
                 )}
-              </div>
-                </>
-              )}
             </div>
 
             {/* Modal Footer */}
@@ -3936,19 +4328,33 @@ export default function Roster() {
               }}
             >
               <div style={{ fontSize: "12px", color: "#64748b" }}>
-                {modalHasMultipleHeads === null && educationalLevels.length > 1 ? (
-                  <span>Please select Yes or No above to configure School Heads.</span>
+                {modalHasMultipleHeads === null &&
+                educationalLevels.length > 1 ? (
+                  <span>
+                    Please select Yes or No above to configure School Heads.
+                  </span>
                 ) : modalHasMultipleHeads && educationalLevels.length > 1 ? (
                   <span>
                     Status:{" "}
-                    <strong style={{ color: Object.keys(modalHeadAssignments).length === educationalLevels.length ? "#059669" : "#d97706" }}>
-                      {Object.keys(modalHeadAssignments).length} of {educationalLevels.length}
+                    <strong
+                      style={{
+                        color:
+                          Object.keys(modalHeadAssignments).length ===
+                          educationalLevels.length
+                            ? "#059669"
+                            : "#d97706",
+                      }}
+                    >
+                      {Object.keys(modalHeadAssignments).length} of{" "}
+                      {educationalLevels.length}
                     </strong>{" "}
                     levels assigned
                     {modalMainHeadId && " • Main Head selected"}
                   </span>
                 ) : (
-                  <span>DepEd eSF7 requires an official School Head before saving.</span>
+                  <span>
+                    DepEd eSF7 requires an official School Head before saving.
+                  </span>
                 )}
               </div>
 
@@ -3972,7 +4378,8 @@ export default function Roster() {
                     type="button"
                     className="btn"
                     disabled={
-                      Object.keys(modalHeadAssignments).length < educationalLevels.length || !modalMainHeadId
+                      Object.keys(modalHeadAssignments).length <
+                        educationalLevels.length || !modalMainHeadId
                     }
                     onClick={async () => {
                       const success = await designateSchoolHeadsConfig({
@@ -3989,14 +4396,16 @@ export default function Roster() {
                       fontSize: "13px",
                       fontWeight: "700",
                       background:
-                        Object.keys(modalHeadAssignments).length < educationalLevels.length || !modalMainHeadId
+                        Object.keys(modalHeadAssignments).length <
+                          educationalLevels.length || !modalMainHeadId
                           ? "#cbd5e1"
                           : "#059669",
                       color: "#ffffff",
                       border: "none",
                       borderRadius: "10px",
                       cursor:
-                        Object.keys(modalHeadAssignments).length < educationalLevels.length || !modalMainHeadId
+                        Object.keys(modalHeadAssignments).length <
+                          educationalLevels.length || !modalMainHeadId
                           ? "not-allowed"
                           : "pointer",
                     }}
@@ -4120,7 +4529,8 @@ export default function Roster() {
                   lineHeight: "1.5",
                 }}
               >
-                Are you sure you want to designate this personnel as the official <strong>School Head</strong>?
+                Are you sure you want to designate this personnel as the
+                official <strong>School Head</strong>?
               </p>
 
               {/* Personnel Summary Card */}
@@ -4159,21 +4569,25 @@ export default function Roster() {
               </div>
 
               {/* Replacement Notice if Current Head Exists */}
-              {currentHead && String(currentHead.id) !== String(confirmDesignateTarget.id) && (
-                <div
-                  style={{
-                    padding: "10px 14px",
-                    background: "#fefce8",
-                    border: "1px solid #fef08a",
-                    borderRadius: "10px",
-                    fontSize: "12px",
-                    color: "#854d0e",
-                    lineHeight: "1.4",
-                  }}
-                >
-                  <strong>Note:</strong> This will replace the currently designated School Head (<strong>{formatPersonnelName(currentHead)}</strong>).
-                </div>
-              )}
+              {currentHead &&
+                String(currentHead.id) !==
+                  String(confirmDesignateTarget.id) && (
+                  <div
+                    style={{
+                      padding: "10px 14px",
+                      background: "#fefce8",
+                      border: "1px solid #fef08a",
+                      borderRadius: "10px",
+                      fontSize: "12px",
+                      color: "#854d0e",
+                      lineHeight: "1.4",
+                    }}
+                  >
+                    <strong>Note:</strong> This will replace the currently
+                    designated School Head (
+                    <strong>{formatPersonnelName(currentHead)}</strong>).
+                  </div>
+                )}
             </div>
 
             {/* Actions Footer */}
@@ -4215,7 +4629,7 @@ export default function Roster() {
                   if (showToast) {
                     showToast(
                       `${formatPersonnelName(target)} designated as School Head.`,
-                      "success"
+                      "success",
                     );
                   }
                 }}
@@ -4304,7 +4718,9 @@ export default function Roster() {
                 flexShrink: 0,
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "12px" }}
+              >
                 <div
                   style={{
                     width: "44px",
@@ -4438,7 +4854,8 @@ export default function Roster() {
                     lineHeight: "1.5",
                   }}
                 >
-                  <strong>Review Notice:</strong> Please check and confirm the newly added personnel below before saving.
+                  <strong>Review Notice:</strong> Please check and confirm the
+                  newly added personnel below before saving.
                 </div>
               </div>
 
@@ -4451,7 +4868,8 @@ export default function Roster() {
                 }}
               >
                 {newlyAddedList.map((person, index) => {
-                  const fullName = `${person.salutation || ""} ${person.firstName || ""} ${person.middleName && person.middleName !== "N/A" ? person.middleName + " " : ""}${person.lastName || ""} ${person.nameExtension || ""}`.trim();
+                  const fullName =
+                    `${person.salutation || ""} ${person.firstName || ""} ${person.middleName && person.middleName !== "N/A" ? person.middleName + " " : ""}${person.lastName || ""} ${person.nameExtension || ""}`.trim();
                   const age = getAge(person.birthdate);
                   const isTeaching = person.type === "teaching";
                   const isRelated = person.type === "teaching-related";
@@ -4764,7 +5182,9 @@ export default function Roster() {
                 flexShrink: 0,
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "12px" }}
+              >
                 <div
                   style={{
                     width: "42px",
@@ -4782,7 +5202,13 @@ export default function Roster() {
                   <FiMaximize size={20} />
                 </div>
                 <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
                     <h2
                       id="room-qr-sidebar-title"
                       style={{
@@ -4818,7 +5244,8 @@ export default function Roster() {
                       fontWeight: "500",
                     }}
                   >
-                    Teacher passcode identity, faculty room QR posters & mobile self-profiling
+                    Teacher passcode identity, faculty room QR posters & mobile
+                    self-profiling
                   </p>
                 </div>
               </div>

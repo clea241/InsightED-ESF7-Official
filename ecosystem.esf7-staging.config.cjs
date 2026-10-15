@@ -13,15 +13,20 @@ module.exports = {
         DB_PASSWORD: "pRZTbQ2T1JD7",
         DB_NAME: "insighted_esf7_staging",
         DB_SSL: "true",
-        DATABASE_URL: "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted_esf7_staging?sslmode=require",
-        PRIMARY_DATABASE_URL: "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted_esf7_staging?sslmode=require",
-        USERS_DATABASE_URL: "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/users_database?sslmode=require",
+        DATABASE_URL:
+          "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted_esf7_staging?sslmode=require",
+        PRIMARY_DATABASE_URL:
+          "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted_esf7_staging?sslmode=require",
+        USERS_DATABASE_URL:
+          "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/users_database?sslmode=require",
         USERS_DB_NAME: "users_database",
         AUTH_DB_NAME: "users_database",
-        INSIGHTED_DATABASE_URL: "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted_esf7_staging?sslmode=require",
+        INSIGHTED_DATABASE_URL:
+          "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted_esf7_staging?sslmode=require",
         INSIGHTED_DB_NAME: "insighted_esf7_staging",
         JWT_SECRET: "insighted_esf7_staging_jwt_secret_key_2026",
-        CORS_ORIGIN: "https://stride.deped.gov.ph,https://insighted.deped.gov.ph,http://localhost:5173,http://localhost:5174,http://localhost:5175",
+        CORS_ORIGIN:
+          "https://stride.deped.gov.ph,https://insighted.deped.gov.ph,http://localhost:5173,http://localhost:5174,http://localhost:5175",
         REDIS_HOST: "127.0.0.1",
         REDIS_PORT: "6379",
       },
@@ -49,12 +54,16 @@ module.exports = {
         DB_PASSWORD: "pRZTbQ2T1JD7",
         DB_NAME: "insighted_esf7_staging",
         DB_SSL: "true",
-        DATABASE_URL: "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted_esf7_staging?sslmode=require",
-        PRIMARY_DATABASE_URL: "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted_esf7_staging?sslmode=require",
-        USERS_DATABASE_URL: "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/users_database?sslmode=require",
+        DATABASE_URL:
+          "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted_esf7_staging?sslmode=require",
+        PRIMARY_DATABASE_URL:
+          "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted_esf7_staging?sslmode=require",
+        USERS_DATABASE_URL:
+          "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/users_database?sslmode=require",
         USERS_DB_NAME: "users_database",
         AUTH_DB_NAME: "users_database",
-        INSIGHTED_DATABASE_URL: "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted_esf7_staging?sslmode=require",
+        INSIGHTED_DATABASE_URL:
+          "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted_esf7_staging?sslmode=require",
         INSIGHTED_DB_NAME: "insighted_esf7_staging",
         JWT_SECRET: "insighted_esf7_staging_jwt_secret_key_2026",
         REDIS_HOST: "127.0.0.1",

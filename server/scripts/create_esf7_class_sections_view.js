@@ -16,9 +16,13 @@ async function createCompatibilityView() {
 
   try {
     await db.query(sql);
-    console.log("✓ Created esf7_class_sections compatibility view in primary DB (insighted_esf7)");
+    console.log(
+      "✓ Created esf7_class_sections compatibility view in primary DB (insighted_esf7)",
+    );
     await db.getStagingPool().query(sql);
-    console.log("✓ Created esf7_class_sections compatibility view in staging DB (insighted_esf7_staging)");
+    console.log(
+      "✓ Created esf7_class_sections compatibility view in staging DB (insighted_esf7_staging)",
+    );
   } catch (err) {
     console.error("Error creating compatibility view:", err.message);
   } finally {

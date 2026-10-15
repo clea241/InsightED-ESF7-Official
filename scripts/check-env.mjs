@@ -82,7 +82,9 @@ if (strict) {
       "JWT_SECRET is missing (the server refuses to start in production without it)",
     );
   else if (String(env.JWT_SECRET).length < 32)
-    problems.push("JWT_SECRET is too short (use at least 32 characters / 256 bits)");
+    problems.push(
+      "JWT_SECRET is too short (use at least 32 characters / 256 bits)",
+    );
 }
 
 const checked = [

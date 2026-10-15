@@ -17,20 +17,26 @@ function problems(env = process.env) {
   const found = [];
   const targets = URL_VARS.filter((n) => env[n]);
   if (targets.length === 0 && !env.DB_NAME) {
-    found.push("no database is configured (the default target is the production database)");
+    found.push(
+      "no database is configured (the default target is the production database)",
+    );
   }
   for (const name of targets) {
     try {
       const u = new URL(env[name]);
       const db = u.pathname.replace(/^\//, "");
-      if (!LOCAL_HOSTS.has(u.hostname)) found.push(`${name} host "${u.hostname}" is not local`);
-      if (!/test/i.test(db)) found.push(`${name} database "${db}" does not contain "test"`);
+      if (!LOCAL_HOSTS.has(u.hostname))
+        found.push(`${name} host "${u.hostname}" is not local`);
+      if (!/test/i.test(db))
+        found.push(`${name} database "${db}" does not contain "test"`);
     } catch {
       found.push(`${name} is not a valid URL`);
     }
   }
-  if (env.DB_NAME && !/test/i.test(env.DB_NAME)) found.push(`DB_NAME "${env.DB_NAME}" does not contain "test"`);
-  if (env.DB_HOST && !LOCAL_HOSTS.has(env.DB_HOST)) found.push(`DB_HOST "${env.DB_HOST}" is not local`);
+  if (env.DB_NAME && !/test/i.test(env.DB_NAME))
+    found.push(`DB_NAME "${env.DB_NAME}" does not contain "test"`);
+  if (env.DB_HOST && !LOCAL_HOSTS.has(env.DB_HOST))
+    found.push(`DB_HOST "${env.DB_HOST}" is not local`);
   return found;
 }
 

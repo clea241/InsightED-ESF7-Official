@@ -514,7 +514,10 @@ router.get("/esf7/:schoolId", async (req, res) => {
         personnel = pRes.rows;
       }
     } catch (normErr) {
-      console.warn("[eSF7-PDF] Normalized tables lookup failed:", normErr.message);
+      console.warn(
+        "[eSF7-PDF] Normalized tables lookup failed:",
+        normErr.message,
+      );
     }
 
     // 3. Load PDF Template

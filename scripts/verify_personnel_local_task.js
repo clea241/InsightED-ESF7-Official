@@ -19,7 +19,7 @@ async function run() {
   `);
   console.log(
     "esf7_database has 'deleted' column:",
-    masterColCheck.rows.length > 0 ? "YES (PASS)" : "NO (FAIL)"
+    masterColCheck.rows.length > 0 ? "YES (PASS)" : "NO (FAIL)",
   );
 
   // Check raw_payload / extra / extras in esf7_personnel_profile
@@ -31,33 +31,46 @@ async function run() {
   `);
   console.log(
     "esf7_personnel_profile has raw_payload/extra/extras:",
-    profileCols.rows.length === 0 ? "NONE (PASS)" : `FOUND: ${JSON.stringify(profileCols.rows)} (FAIL)`
+    profileCols.rows.length === 0
+      ? "NONE (PASS)"
+      : `FOUND: ${JSON.stringify(profileCols.rows)} (FAIL)`,
   );
 
   // 2. Login to get auth token
   console.log("\n2. Logging in via API...");
-  const loginRes = await fetch("http://127.0.0.1:5000/api/auth/passcode-login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      school_id: "342285",
-      passcode: "342285",
-      pin: "342285",
-    }),
-  });
+  const loginRes = await fetch(
+    "http://127.0.0.1:5000/api/auth/passcode-login",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        school_id: "342285",
+        passcode: "342285",
+        pin: "342285",
+      }),
+    },
+  );
   const { token } = await loginRes.json();
   console.log("Login token acquired.");
 
   // 3. Fetch master personnel from GET /api/personnel
   console.log("\n3. Testing GET /api/personnel (Auto-population)...");
-  const rosterRes = await fetch("http://127.0.0.1:5000/api/personnel?schoolId=342285", {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const rosterRes = await fetch(
+    "http://127.0.0.1:5000/api/personnel?schoolId=342285",
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  );
   const rosterData = await rosterRes.json();
-  const personnelList = rosterData.data || rosterData.personnel || (Array.isArray(rosterData) ? rosterData : []);
+  const personnelList =
+    rosterData.data ||
+    rosterData.personnel ||
+    (Array.isArray(rosterData) ? rosterData : []);
   console.log(`Fetched ${personnelList.length} personnel for school 342285.`);
   if (personnelList.length === 0) {
-    throw new Error("Expected personnel from master records for school 342285!");
+    throw new Error(
+      "Expected personnel from master records for school 342285!",
+    );
   }
 
   // Pick an old master personnel
@@ -83,7 +96,9 @@ async function run() {
   };
 
   // 4. Test Bulk Save (Triggered on 'ADD PERSONNEL' or 'SAVE' button)
-  console.log("\n4. Testing POST /api/personnel/bulk (saving all active personnel)...");
+  console.log(
+    "\n4. Testing POST /api/personnel/bulk (saving all active personnel)...",
+  );
   const bulkRes = await fetch("http://127.0.0.1:5000/api/personnel/bulk", {
     method: "POST",
     headers: {
@@ -112,42 +127,50 @@ async function run() {
   // Check saved records in esf7_personnel_profile
   const checkOldSaved = await client.query(
     "SELECT id, prn, first_name, last_name FROM esf7_personnel_profile WHERE id = $1",
-    [oldId]
+    [oldId],
   );
   const checkNewSaved = await client.query(
     "SELECT id, prn, first_name, last_name FROM esf7_personnel_profile WHERE id = $1",
-    [newPersonId]
+    [newPersonId],
   );
   console.log("Old person in esf7_personnel_profile:", checkOldSaved.rows[0]);
   console.log("New person in esf7_personnel_profile:", checkNewSaved.rows[0]);
-  console.log("PRN formatting check on new person:", checkNewSaved.rows[0]?.prn === "PRN-105" ? "PASS (PRN-105)" : "FAIL");
+  console.log(
+    "PRN formatting check on new person:",
+    checkNewSaved.rows[0]?.prn === "PRN-105" ? "PASS (PRN-105)" : "FAIL",
+  );
 
   // 5. Test Deletion of Old Master Personnel
   console.log("\n5. Testing DELETE on Old Master Personnel...");
-  const delOldRes = await fetch(`http://127.0.0.1:5000/api/personnel/${oldId}`, {
-    method: "DELETE",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
+  const delOldRes = await fetch(
+    `http://127.0.0.1:5000/api/personnel/${oldId}`,
+    {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        schoolId: "342285",
+        prn: oldPrn,
+        firstName: oldMasterPerson.firstName,
+        lastName: oldMasterPerson.lastName,
+      }),
     },
-    body: JSON.stringify({
-      schoolId: "342285",
-      prn: oldPrn,
-      firstName: oldMasterPerson.firstName,
-      lastName: oldMasterPerson.lastName,
-    }),
-  });
+  );
   const delOldResult = await delOldRes.json();
   console.log("Delete old person response:", delOldResult);
 
   // Check that row in esf7_personnel_profile is DELETED
   const checkOldProfileDeleted = await client.query(
     "SELECT id FROM esf7_personnel_profile WHERE id = $1",
-    [oldId]
+    [oldId],
   );
   console.log(
     "Old person in esf7_personnel_profile after delete:",
-    checkOldProfileDeleted.rows.length === 0 ? "REMOVED (PASS)" : "STILL PRESENT (FAIL)"
+    checkOldProfileDeleted.rows.length === 0
+      ? "REMOVED (PASS)"
+      : "STILL PRESENT (FAIL)",
   );
 
   // Check that in esf7_database, deleted = true
@@ -155,52 +178,69 @@ async function run() {
     `SELECT first, last, deleted FROM esf7_database 
      WHERE (school_id = '342285' OR schoool_id = '342285') 
        AND (UPPER(TRIM(first)) = $1 AND UPPER(TRIM(last)) = $2)`,
-    [String(oldMasterPerson.firstName).trim().toUpperCase(), String(oldMasterPerson.lastName).trim().toUpperCase()]
+    [
+      String(oldMasterPerson.firstName).trim().toUpperCase(),
+      String(oldMasterPerson.lastName).trim().toUpperCase(),
+    ],
   );
   console.log(
     "Old person in esf7_database has deleted = true:",
-    checkMasterDeleted.rows[0]?.deleted === true ? "YES (PASS)" : `NO (${JSON.stringify(checkMasterDeleted.rows[0])}) (FAIL)`
+    checkMasterDeleted.rows[0]?.deleted === true
+      ? "YES (PASS)"
+      : `NO (${JSON.stringify(checkMasterDeleted.rows[0])}) (FAIL)`,
   );
 
   // Verify that GET /api/personnel now excludes the deleted old personnel
-  const rosterAfterDelRes = await fetch("http://127.0.0.1:5000/api/personnel?schoolId=342285", {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const rosterAfterDelRes = await fetch(
+    "http://127.0.0.1:5000/api/personnel?schoolId=342285",
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  );
   const rosterAfterDelData = await rosterAfterDelRes.json();
   const listAfterDel = rosterAfterDelData.personnel || rosterAfterDelData || [];
   const foundInRoster = listAfterDel.some(
     (p) =>
       p.id === oldId ||
-      (p.firstName?.toUpperCase() === oldMasterPerson.firstName?.toUpperCase() &&
-        p.lastName?.toUpperCase() === oldMasterPerson.lastName?.toUpperCase())
+      (p.firstName?.toUpperCase() ===
+        oldMasterPerson.firstName?.toUpperCase() &&
+        p.lastName?.toUpperCase() === oldMasterPerson.lastName?.toUpperCase()),
   );
-  console.log("Deleted old person in auto-populated roster:", foundInRoster ? "STILL FOUND (FAIL)" : "EXCLUDED (PASS)");
+  console.log(
+    "Deleted old person in auto-populated roster:",
+    foundInRoster ? "STILL FOUND (FAIL)" : "EXCLUDED (PASS)",
+  );
 
   // 6. Test Deletion of New Personnel
   console.log("\n6. Testing DELETE on Newly Added Personnel...");
-  const delNewRes = await fetch(`http://127.0.0.1:5000/api/personnel/${newPersonId}`, {
-    method: "DELETE",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
+  const delNewRes = await fetch(
+    `http://127.0.0.1:5000/api/personnel/${newPersonId}`,
+    {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        schoolId: "342285",
+        prn: "PRN-105",
+        firstName: "JUAN",
+        lastName: "DELA CRUZ",
+      }),
     },
-    body: JSON.stringify({
-      schoolId: "342285",
-      prn: "PRN-105",
-      firstName: "JUAN",
-      lastName: "DELA CRUZ",
-    }),
-  });
+  );
   const delNewResult = await delNewRes.json();
   console.log("Delete new person response:", delNewResult);
 
   const checkNewProfileDeleted = await client.query(
     "SELECT id FROM esf7_personnel_profile WHERE id = $1",
-    [newPersonId]
+    [newPersonId],
   );
   console.log(
     "New person in esf7_personnel_profile after delete:",
-    checkNewProfileDeleted.rows.length === 0 ? "REMOVED (PASS)" : "STILL PRESENT (FAIL)"
+    checkNewProfileDeleted.rows.length === 0
+      ? "REMOVED (PASS)"
+      : "STILL PRESENT (FAIL)",
   );
 
   // Clean up test flag for the old master person in esf7_database so local test data remains pristine
@@ -208,13 +248,16 @@ async function run() {
     `UPDATE esf7_database SET deleted = false 
      WHERE (school_id = '342285' OR schoool_id = '342285') 
        AND (UPPER(TRIM(first)) = $1 AND UPPER(TRIM(last)) = $2)`,
-    [String(oldMasterPerson.firstName).trim().toUpperCase(), String(oldMasterPerson.lastName).trim().toUpperCase()]
+    [
+      String(oldMasterPerson.firstName).trim().toUpperCase(),
+      String(oldMasterPerson.lastName).trim().toUpperCase(),
+    ],
   );
   // Also clean up tombstone
-  await client.query("DELETE FROM esf7_deleted_personnel WHERE school_id = '342285' AND (first_name = $1 OR last_name = $2)", [
-    oldMasterPerson.firstName,
-    oldMasterPerson.lastName,
-  ]);
+  await client.query(
+    "DELETE FROM esf7_deleted_personnel WHERE school_id = '342285' AND (first_name = $1 OR last_name = $2)",
+    [oldMasterPerson.firstName, oldMasterPerson.lastName],
+  );
 
   await client.end();
   console.log("\n=== ALL VERIFICATIONS PASSED 100% ===");

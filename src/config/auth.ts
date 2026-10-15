@@ -11,7 +11,9 @@ export const MIN_JWT_SECRET_LENGTH = 32;
  * Validates the JWT secret from the environment.
  * Throws a fatal error if JWT_SECRET is unset, empty, or shorter than 32 characters.
  */
-export function assertJwtSecret(env: Record<string, string | undefined> = process.env): string {
+export function assertJwtSecret(
+  env: Record<string, string | undefined> = process.env,
+): string {
   const secret = env.JWT_SECRET?.trim();
 
   if (!secret) {
@@ -32,7 +34,9 @@ export function assertJwtSecret(env: Record<string, string | undefined> = proces
 /**
  * Retrieves the validated JWT secret.
  */
-export function getJwtSecret(env: Record<string, string | undefined> = process.env): string {
+export function getJwtSecret(
+  env: Record<string, string | undefined> = process.env,
+): string {
   return assertJwtSecret(env);
 }
 

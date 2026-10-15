@@ -11,7 +11,7 @@ async function runStep(name, cmd, args, env) {
   return new Promise((resolve, reject) => {
     console.log(`\n▶ Starting ${name}...`);
     const proc = spawn(cmd, args, { env: { ...process.env, ...env } });
-    
+
     proc.stdout.on("data", (d) => process.stdout.write(d.toString()));
     proc.stderr.on("data", (d) => {
       const msg = d.toString();
@@ -35,9 +35,13 @@ async function runStep(name, cmd, args, env) {
 }
 
 async function verifyCounts() {
-  console.log("\n================================================================");
+  console.log(
+    "\n================================================================",
+  );
   console.log("📊 RUNNING VERIFICATION COUNTS");
-  console.log("================================================================");
+  console.log(
+    "================================================================",
+  );
 
   const prod = new Client({
     host: "stride-posgre-prod-01.postgres.database.azure.com",
@@ -48,7 +52,9 @@ async function verifyCounts() {
     ssl: { rejectUnauthorized: false },
   });
   await prod.connect();
-  const prodRes = await prod.query("SELECT count(*)::int as c FROM esf7_database;");
+  const prodRes = await prod.query(
+    "SELECT count(*)::int as c FROM esf7_database;",
+  );
   const prodCount = prodRes.rows[0].c;
   await prod.end();
 
@@ -60,7 +66,9 @@ async function verifyCounts() {
     database: "esf7_local",
   });
   await local.connect();
-  const localRes = await local.query("SELECT count(*)::int as c FROM esf7_database;");
+  const localRes = await local.query(
+    "SELECT count(*)::int as c FROM esf7_database;",
+  );
   const localCount = localRes.rows[0].c;
   await local.end();
 
@@ -71,30 +79,48 @@ async function verifyCounts() {
     console.log("✅ 100% DATA PARITY CONFIRMED!");
     return true;
   } else {
-    console.error(`❌ Mismatch: Production has ${prodCount}, Local has ${localCount}`);
+    console.error(
+      `❌ Mismatch: Production has ${prodCount}, Local has ${localCount}`,
+    );
     return false;
   }
 }
 
 async function main() {
-  console.log("================================================================");
-  console.log("📦 COPYING esf7_database: PRODUCTION insightEd -> LOCAL esf7_local");
-  console.log("================================================================");
-  console.log("🔒 GUARANTEE: Production access is strictly READ-ONLY (pg_dump).");
-  console.log("              Zero writes, deletes, or drops will touch production.");
+  console.log(
+    "================================================================",
+  );
+  console.log(
+    "📦 COPYING esf7_database: PRODUCTION insightEd -> LOCAL esf7_local",
+  );
+  console.log(
+    "================================================================",
+  );
+  console.log(
+    "🔒 GUARANTEE: Production access is strictly READ-ONLY (pg_dump).",
+  );
+  console.log(
+    "              Zero writes, deletes, or drops will touch production.",
+  );
 
   // Step 1: Dump from production insightEd
   const dumpArgs = [
-    "-h", "stride-posgre-prod-01.postgres.database.azure.com",
-    "-U", "Administrator1",
-    "-d", "insightEd",
-    "-t", "esf7_database",
-    "-F", "c",
+    "-h",
+    "stride-posgre-prod-01.postgres.database.azure.com",
+    "-U",
+    "Administrator1",
+    "-d",
+    "insightEd",
+    "-t",
+    "esf7_database",
+    "-F",
+    "c",
     "-b",
     "-v",
     "--no-owner",
     "--no-privileges",
-    "-f", DUMP_PATH,
+    "-f",
+    DUMP_PATH,
   ];
 
   await runStep("pg_dump from Azure insightEd", PG_DUMP_BIN, dumpArgs, {
@@ -102,14 +128,20 @@ async function main() {
   });
 
   const stats = fs.statSync(DUMP_PATH);
-  console.log(`\nDump file created: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
+  console.log(
+    `\nDump file created: ${(stats.size / 1024 / 1024).toFixed(2)} MB`,
+  );
 
   // Step 2: Restore into local esf7_local
   const restoreArgs = [
-    "-h", "127.0.0.1",
-    "-p", "5432",
-    "-U", "postgres",
-    "-d", "esf7_local",
+    "-h",
+    "127.0.0.1",
+    "-p",
+    "5432",
+    "-U",
+    "postgres",
+    "-d",
+    "esf7_local",
     "--clean",
     "--if-exists",
     "--no-owner",
@@ -131,9 +163,13 @@ async function main() {
     console.log(`Cleaned up temporary dump file: ${DUMP_PATH}`);
   }
 
-  console.log("\n================================================================");
+  console.log(
+    "\n================================================================",
+  );
   console.log("🎉 SUCCESS: esf7_database is now fully loaded in esf7_local!");
-  console.log("================================================================");
+  console.log(
+    "================================================================",
+  );
 }
 
 main().catch((err) => {

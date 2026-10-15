@@ -35,11 +35,13 @@ const deps = { ...pkg.dependencies, ...pkg.devDependencies };
 const d = (...names) => names.filter((n) => n in deps);
 const scripts = pkg.scripts || {};
 
-const packageManager = has("pnpm-lock.yaml")
-  ? "pnpm"
-  : has("yarn.lock")
-    ? "yarn"
-    : "npm";
+const packageManager = has("package-lock.json")
+  ? "npm"
+  : has("pnpm-lock.yaml")
+    ? "pnpm"
+    : has("yarn.lock")
+      ? "yarn"
+      : "npm";
 const language =
   has("tsconfig.json") || "typescript" in deps ? "typescript" : "javascript";
 const configRe = (re) => {

@@ -1303,6 +1303,9 @@ router.delete("/:id", async (req, res) => {
     const cleanSchoolId = schoolId
       ? String(schoolId).replace(/^SCH-/i, "").trim()
       : null;
+    const schoolIds = cleanSchoolId
+      ? [cleanSchoolId, `SCH-${cleanSchoolId}`]
+      : [];
 
     const executeDelete = async (dbPool) => {
       if (!dbPool || !dbPool.query) return;
@@ -1338,7 +1341,9 @@ router.delete("/:id", async (req, res) => {
           .query(`DELETE FROM esf7_workload_row WHERE section_id = $1`, [id])
           .catch(() => {}),
         dbPool
-          .query(`DELETE FROM esf7_shs_workload_rows WHERE section_id = $1`, [id])
+          .query(`DELETE FROM esf7_shs_workload_rows WHERE section_id = $1`, [
+            id,
+          ])
           .catch(() => {}),
       ]);
 
@@ -1372,7 +1377,8 @@ router.delete("/:id", async (req, res) => {
                 if (Array.isArray(p.workloadRows)) {
                   const bLen = p.workloadRows.length;
                   p.workloadRows = p.workloadRows.filter(
-                    (rw) => String(rw.sectionId || rw.section_id) !== String(id),
+                    (rw) =>
+                      String(rw.sectionId || rw.section_id) !== String(id),
                   );
                   if (p.workloadRows.length !== bLen) modified = true;
                 }

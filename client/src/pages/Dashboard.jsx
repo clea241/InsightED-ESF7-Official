@@ -75,9 +75,12 @@ export default function Dashboard() {
     schoolInfo?.schoolName ||
     "DepEd Integrated School";
   const schoolId =
-    (schoolInfo?.schoolId && String(schoolInfo.schoolId).replace(/^SCH-/i, "").trim()) ||
-    (schoolInfo?.school_id && String(schoolInfo.school_id).replace(/^SCH-/i, "").trim()) ||
-    (stats?.school_overview?.school_id && String(stats.school_overview.school_id).replace(/^SCH-/i, "").trim()) ||
+    (schoolInfo?.schoolId &&
+      String(schoolInfo.schoolId).replace(/^SCH-/i, "").trim()) ||
+    (schoolInfo?.school_id &&
+      String(schoolInfo.school_id).replace(/^SCH-/i, "").trim()) ||
+    (stats?.school_overview?.school_id &&
+      String(stats.school_overview.school_id).replace(/^SCH-/i, "").trim()) ||
     (user?.school_id && String(user.school_id).replace(/^SCH-/i, "").trim()) ||
     (user?.schoolId && String(user.schoolId).replace(/^SCH-/i, "").trim()) ||
     "";

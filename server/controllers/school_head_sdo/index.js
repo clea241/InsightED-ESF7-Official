@@ -117,7 +117,10 @@ router.put("/", async (req, res) => {
         );
         return res.json({ success: true, data: format(rRetry.rows[0]) });
       } catch (retryErr) {
-        console.error("[SchoolHeadSdo Auto-Create Table on PUT]", retryErr.message);
+        console.error(
+          "[SchoolHeadSdo Auto-Create Table on PUT]",
+          retryErr.message,
+        );
       }
     }
     console.error("[SchoolHeadSdo PUT]", e.message);

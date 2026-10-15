@@ -19,7 +19,6 @@ const {
   resolvePersonnelIdentity,
 } = require("./common");
 
-
 router.get("/autofill-template", async (req, res) => {
   try {
     let schoolId =
@@ -659,10 +658,16 @@ router.post("/", async (req, res) => {
       school_id || bodySchoolId || (req.auth && req.auth.schoolId) || "108348";
     const targetSchoolYear = school_year || bodySchoolYear || "2026-2027";
 
-    const cleanTargetSchool = String(targetSchoolId).replace(/^SCH-/i, "").trim();
+    const cleanTargetSchool = String(targetSchoolId)
+      .replace(/^SCH-/i, "")
+      .trim();
 
     // Deterministic Identity Match: Check if teacher already exists in this school
-    const dup = await resolvePersonnelIdentity(client, cleanTargetSchool, req.body);
+    const dup = await resolvePersonnelIdentity(
+      client,
+      cleanTargetSchool,
+      req.body,
+    );
     if (dup) {
       await client.query("ROLLBACK");
       return res.status(200).json({
@@ -695,9 +700,11 @@ router.post("/", async (req, res) => {
     let newId = req.body.id && /^\d+$/.test(req.body.id) ? req.body.id : null;
     if (!newId) {
       const maxIdRes = await client.query(
-        "SELECT MAX(id::bigint) AS max_id FROM esf7_personnel_profile WHERE id ~ '^[0-9]+$'"
+        "SELECT MAX(id::bigint) AS max_id FROM esf7_personnel_profile WHERE id ~ '^[0-9]+$'",
       );
-      const nextNum = maxIdRes.rows[0]?.max_id ? BigInt(maxIdRes.rows[0].max_id) + 1n : 843141n;
+      const nextNum = maxIdRes.rows[0]?.max_id
+        ? BigInt(maxIdRes.rows[0].max_id) + 1n
+        : 843141n;
       newId = nextNum.toString();
     }
     const legacyId = req.body.id ? String(req.body.id).trim() : newId;
@@ -705,7 +712,12 @@ router.post("/", async (req, res) => {
     const customId = newId;
 
     let finalPrn = null;
-    if (inputPrn && inputPrn !== "N/A" && inputPrn !== "NONE" && inputPrn.length > 2) {
+    if (
+      inputPrn &&
+      inputPrn !== "N/A" &&
+      inputPrn !== "NONE" &&
+      inputPrn.length > 2
+    ) {
       finalPrn = formatCanonicalPrn(inputPrn);
     } else if (employee_no || employeeNo) {
       finalPrn = formatCanonicalPrn(employee_no || employeeNo);
@@ -714,7 +726,7 @@ router.post("/", async (req, res) => {
         `SELECT COALESCE(MAX(SUBSTRING(prn FROM 5)::integer), 0) AS max_prn 
          FROM esf7_personnel_profile 
          WHERE school_id = ANY($1) AND prn ~ '^PRN-[0-9]+$'`,
-        [[cleanTargetSchool, `SCH-${cleanTargetSchool}`]]
+        [[cleanTargetSchool, `SCH-${cleanTargetSchool}`]],
       );
       const nextSeq = (maxPrnRes.rows[0]?.max_prn || 0) + 1;
       finalPrn = `PRN-${nextSeq}`;
@@ -1266,19 +1278,32 @@ router.put("/:id", async (req, res) => {
 
     if (currentRes.rows.length === 0) {
       const cleanSchoolId = String(targetSchoolId).replace(/^SCH-/i, "").trim();
-      const byIdent = await resolvePersonnelIdentity(client, cleanSchoolId, { ...req.body, id: req.params.id });
+      const byIdent = await resolvePersonnelIdentity(client, cleanSchoolId, {
+        ...req.body,
+        id: req.params.id,
+      });
       if (byIdent) {
-        currentRes = await client.query(`SELECT * FROM esf7_personnel_profile WHERE id = $1 LIMIT 1`, [byIdent.id]);
+        currentRes = await client.query(
+          `SELECT * FROM esf7_personnel_profile WHERE id = $1 LIMIT 1`,
+          [byIdent.id],
+        );
       }
     }
 
     if (currentRes.rows.length === 0) {
       // Auto-insert initial record so PUT acts as a direct idempotent upsert into esf7_personnel_profile
       const cleanSchoolId = String(targetSchoolId).replace(/^SCH-/i, "").trim();
-      const targetSchoolYear = req.body.school_year || req.body.schoolYear || "SY 26-27";
-      const pPrn = req.body.prn ? formatCanonicalPrn(req.body.prn) : `PRN-${req.params.id}`;
-      const fName = String(first_name || firstName || "TEACHER").toUpperCase().trim();
-      const lName = String(last_name || lastName || "STAFF").toUpperCase().trim();
+      const targetSchoolYear =
+        req.body.school_year || req.body.schoolYear || "SY 26-27";
+      const pPrn = req.body.prn
+        ? formatCanonicalPrn(req.body.prn)
+        : `PRN-${req.params.id}`;
+      const fName = String(first_name || firstName || "TEACHER")
+        .toUpperCase()
+        .trim();
+      const lName = String(last_name || lastName || "STAFF")
+        .toUpperCase()
+        .trim();
       const pType = String(type || "teaching").toLowerCase();
       const insRes = await client.query(
         `INSERT INTO esf7_personnel_profile (
@@ -1286,7 +1311,16 @@ router.put("/:id", async (req, res) => {
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'canonical', $8, NOW())
         ON CONFLICT (id) DO UPDATE SET updated_at = NOW()
         RETURNING *`,
-        [req.params.id, pPrn, cleanSchoolId, targetSchoolYear, pType, fName, lName, req.params.id],
+        [
+          req.params.id,
+          pPrn,
+          cleanSchoolId,
+          targetSchoolYear,
+          pType,
+          fName,
+          lName,
+          req.params.id,
+        ],
       );
       currentRes = insRes;
     }

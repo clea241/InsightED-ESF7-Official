@@ -1,6 +1,6 @@
 /**
  * Clean Slate High-Performance Rebuild of esf7_workload_rows from school_drafts
- * 
+ *
  * Rules:
  * - Strictly isolated to insighted_esf7 (Azure DB).
  * - Creates safety backup in esf7_workload_rows_backup_20261013_v2.
@@ -12,14 +12,14 @@
  * - Creates alias view esf7_workload_row.
  */
 
-const { Pool } = require('../node_modules/pg');
+const { Pool } = require("../node_modules/pg");
 
 const pool = new Pool({
-  host: 'stride-posgre-prod-01.postgres.database.azure.com',
+  host: "stride-posgre-prod-01.postgres.database.azure.com",
   port: 5432,
-  user: 'Administrator1',
-  password: 'pRZTbQ2T1JD7',
-  database: 'insighted_esf7',
+  user: "Administrator1",
+  password: "pRZTbQ2T1JD7",
+  database: "insighted_esf7",
   ssl: { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
@@ -30,7 +30,10 @@ function sanitizeTime(val) {
   if (!val || typeof val !== "string") return null;
   const s = val.trim();
   const ampm = s.match(/(am|pm)$/i);
-  const m = s.replace(/(am|pm)$/i, "").trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  const m = s
+    .replace(/(am|pm)$/i, "")
+    .trim()
+    .match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
   if (!m) return null;
   let hh = parseInt(m[1], 10);
   const mm = m[2];
@@ -47,7 +50,10 @@ function sanitizeTime(val) {
 function sanitizeDays(val) {
   if (Array.isArray(val) && val.length > 0) return val;
   if (typeof val === "string" && val.trim().length > 0) {
-    const parts = val.split(/[,|\s]+/).map(s => s.trim()).filter(Boolean);
+    const parts = val
+      .split(/[,|\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
     if (parts.length > 0) return parts;
   }
   return ["M", "T", "W", "TH", "F"];
@@ -59,7 +65,9 @@ async function run() {
 
   try {
     console.log("==========================================================");
-    console.log("🚀 CLEAN SLATE REBUILD: esf7_workload_rows FROM school_drafts");
+    console.log(
+      "🚀 CLEAN SLATE REBUILD: esf7_workload_rows FROM school_drafts",
+    );
     console.log("==========================================================");
 
     // 1. Create safety backup if not exists
@@ -68,8 +76,12 @@ async function run() {
       CREATE TABLE IF NOT EXISTS esf7_workload_rows_backup_20261013_v2 AS 
       SELECT * FROM esf7_workload_rows;
     `);
-    const bCheck = await client.query("SELECT count(*) FROM esf7_workload_rows_backup_20261013_v2;");
-    console.log(`✓ Safety backup confirmed: ${bCheck.rows[0].count} records intact.`);
+    const bCheck = await client.query(
+      "SELECT count(*) FROM esf7_workload_rows_backup_20261013_v2;",
+    );
+    console.log(
+      `✓ Safety backup confirmed: ${bCheck.rows[0].count} records intact.`,
+    );
 
     // 2. Ensure extras column exists
     console.log("Ensuring extras JSONB column exists...");
@@ -93,7 +105,7 @@ async function run() {
 
     // 5. Query total schools with workloads
     const totalCountRes = await client.query(
-      `SELECT count(*) FROM school_drafts WHERE jsonb_path_exists(payload, '$.personnel[*].workloadRows[*]')`
+      `SELECT count(*) FROM school_drafts WHERE jsonb_path_exists(payload, '$.personnel[*].workloadRows[*]')`,
     );
     const totalSchools = Number(totalCountRes.rows[0].count);
     console.log(`Total schools with workload rows: ${totalSchools}`);
@@ -112,19 +124,21 @@ async function run() {
            AND school_id > $1
          ORDER BY school_id ASC 
          LIMIT $2`,
-        [lastSchoolId, CHUNK_SIZE]
+        [lastSchoolId, CHUNK_SIZE],
       );
 
       if (chunkRes.rows.length === 0) break;
 
-      const cleanSchoolIds = chunkRes.rows.map(r => String(r.school_id).replace(/^SCH-/i, ""));
+      const cleanSchoolIds = chunkRes.rows.map((r) =>
+        String(r.school_id).replace(/^SCH-/i, ""),
+      );
 
       // Batch profile fetching for all schools in this chunk
       const profRes = await client.query(
         `SELECT id, legacy_id, school_id, first_name, last_name, employee_no 
          FROM esf7_personnel_profile 
          WHERE school_id = ANY($1)`,
-        [cleanSchoolIds]
+        [cleanSchoolIds],
       );
 
       // Group profile maps per school
@@ -132,13 +146,18 @@ async function run() {
       for (const pr of profRes.rows) {
         const sid = pr.school_id;
         if (!schoolMaps.has(sid)) {
-          schoolMaps.set(sid, { legacyMap: new Map(), nameMap: new Map(), empNoMap: new Map() });
+          schoolMaps.set(sid, {
+            legacyMap: new Map(),
+            nameMap: new Map(),
+            empNoMap: new Map(),
+          });
         }
         const m = schoolMaps.get(sid);
         if (pr.legacy_id) m.legacyMap.set(String(pr.legacy_id).trim(), pr.id);
         const nKey = `${(pr.first_name || "").trim().toUpperCase()}|${(pr.last_name || "").trim().toUpperCase()}`;
         if (nKey !== "|") m.nameMap.set(nKey, pr.id);
-        if (pr.employee_no) m.empNoMap.set(String(pr.employee_no).trim(), pr.id);
+        if (pr.employee_no)
+          m.empNoMap.set(String(pr.employee_no).trim(), pr.id);
       }
 
       const rowsToInsert = [];
@@ -176,7 +195,13 @@ async function run() {
 
           for (const w of wklRows) {
             if (!w) continue;
-            const subject = String(w.subject || w.subject_name || w.subjectName || w.task || "MATHEMATICS").trim();
+            const subject = String(
+              w.subject ||
+                w.subject_name ||
+                w.subjectName ||
+                w.task ||
+                "MATHEMATICS",
+            ).trim();
             if (!subject) continue;
 
             let wId = w.id ? String(w.id).trim() : null;
@@ -189,7 +214,8 @@ async function run() {
             const sectionId = w.section_id || w.sectionId || null;
             const sectionName = w.section_name || w.sectionName || null;
             const subjectId = w.subject_id || w.subjectId || null;
-            const remediationSubject = w.remediation_subject || w.remediationSubject || null;
+            const remediationSubject =
+              w.remediation_subject || w.remediationSubject || null;
             const startTime = sanitizeTime(w.start_time || w.startTime);
             const endTime = sanitizeTime(w.end_time || w.endTime);
             const days = sanitizeDays(w.days);
@@ -210,7 +236,7 @@ async function run() {
               end_time: endTime,
               days: days,
               term: term,
-              extras: {}
+              extras: {},
             });
           }
         }
@@ -247,18 +273,21 @@ async function run() {
               item.end_time,
               JSON.stringify(item.days),
               item.term,
-              JSON.stringify(item.extras)
+              JSON.stringify(item.extras),
             );
           }
 
-          await client.query(`
+          await client.query(
+            `
             INSERT INTO esf7_workload_rows (
               id, personnel_id, school_id, school_year, grade_level,
               section_id, section_name, subject, subject_id, remediation_subject,
               start_time, end_time, days, term, extras, created_at, updated_at
             ) VALUES ${valuesClause.join(", ")}
             ON CONFLICT (id) DO NOTHING;
-          `, params);
+          `,
+            params,
+          );
 
           totalWorkloadsInserted += slice.length;
         }
@@ -268,8 +297,13 @@ async function run() {
       processedSchools += chunkRes.rows.length;
 
       const elapsedSec = ((Date.now() - startTime) / 1000).toFixed(1);
-      const percent = Math.min(100, ((processedSchools / totalSchools) * 100)).toFixed(1);
-      console.log(`[Progress ${percent}%] Processed ${processedSchools}/${totalSchools} schools | Inserted workloads: ${totalWorkloadsInserted} | Elapsed: ${elapsedSec}s`);
+      const percent = Math.min(
+        100,
+        (processedSchools / totalSchools) * 100,
+      ).toFixed(1);
+      console.log(
+        `[Progress ${percent}%] Processed ${processedSchools}/${totalSchools} schools | Inserted workloads: ${totalWorkloadsInserted} | Elapsed: ${elapsedSec}s`,
+      );
     }
 
     // 6. Create alias view esf7_workload_row
@@ -280,7 +314,9 @@ async function run() {
     `);
 
     const finalSec = ((Date.now() - startTime) / 1000).toFixed(1);
-    const finalCount = await client.query("SELECT count(*) FROM esf7_workload_rows;");
+    const finalCount = await client.query(
+      "SELECT count(*) FROM esf7_workload_rows;",
+    );
 
     console.log("==========================================================");
     console.log(`🎉 REBUILD COMPLETE in ${finalSec}s!`);
@@ -289,7 +325,6 @@ async function run() {
     console.log(`✓ raw_payload dropped.`);
     console.log(`✓ View esf7_workload_row verified.`);
     console.log("==========================================================");
-
   } catch (err) {
     console.error("FATAL ERROR DURING REBUILD:", err);
   } finally {

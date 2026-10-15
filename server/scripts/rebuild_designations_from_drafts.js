@@ -1,6 +1,6 @@
 /**
  * Clean Slate High-Performance Rebuild of esf7_personnel_designations from school_drafts
- * 
+ *
  * Rules:
  * - Strictly isolated to insighted_esf7 (Azure DB).
  * - Creates safety backup in esf7_personnel_designations_backup_20261013.
@@ -11,14 +11,14 @@
  * - Creates alias view esf7_personnel_designation.
  */
 
-const { Pool } = require('../node_modules/pg');
+const { Pool } = require("../node_modules/pg");
 
 const pool = new Pool({
-  host: 'stride-posgre-prod-01.postgres.database.azure.com',
+  host: "stride-posgre-prod-01.postgres.database.azure.com",
   port: 5432,
-  user: 'Administrator1',
-  password: 'pRZTbQ2T1JD7',
-  database: 'insighted_esf7',
+  user: "Administrator1",
+  password: "pRZTbQ2T1JD7",
+  database: "insighted_esf7",
   ssl: { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
@@ -31,7 +31,9 @@ function parseDesignation(item, cleanSchoolId, profileId, counter) {
 
   if (typeof item === "string") {
     const rawStr = item.trim();
-    const isSds = rawStr.includes("::APPROVED_SDS") || rawStr.toUpperCase().includes("APPROVED_SDS");
+    const isSds =
+      rawStr.includes("::APPROVED_SDS") ||
+      rawStr.toUpperCase().includes("APPROVED_SDS");
     const cleanKey = rawStr.replace(/::APPROVED_SDS/gi, "").trim();
     if (!cleanKey) return null;
 
@@ -45,25 +47,51 @@ function parseDesignation(item, cleanSchoolId, profileId, counter) {
 
     if (
       upper.startsWith("DEPARTMENT HEAD") &&
-      (upper.includes("KEY STAGE 1") || upper.includes("KS1") || upper.includes("KINDER") || upper.includes("GRADE 1") || upper.includes("GRADE 2") || upper.includes("GRADE 3")) &&
-      !upper.includes("KEY STAGE 2") && !upper.includes("KEY STAGE 3") && !upper.includes("KEY STAGE 4") &&
-      !upper.includes("GRADE 4") && !upper.includes("GRADE 5") && !upper.includes("GRADE 6") &&
-      !upper.includes("GRADE 7") && !upper.includes("GRADE 8") && !upper.includes("GRADE 9") && !upper.includes("GRADE 10")
+      (upper.includes("KEY STAGE 1") ||
+        upper.includes("KS1") ||
+        upper.includes("KINDER") ||
+        upper.includes("GRADE 1") ||
+        upper.includes("GRADE 2") ||
+        upper.includes("GRADE 3")) &&
+      !upper.includes("KEY STAGE 2") &&
+      !upper.includes("KEY STAGE 3") &&
+      !upper.includes("KEY STAGE 4") &&
+      !upper.includes("GRADE 4") &&
+      !upper.includes("GRADE 5") &&
+      !upper.includes("GRADE 6") &&
+      !upper.includes("GRADE 7") &&
+      !upper.includes("GRADE 8") &&
+      !upper.includes("GRADE 9") &&
+      !upper.includes("GRADE 10")
     ) {
       keyStage = "KS1";
       dsgName = "DEPARTMENT HEAD";
       subjectArea = "Early Primary Literacy & Numeracy";
-      if (upper.includes("KINDER - GRADE 3") || upper.includes("KINDER TO GRADE 3") || upper === "DEPARTMENT HEAD - KEY STAGE 1" || upper === "DEPARTMENT HEAD - KS1") {
+      if (
+        upper.includes("KINDER - GRADE 3") ||
+        upper.includes("KINDER TO GRADE 3") ||
+        upper === "DEPARTMENT HEAD - KEY STAGE 1" ||
+        upper === "DEPARTMENT HEAD - KS1"
+      ) {
         gradeLevel = "Kinder, Grade 1, Grade 2, Grade 3";
       } else {
         const detected = [];
         if (upper.includes("KINDER")) detected.push("Kinder");
-        if (upper.includes("GRADE 1") || upper.includes("G1")) detected.push("Grade 1");
-        if (upper.includes("GRADE 2") || upper.includes("G2")) detected.push("Grade 2");
-        if (upper.includes("GRADE 3") || upper.includes("G3")) detected.push("Grade 3");
-        gradeLevel = detected.length > 0 ? detected.join(", ") : "Kinder, Grade 1, Grade 2, Grade 3";
+        if (upper.includes("GRADE 1") || upper.includes("G1"))
+          detected.push("Grade 1");
+        if (upper.includes("GRADE 2") || upper.includes("G2"))
+          detected.push("Grade 2");
+        if (upper.includes("GRADE 3") || upper.includes("G3"))
+          detected.push("Grade 3");
+        gradeLevel =
+          detected.length > 0
+            ? detected.join(", ")
+            : "Kinder, Grade 1, Grade 2, Grade 3";
       }
-    } else if (upper.startsWith("DEPARTMENT HEAD") && (upper.includes("KEY STAGE 2") || upper.includes("KS2"))) {
+    } else if (
+      upper.startsWith("DEPARTMENT HEAD") &&
+      (upper.includes("KEY STAGE 2") || upper.includes("KS2"))
+    ) {
       keyStage = "KS2";
       dsgName = "DEPARTMENT HEAD";
       gradeLevel = "Grade 4, Grade 5, Grade 6";
@@ -71,7 +99,10 @@ function parseDesignation(item, cleanSchoolId, profileId, counter) {
         const parts = cleanKey.split(" - ");
         subjectArea = parts[parts.length - 1].trim();
       }
-    } else if (upper.startsWith("DEPARTMENT HEAD") && (upper.includes("KEY STAGE 3") || upper.includes("KS3"))) {
+    } else if (
+      upper.startsWith("DEPARTMENT HEAD") &&
+      (upper.includes("KEY STAGE 3") || upper.includes("KS3"))
+    ) {
       keyStage = "KS3";
       dsgName = "DEPARTMENT HEAD";
       gradeLevel = "Grade 7, Grade 8, Grade 9, Grade 10";
@@ -81,7 +112,11 @@ function parseDesignation(item, cleanSchoolId, profileId, counter) {
       }
     } else if (
       upper.startsWith("DEPARTMENT HEAD") &&
-      (upper.includes("KEY STAGE 4") || upper.includes("KS4") || upper.includes("ACADEMIC TRACK") || upper.includes("TECH-PRO TRACK") || upper.includes("SHS"))
+      (upper.includes("KEY STAGE 4") ||
+        upper.includes("KS4") ||
+        upper.includes("ACADEMIC TRACK") ||
+        upper.includes("TECH-PRO TRACK") ||
+        upper.includes("SHS"))
     ) {
       keyStage = "KS4";
       dsgName = "DEPARTMENT HEAD";
@@ -91,7 +126,9 @@ function parseDesignation(item, cleanSchoolId, profileId, counter) {
       const parts = cleanKey.split(" - ");
       dsgName = parts[0].trim();
       const subPart = parts.slice(1).join(" - ").trim();
-      const gradeMatch = subPart.match(/\((Grade\s*\d+|Kinder|Grade\s*1[0-2])\)/i) || subPart.match(/^(Grade\s*\d+|Kinder|Grade\s*1[0-2])$/i);
+      const gradeMatch =
+        subPart.match(/\((Grade\s*\d+|Kinder|Grade\s*1[0-2])\)/i) ||
+        subPart.match(/^(Grade\s*\d+|Kinder|Grade\s*1[0-2])$/i);
       if (gradeMatch) {
         gradeLevel = gradeMatch[1] || gradeMatch[0];
         subjectArea = subPart.replace(gradeMatch[0], "").trim() || null;
@@ -111,24 +148,52 @@ function parseDesignation(item, cleanSchoolId, profileId, counter) {
       serializedKey: rawStr,
     };
   } else if (typeof item === "object") {
-    const rawKey = item.serializedKey || item.serialized_key || item.designation || item.designationName || item.designation_name || item.name || "OFFICIAL DESIGNATION";
-    const cleanKey = String(rawKey).replace(/::APPROVED_SDS/gi, "").trim();
+    const rawKey =
+      item.serializedKey ||
+      item.serialized_key ||
+      item.designation ||
+      item.designationName ||
+      item.designation_name ||
+      item.name ||
+      "OFFICIAL DESIGNATION";
+    const cleanKey = String(rawKey)
+      .replace(/::APPROVED_SDS/gi, "")
+      .trim();
     const upper = cleanKey.toUpperCase();
     let keyStage = item.keyStage || item.key_stage || null;
     if (!keyStage) {
-      if (upper.startsWith("DEPARTMENT HEAD") && (upper.includes("KEY STAGE 1") || upper.includes("KS1"))) {
+      if (
+        upper.startsWith("DEPARTMENT HEAD") &&
+        (upper.includes("KEY STAGE 1") || upper.includes("KS1"))
+      ) {
         keyStage = "KS1";
       } else if (upper.includes("KEY STAGE 2") || upper.includes("KS2")) {
         keyStage = "KS2";
       } else if (upper.includes("KEY STAGE 3") || upper.includes("KS3")) {
         keyStage = "KS3";
-      } else if (upper.includes("KEY STAGE 4") || upper.includes("KS4") || upper.includes("ACADEMIC TRACK") || upper.includes("TECH-PRO TRACK")) {
+      } else if (
+        upper.includes("KEY STAGE 4") ||
+        upper.includes("KS4") ||
+        upper.includes("ACADEMIC TRACK") ||
+        upper.includes("TECH-PRO TRACK")
+      ) {
         keyStage = "KS4";
       }
     }
-    const isSds = !!(item.isSdsApproved || item.is_sds_approved || String(rawKey).includes("::APPROVED_SDS"));
+    const isSds = !!(
+      item.isSdsApproved ||
+      item.is_sds_approved ||
+      String(rawKey).includes("::APPROVED_SDS")
+    );
     const isConf = !!(item.sdsConfirmed || item.sds_confirmed || isSds);
-    const dsgName = (item.designationName || item.designation_name || item.name || cleanKey.split(" - ")[0]).replace(/::APPROVED_SDS/gi, "").trim();
+    const dsgName = (
+      item.designationName ||
+      item.designation_name ||
+      item.name ||
+      cleanKey.split(" - ")[0]
+    )
+      .replace(/::APPROVED_SDS/gi, "")
+      .trim();
 
     dsgObj = {
       designationName: dsgName || "OFFICIAL DESIGNATION",
@@ -147,7 +212,7 @@ function parseDesignation(item, cleanSchoolId, profileId, counter) {
     id: dsgId,
     personnel_id: String(profileId),
     school_id: cleanSchoolId,
-    ...dsgObj
+    ...dsgObj,
   };
 }
 
@@ -157,7 +222,9 @@ async function run() {
 
   try {
     console.log("==========================================================");
-    console.log("🚀 HIGH-PERFORMANCE REBUILD: esf7_personnel_designations FROM school_drafts");
+    console.log(
+      "🚀 HIGH-PERFORMANCE REBUILD: esf7_personnel_designations FROM school_drafts",
+    );
     console.log("==========================================================");
 
     // 1. Create safety backup if not exists
@@ -166,8 +233,12 @@ async function run() {
       CREATE TABLE IF NOT EXISTS esf7_personnel_designations_backup_20261013 AS 
       SELECT * FROM esf7_personnel_designations;
     `);
-    const bCheck = await client.query("SELECT count(*) FROM esf7_personnel_designations_backup_20261013;");
-    console.log(`✓ Safety backup confirmed: ${bCheck.rows[0].count} records intact.`);
+    const bCheck = await client.query(
+      "SELECT count(*) FROM esf7_personnel_designations_backup_20261013;",
+    );
+    console.log(
+      `✓ Safety backup confirmed: ${bCheck.rows[0].count} records intact.`,
+    );
 
     // 2. Ensure school_id column and index exists
     console.log("Ensuring school_id column exists...");
@@ -181,7 +252,9 @@ async function run() {
     `);
 
     // 3. Drop raw_payload column
-    console.log("Dropping raw_payload column from esf7_personnel_designations...");
+    console.log(
+      "Dropping raw_payload column from esf7_personnel_designations...",
+    );
     await client.query(`
       ALTER TABLE esf7_personnel_designations 
       DROP COLUMN IF EXISTS raw_payload;
@@ -195,7 +268,7 @@ async function run() {
 
     // 5. Query drafts with designations
     const totalDraftsRes = await client.query(
-      `SELECT count(*) FROM school_drafts WHERE jsonb_path_exists(payload, '$.personnel[*].designations')`
+      `SELECT count(*) FROM school_drafts WHERE jsonb_path_exists(payload, '$.personnel[*].designations')`,
     );
     const totalSchools = Number(totalDraftsRes.rows[0].count);
     console.log(`Total schools with designations: ${totalSchools}`);
@@ -212,19 +285,21 @@ async function run() {
          WHERE jsonb_path_exists(payload, '$.personnel[*].designations')
          ORDER BY school_id ASC 
          LIMIT $1 OFFSET $2`,
-        [CHUNK_SIZE, offset]
+        [CHUNK_SIZE, offset],
       );
 
       if (chunkRes.rows.length === 0) break;
 
-      const cleanSchoolIds = chunkRes.rows.map(r => String(r.school_id).replace(/^SCH-/i, ""));
+      const cleanSchoolIds = chunkRes.rows.map((r) =>
+        String(r.school_id).replace(/^SCH-/i, ""),
+      );
 
       // Single batched query to fetch profiles for ALL schools in this chunk
       const profRes = await client.query(
         `SELECT id, legacy_id, school_id, first_name, last_name, employee_no 
          FROM esf7_personnel_profile 
          WHERE school_id = ANY($1)`,
-        [cleanSchoolIds]
+        [cleanSchoolIds],
       );
 
       // Build grouped in-memory maps per school
@@ -232,13 +307,18 @@ async function run() {
       for (const pr of profRes.rows) {
         const sid = pr.school_id;
         if (!schoolMaps.has(sid)) {
-          schoolMaps.set(sid, { legacyMap: new Map(), nameMap: new Map(), empNoMap: new Map() });
+          schoolMaps.set(sid, {
+            legacyMap: new Map(),
+            nameMap: new Map(),
+            empNoMap: new Map(),
+          });
         }
         const m = schoolMaps.get(sid);
         if (pr.legacy_id) m.legacyMap.set(String(pr.legacy_id).trim(), pr.id);
         const nKey = `${(pr.first_name || "").trim().toUpperCase()}|${(pr.last_name || "").trim().toUpperCase()}`;
         if (nKey !== "|") m.nameMap.set(nKey, pr.id);
-        if (pr.employee_no) m.empNoMap.set(String(pr.employee_no).trim(), pr.id);
+        if (pr.employee_no)
+          m.empNoMap.set(String(pr.employee_no).trim(), pr.id);
       }
 
       const rowsToInsert = [];
@@ -247,10 +327,16 @@ async function run() {
         const { school_id, personnel } = row;
         const cleanSchoolId = String(school_id).replace(/^SCH-/i, "");
         const rawPersonnel = Array.isArray(personnel) ? personnel : [];
-        const withDesig = rawPersonnel.filter(p => Array.isArray(p.designations) && p.designations.length > 0);
+        const withDesig = rawPersonnel.filter(
+          (p) => Array.isArray(p.designations) && p.designations.length > 0,
+        );
         if (withDesig.length === 0) continue;
 
-        const maps = schoolMaps.get(cleanSchoolId) || { legacyMap: new Map(), nameMap: new Map(), empNoMap: new Map() };
+        const maps = schoolMaps.get(cleanSchoolId) || {
+          legacyMap: new Map(),
+          nameMap: new Map(),
+          empNoMap: new Map(),
+        };
 
         for (const p of withDesig) {
           const draftId = p.id ? String(p.id).trim() : null;
@@ -272,7 +358,12 @@ async function run() {
 
           let counter = 1;
           for (const d of p.designations) {
-            const parsed = parseDesignation(d, cleanSchoolId, targetProfileId, counter++);
+            const parsed = parseDesignation(
+              d,
+              cleanSchoolId,
+              targetProfileId,
+              counter++,
+            );
             if (parsed && parsed.designationName) {
               rowsToInsert.push(parsed);
             }
@@ -306,18 +397,21 @@ async function run() {
               item.track,
               item.isSdsApproved,
               item.sdsConfirmed,
-              item.serializedKey
+              item.serializedKey,
             );
           }
 
-          await client.query(`
+          await client.query(
+            `
             INSERT INTO esf7_personnel_designations (
               id, personnel_id, school_id, designation_name, key_stage,
               grade_level, subject_area, track, is_sds_approved, sds_confirmed,
               serialized_key, created_at, updated_at
             ) VALUES ${valuesClause.join(", ")}
             ON CONFLICT (id) DO NOTHING;
-          `, params);
+          `,
+            params,
+          );
 
           totalDesignationsInserted += slice.length;
         }
@@ -328,7 +422,9 @@ async function run() {
 
       const elapsedSec = ((Date.now() - startTime) / 1000).toFixed(1);
       const percent = ((processedSchools / totalSchools) * 100).toFixed(1);
-      console.log(`[Progress ${percent}%] Processed ${processedSchools}/${totalSchools} schools | Inserted designations: ${totalDesignationsInserted} | Elapsed: ${elapsedSec}s`);
+      console.log(
+        `[Progress ${percent}%] Processed ${processedSchools}/${totalSchools} schools | Inserted designations: ${totalDesignationsInserted} | Elapsed: ${elapsedSec}s`,
+      );
     }
 
     // 6. Create or replace alias view esf7_personnel_designation
@@ -339,7 +435,9 @@ async function run() {
     `);
 
     const finalSec = ((Date.now() - startTime) / 1000).toFixed(1);
-    const finalCount = await client.query("SELECT count(*) FROM esf7_personnel_designations;");
+    const finalCount = await client.query(
+      "SELECT count(*) FROM esf7_personnel_designations;",
+    );
 
     console.log("==========================================================");
     console.log(`🎉 REBUILD COMPLETE in ${finalSec}s!`);
@@ -348,7 +446,6 @@ async function run() {
     console.log(`✓ raw_payload dropped.`);
     console.log(`✓ View esf7_personnel_designation verified.`);
     console.log("==========================================================");
-
   } catch (err) {
     console.error("FATAL ERROR DURING REBUILD:", err);
   } finally {

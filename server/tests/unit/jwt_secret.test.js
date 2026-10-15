@@ -24,11 +24,13 @@ test("production with a short secret throws", () => {
     /too short/,
   );
   assert.throws(
-    () => assertJwtSecret({ NODE_ENV: "production", JWT_SECRET: "a".repeat(16) }),
+    () =>
+      assertJwtSecret({ NODE_ENV: "production", JWT_SECRET: "a".repeat(16) }),
     /too short/,
   );
   assert.throws(
-    () => assertJwtSecret({ NODE_ENV: "production", JWT_SECRET: "a".repeat(31) }),
+    () =>
+      assertJwtSecret({ NODE_ENV: "production", JWT_SECRET: "a".repeat(31) }),
     /too short/,
   );
 });

@@ -687,7 +687,10 @@ router.post("/accept", async (req, res) => {
         (nameKey ? existingByName.get(nameKey) : null);
 
       const rawCandidateId = String(norm.personnelId || sub.id || "").trim();
-      const isClientUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawCandidateId);
+      const isClientUuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          rawCandidateId,
+        );
       const resolvedId =
         existing?.id ||
         (isClientUuid ? rawCandidateId : null) ||
@@ -1704,7 +1707,9 @@ router.get("/approved", async (req, res) => {
                 position: p.position || "Teacher",
               },
               submittedAt: p.updated_at || p.created_at || new Date(),
-              submittedTimestamp: new Date(p.updated_at || p.created_at || Date.now()).getTime(),
+              submittedTimestamp: new Date(
+                p.updated_at || p.created_at || Date.now(),
+              ).getTime(),
               status: "APPROVED",
             });
           }
@@ -1858,7 +1863,10 @@ router.post("/sync-roster", async (req, res) => {
       let pId = String(p.id || "").trim();
       let legacyId = null;
       if (pId) {
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pId);
+        const isUuid =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+            pId,
+          );
         if (!isUuid) {
           legacyId = pId;
           const mapped = await db
@@ -1911,60 +1919,98 @@ router.post("/sync-roster", async (req, res) => {
             ? "harvester-created"
             : "canonical");
 
-      const fn = String(p.firstName || p.first_name || "").trim().toUpperCase();
-      const ln = String(p.lastName || p.last_name || "").trim().toUpperCase();
-      const mn = String(p.middleName || p.middle_name || "").trim().toUpperCase();
-      const ext = String(p.nameExtension || p.name_extension || "").trim().toUpperCase();
-      const sal = String(p.salutation || "MR.").trim().toUpperCase();
+      const fn = String(p.firstName || p.first_name || "")
+        .trim()
+        .toUpperCase();
+      const ln = String(p.lastName || p.last_name || "")
+        .trim()
+        .toUpperCase();
+      const mn = String(p.middleName || p.middle_name || "")
+        .trim()
+        .toUpperCase();
+      const ext = String(p.nameExtension || p.name_extension || "")
+        .trim()
+        .toUpperCase();
+      const sal = String(p.salutation || "MR.")
+        .trim()
+        .toUpperCase();
       const prn = String(p.prn || "").trim();
       const tin = String(p.tin || "").trim();
       const noTin = Boolean(p.noTin || p.no_tin || !tin);
-      const sex = String(p.sexAtBirth || p.sex_at_birth || p.sex || "FEMALE").trim().toUpperCase();
-      const civil = String(p.civilStatus || p.civil_status || "SINGLE").trim().toUpperCase();
+      const sex = String(p.sexAtBirth || p.sex_at_birth || p.sex || "FEMALE")
+        .trim()
+        .toUpperCase();
+      const civil = String(p.civilStatus || p.civil_status || "SINGLE")
+        .trim()
+        .toUpperCase();
       const solo = Boolean(
         p.soloParent === true ||
-          p.solo_parent === true ||
-          p.soloParent === "YES" ||
-          p.solo_parent === "YES",
+        p.solo_parent === true ||
+        p.soloParent === "YES" ||
+        p.solo_parent === "YES",
       );
-      const rel = String(p.religion || "CHRISTIANITY").trim().toUpperCase();
-      const eth = String(p.ethnicGroup || p.ethnic_group || "").trim().toUpperCase();
+      const rel = String(p.religion || "CHRISTIANITY")
+        .trim()
+        .toUpperCase();
+      const eth = String(p.ethnicGroup || p.ethnic_group || "")
+        .trim()
+        .toUpperCase();
       const bDate = parseDateVal(p.birthdate || p.birth_date);
       const computedAge = calcAge(bDate) || Number(p.age) || null;
       const empNo = String(p.employeeNo || p.employee_no || "").trim();
       const depedEmail = String(p.depedEmail || p.deped_email || "").trim();
-      const noDepedEmail = Boolean(p.noDepedEmail || p.no_deped_email || !depedEmail);
+      const noDepedEmail = Boolean(
+        p.noDepedEmail || p.no_deped_email || !depedEmail,
+      );
       const isHead = Boolean(p.isSchoolHead || p.is_school_head);
       const pos = String(
-        p.position ||
-          p.plantilla_position ||
-          p.position_title ||
-          "TEACHER I",
-      ).trim().toUpperCase();
+        p.position || p.plantilla_position || p.position_title || "TEACHER I",
+      )
+        .trim()
+        .toUpperCase();
       const posCat = String(
-        p.positionCategory ||
-          p.position_category ||
-          getPositionCategory(pos),
-      ).trim().toUpperCase();
-      const type = p.type || (posCat.includes("NON") ? "non-teaching" : "teaching");
+        p.positionCategory || p.position_category || getPositionCategory(pos),
+      )
+        .trim()
+        .toUpperCase();
+      const type =
+        p.type || (posCat.includes("NON") ? "non-teaching" : "teaching");
       const step = Number(p.stepIncrement || p.step_increment || 1);
-      const fund = String(p.fundSource || p.fund_source || "DEPED").trim().toUpperCase();
+      const fund = String(p.fundSource || p.fund_source || "DEPED")
+        .trim()
+        .toUpperCase();
       const natAppt = String(
         p.natureOfAppointment || p.nature_of_appointment || "REGULAR PERMANENT",
-      ).trim().toUpperCase();
+      )
+        .trim()
+        .toUpperCase();
       const hireArr = String(
         p.hiringArrangement || p.hiring_arrangement || "REGULAR",
-      ).trim().toUpperCase();
+      )
+        .trim()
+        .toUpperCase();
       const depStat = String(
         p.deploymentStatus || p.deployment_status || "OWN STATION",
-      ).trim().toUpperCase();
-      const assignedSchools = Array.isArray(p.assignedSchools) ? p.assignedSchools : [];
-      const gradeLevelsTaught = Array.isArray(p.gradeLevelsTaught || p.grade_levels_taught)
+      )
+        .trim()
+        .toUpperCase();
+      const assignedSchools = Array.isArray(p.assignedSchools)
+        ? p.assignedSchools
+        : [];
+      const gradeLevelsTaught = Array.isArray(
+        p.gradeLevelsTaught || p.grade_levels_taught,
+      )
         ? p.gradeLevelsTaught || p.grade_levels_taught
         : [];
-      const firstSvcDate = parseDateVal(p.firstServiceDate || p.first_service_date);
-      const lastPromoDate = parseDateVal(p.lastPromotionDate || p.last_promotion_date);
-      const newStationDate = parseDateVal(p.newStationDate || p.new_station_date);
+      const firstSvcDate = parseDateVal(
+        p.firstServiceDate || p.first_service_date,
+      );
+      const lastPromoDate = parseDateVal(
+        p.lastPromotionDate || p.last_promotion_date,
+      );
+      const newStationDate = parseDateVal(
+        p.newStationDate || p.new_station_date,
+      );
       const lastLateralMovementDate = parseDateVal(
         p.lastLateralMovementDate || p.last_lateral_movement_date,
       );
@@ -1973,23 +2019,38 @@ router.post("/sync-roster", async (req, res) => {
         p.highestEducationalAttainment ||
           p.highest_educational_attainment ||
           "COLLEGE GRADUATE / BACCALAUREATE",
-      ).trim().toUpperCase();
+      )
+        .trim()
+        .toUpperCase();
       const collegeDeg = String(
-        p.collegeDegree || p.college_degree || "BACHELOR OF SECONDARY EDUCATION",
-      ).trim().toUpperCase();
+        p.collegeDegree ||
+          p.college_degree ||
+          "BACHELOR OF SECONDARY EDUCATION",
+      )
+        .trim()
+        .toUpperCase();
       const collegeDegs = p.degreeRows || p.collegeDegrees || [];
-      const major = String(p.major || "GENERAL EDUCATION").trim().toUpperCase();
-      const minor = String(p.minor || "N/A").trim().toUpperCase();
+      const major = String(p.major || "GENERAL EDUCATION")
+        .trim()
+        .toUpperCase();
+      const minor = String(p.minor || "N/A")
+        .trim()
+        .toUpperCase();
       const postGrad = String(
         p.postGraduateDegree || p.post_graduate_degree || "N/A",
-      ).trim().toUpperCase();
-      const postGradDisc = p.postGraduateDiscipline || p.post_graduate_discipline || null;
+      )
+        .trim()
+        .toUpperCase();
+      const postGradDisc =
+        p.postGraduateDiscipline || p.post_graduate_discipline || null;
       const elig = Array.isArray(p.eligibility)
         ? p.eligibility
         : [p.eligibility || "Licensure Examination for Teachers"];
       const prcSpec = String(
         p.prcSpecialization || p.prc_specialization || major,
-      ).trim().toUpperCase();
+      )
+        .trim()
+        .toUpperCase();
 
       profileUpsertRows.push({
         id: pId,
@@ -2018,7 +2079,9 @@ router.post("/sync-roster", async (req, res) => {
         employee_no: empNo || null,
         deped_email: depedEmail || null,
         no_deped_email: noDepedEmail,
-        allow_email_discrepancy: Boolean(p.allowEmailDiscrepancy || p.allow_email_discrepancy),
+        allow_email_discrepancy: Boolean(
+          p.allowEmailDiscrepancy || p.allow_email_discrepancy,
+        ),
         is_school_head: isHead,
       });
 
@@ -2053,7 +2116,9 @@ router.post("/sync-roster", async (req, res) => {
         major,
         minor,
         post_graduate_degree: postGrad,
-        post_graduate_discipline: postGradDisc ? JSON.stringify(postGradDisc) : null,
+        post_graduate_discipline: postGradDisc
+          ? JSON.stringify(postGradDisc)
+          : null,
         eligibility: JSON.stringify(elig),
         prc_specialization: prcSpec,
       });
@@ -2061,7 +2126,10 @@ router.post("/sync-roster", async (req, res) => {
       if (Array.isArray(p.designations) && p.designations.length > 0) {
         for (let dIdx = 0; dIdx < p.designations.length; dIdx++) {
           const dItem = p.designations[dIdx];
-          const dName = typeof dItem === "string" ? dItem : dItem?.designation_name || dItem?.name;
+          const dName =
+            typeof dItem === "string"
+              ? dItem
+              : dItem?.designation_name || dItem?.name;
           if (!dName) continue;
           designationsRows.push({
             id: `DSG-${cleanSchoolId}-${safeSuffix}-${dIdx}`,
@@ -2070,7 +2138,9 @@ router.post("/sync-roster", async (req, res) => {
             grade_level: dItem?.grade_level || dItem?.gradeLevel || null,
             subject_area: dItem?.subject_area || dItem?.subjectArea || null,
             track: dItem?.track || null,
-            is_sds_approved: Boolean(dItem?.is_sds_approved || dItem?.isSdsApproved),
+            is_sds_approved: Boolean(
+              dItem?.is_sds_approved || dItem?.isSdsApproved,
+            ),
             sds_confirmed: Boolean(dItem?.sds_confirmed || dItem?.sdsConfirmed),
             serialized_key: `${cleanSchoolId}_${pId}_${dName.toUpperCase()}`,
           });
@@ -2165,12 +2235,14 @@ router.post("/sync-roster", async (req, res) => {
       // Upsert mappings for any legacy IDs encountered during sync
       for (const pRow of profileUpsertRows) {
         if (pRow.legacy_id && pRow.legacy_id !== pRow.id) {
-          await client.query(
-            `INSERT INTO esf7_personnel_id_mapping (legacy_id, new_id, status)
+          await client
+            .query(
+              `INSERT INTO esf7_personnel_id_mapping (legacy_id, new_id, status)
              VALUES ($1, $2, $3)
              ON CONFLICT (legacy_id) DO UPDATE SET new_id = EXCLUDED.new_id, status = EXCLUDED.status`,
-            [pRow.legacy_id, pRow.id, pRow.status || "canonical"],
-          ).catch(() => {});
+              [pRow.legacy_id, pRow.id, pRow.status || "canonical"],
+            )
+            .catch(() => {});
         }
       }
 
@@ -2396,16 +2468,13 @@ router.get("/roster", async (req, res) => {
           highestEducationalAttainment:
             r.highestEducationalAttainment ||
             "COLLEGE GRADUATE / BACCALAUREATE",
-          collegeDegree:
-            r.collegeDegree || "BACHELOR OF SECONDARY EDUCATION",
+          collegeDegree: r.collegeDegree || "BACHELOR OF SECONDARY EDUCATION",
           degreeRows: r.degreeRows || [],
           major: r.major || "GENERAL EDUCATION",
           minor: r.minor || "N/A",
           postGraduateDegree: r.postGraduateDegree || "N/A",
           postGraduateDiscipline: r.postGraduateDiscipline,
-          eligibility: r.eligibility || [
-            "Licensure Examination for Teachers",
-          ],
+          eligibility: r.eligibility || ["Licensure Examination for Teachers"],
           prcSpecialization: r.prcSpecialization || r.major || "",
           type: r.type || "teaching",
           profilingCode: "",

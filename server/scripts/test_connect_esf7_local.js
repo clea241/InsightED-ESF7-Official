@@ -1,19 +1,19 @@
-const { Pool } = require('../node_modules/pg');
+const { Pool } = require("../node_modules/pg");
 
 const localPool = new Pool({
-  host: '127.0.0.1',
+  host: "127.0.0.1",
   port: 5432,
-  user: 'postgres',
-  password: 'kLeyahhUnique241!@',
-  database: 'esf7_local',
+  user: "postgres",
+  password: "kLeyahhUnique241!@",
+  database: "esf7_local",
   ssl: false,
 });
 
 async function main() {
   const client = await localPool.connect();
   try {
-    const res = await client.query('SELECT current_database(), current_user;');
-    console.log('Connected to local db successfully:', res.rows[0]);
+    const res = await client.query("SELECT current_database(), current_user;");
+    console.log("Connected to local db successfully:", res.rows[0]);
 
     const tables = await client.query(`
       SELECT table_name, table_type 
@@ -21,7 +21,10 @@ async function main() {
       WHERE table_schema = 'public'
       ORDER BY table_name;
     `);
-    console.log(`Current tables in esf7_local (${tables.rows.length}):`, tables.rows.map(t => `${t.table_name} (${t.table_type})`));
+    console.log(
+      `Current tables in esf7_local (${tables.rows.length}):`,
+      tables.rows.map((t) => `${t.table_name} (${t.table_type})`),
+    );
   } finally {
     client.release();
     await localPool.end();

@@ -32,7 +32,9 @@ export function canonicalTermSlug(term) {
 }
 
 export function cleanSchoolId(schoolId) {
-  return String(schoolId || "").replace(/^SCH-/i, "").trim();
+  return String(schoolId || "")
+    .replace(/^SCH-/i, "")
+    .trim();
 }
 
 /**
@@ -50,7 +52,12 @@ export function getSchoolDraftKey(schoolId, schoolYear, term = null) {
  * Canonical teacher profile draft key in localStorage.
  * e.g. "draft_personnel_300488_SY 26-27_PER-001"
  */
-export function getPersonnelDraftKey(schoolId, schoolYear, personnelId, term = null) {
+export function getPersonnelDraftKey(
+  schoolId,
+  schoolYear,
+  personnelId,
+  term = null,
+) {
   const sid = cleanSchoolId(schoolId);
   const sy = canonicalSchoolYear(schoolYear);
   const pid = String(personnelId || "").trim();
@@ -64,7 +71,12 @@ export function getPersonnelDraftKey(schoolId, schoolYear, personnelId, term = n
  * Canonical teacher workload draft key in localStorage.
  * e.g. "draft_workload_300488_SY 26-27_PER-001_term_1"
  */
-export function getWorkloadDraftKey(schoolId, schoolYear, personnelId, term = null) {
+export function getWorkloadDraftKey(
+  schoolId,
+  schoolYear,
+  personnelId,
+  term = null,
+) {
   const sid = cleanSchoolId(schoolId);
   const sy = canonicalSchoolYear(schoolYear);
   const pid = String(personnelId || "").trim();
@@ -97,7 +109,9 @@ export function readMigratedLocalStorage(newKey, legacyKeys = []) {
         localStorage.setItem(newKey, oldVal);
         // Only delete oldKey after successful write to newKey
         localStorage.removeItem(oldKey);
-        console.info(`[StorageKeyMigration] Migrated localStorage key "${oldKey}" -> "${newKey}"`);
+        console.info(
+          `[StorageKeyMigration] Migrated localStorage key "${oldKey}" -> "${newKey}"`,
+        );
         return oldVal;
       }
     }

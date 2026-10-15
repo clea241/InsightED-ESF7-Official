@@ -24,7 +24,11 @@ function assertJwtSecret(env = process.env) {
       );
     }
   } else {
-    if (s && String(s).trim().length > 0 && String(s).trim().length < MIN_LENGTH) {
+    if (
+      s &&
+      String(s).trim().length > 0 &&
+      String(s).trim().length < MIN_LENGTH
+    ) {
       throw new Error(
         `JWT_SECRET is too short (minimum ${MIN_LENGTH} characters required)`,
       );

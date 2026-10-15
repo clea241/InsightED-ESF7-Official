@@ -23,7 +23,8 @@ if (env.DATABASE_URL) {
     }
     if (!env.DB_HOST && u.hostname) env.DB_HOST = u.hostname;
     if (!env.DB_PORT && u.port) env.DB_PORT = u.port;
-    if (!env.DB_USER && u.username) env.DB_USER = decodeURIComponent(u.username);
+    if (!env.DB_USER && u.username)
+      env.DB_USER = decodeURIComponent(u.username);
   } catch {
     // Ignore invalid database URL; fall back to individual DB_* env variables
   }

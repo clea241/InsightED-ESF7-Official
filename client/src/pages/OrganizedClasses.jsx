@@ -4005,7 +4005,9 @@ export default function OrganizedClasses() {
           payload: classSectionsRef.current,
           lastError: "Offline - saved locally",
         });
-        savedSectionsSnapshotRef.current = JSON.stringify(getSectionsSnapshot());
+        savedSectionsSnapshotRef.current = JSON.stringify(
+          getSectionsSnapshot(),
+        );
         if (setSectionsOverlayApplied) setSectionsOverlayApplied(false);
         if (completeNode) completeNode("classes", null);
         if (showToast) {
@@ -4167,7 +4169,9 @@ export default function OrganizedClasses() {
       }
 
       if (isNetworkErr) {
-        savedSectionsSnapshotRef.current = JSON.stringify(getSectionsSnapshot());
+        savedSectionsSnapshotRef.current = JSON.stringify(
+          getSectionsSnapshot(),
+        );
         if (setSectionsOverlayApplied) setSectionsOverlayApplied(false);
         if (completeNode) completeNode("classes", null);
         if (showToast) {
@@ -4703,7 +4707,6 @@ export default function OrganizedClasses() {
                   resolved === String(sec.id);
                 return !isGenId && resolved ? resolved : "";
               },
-
             },
             {
               key: "male",
@@ -6725,7 +6728,9 @@ export default function OrganizedClasses() {
                                     <button
                                       type="button"
                                       disabled={isBeingEdited}
-                                      onClick={() => handleDeleteSection(sec, "Section")}
+                                      onClick={() =>
+                                        handleDeleteSection(sec, "Section")
+                                      }
                                       style={{
                                         background: "none",
                                         color: "#EF4444",
@@ -7428,7 +7433,12 @@ export default function OrganizedClasses() {
                                       <button
                                         type="button"
                                         disabled={isBeingEdited}
-                                        onClick={() => handleDeleteSection(sec, "SNED Section")}
+                                        onClick={() =>
+                                          handleDeleteSection(
+                                            sec,
+                                            "SNED Section",
+                                          )
+                                        }
                                         style={{
                                           background: "none",
                                           color: "#EF4444",
@@ -7851,7 +7861,6 @@ export default function OrganizedClasses() {
                                         res === String(sec.id);
                                       return !isGenId && res ? res : "—";
                                     })()}
-
                                   </td>
                                   <td
                                     style={{
@@ -7945,7 +7954,12 @@ export default function OrganizedClasses() {
                                       <button
                                         type="button"
                                         disabled={isBeingEdited}
-                                        onClick={() => handleDeleteSection(sec, "ALS Section")}
+                                        onClick={() =>
+                                          handleDeleteSection(
+                                            sec,
+                                            "ALS Section",
+                                          )
+                                        }
                                         style={{
                                           background: "none",
                                           color: "#EF4444",
@@ -8515,7 +8529,9 @@ export default function OrganizedClasses() {
                                     <button
                                       type="button"
                                       disabled={isBeingEdited}
-                                      onClick={() => handleDeleteSection(sec, "ARAL Section")}
+                                      onClick={() =>
+                                        handleDeleteSection(sec, "ARAL Section")
+                                      }
                                       style={{
                                         background: "none",
                                         color: "#EF4444",
@@ -9052,7 +9068,12 @@ export default function OrganizedClasses() {
                                     <button
                                       type="button"
                                       disabled={isBeingEdited}
-                                      onClick={() => handleDeleteSection(sec, "Remedial / Enrichment Section")}
+                                      onClick={() =>
+                                        handleDeleteSection(
+                                          sec,
+                                          "Remedial / Enrichment Section",
+                                        )
+                                      }
                                       style={{
                                         background: "none",
                                         color: "#EF4444",

@@ -110,7 +110,10 @@ const generateESF7Xlsb = async (req, res) => {
         if (pRes.rows.length > 0) personnelList = pRes.rows;
       }
     } catch (normErr) {
-      console.warn("[eSF7-XLSB] Normalized tables lookup failed:", normErr.message);
+      console.warn(
+        "[eSF7-XLSB] Normalized tables lookup failed:",
+        normErr.message,
+      );
     }
 
     // 2. Fallback to DB tables if normalized lookup is empty

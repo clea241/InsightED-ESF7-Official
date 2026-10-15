@@ -1,6 +1,6 @@
 const { Pool } = require("pg");
 const path = require("path");
-require("./loadEnv"); });
+require("./loadEnv");
 
 // Connect to insightEd database (read-only inspection)
 const poolString = process.env.DATABASE_URL

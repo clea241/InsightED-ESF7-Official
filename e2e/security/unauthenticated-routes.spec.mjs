@@ -13,7 +13,9 @@ const OPEN = [
 ];
 
 for (const [id, path] of OPEN) {
-  test(`${id} GET ${path} requires authentication @open-finding`, async ({ request }) => {
+  test(`${id} GET ${path} requires authentication @open-finding`, async ({
+    request,
+  }) => {
     const res = await request.get(path, { headers: {} });
     expect(res.status(), "no token must be refused").toBe(401);
   });

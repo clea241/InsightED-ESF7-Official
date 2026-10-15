@@ -16,11 +16,17 @@ process.env.JWT_SECRET = TEST_SECRET;
 const TABLES_SQL = `
   DROP TABLE IF EXISTS esf7_shs_workload_rows, esf7_workload_rows, esf7_personnel_employment, esf7_personnel_profile CASCADE;
   CREATE TABLE esf7_personnel_profile (
-    id VARCHAR(50) PRIMARY KEY, prn TEXT UNIQUE NOT NULL, school_id TEXT NOT NULL, school_year TEXT NOT NULL,
+    id VARCHAR(50) PRIMARY KEY, legacy_id VARCHAR(128), status VARCHAR(32) NOT NULL DEFAULT 'canonical', prn TEXT UNIQUE NOT NULL, school_id TEXT NOT NULL, school_year TEXT NOT NULL,
     first_name TEXT, last_name TEXT, raw_payload JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
   );
-  CREATE TABLE esf7_personnel_employment (personnel_id VARCHAR(50) UNIQUE, grade_levels_taught JSONB);
+  CREATE TABLE esf7_personnel_employment (
+    id VARCHAR(50) PRIMARY KEY DEFAULT 'EMP-1',
+    personnel_id VARCHAR(50) UNIQUE,
+    school_id TEXT NOT NULL DEFAULT '111111',
+    school_year TEXT NOT NULL DEFAULT 'SY 26-27',
+    grade_levels_taught JSONB
+  );
   CREATE TABLE esf7_workload_rows (
     id VARCHAR(80) PRIMARY KEY, personnel_id VARCHAR(50) NOT NULL REFERENCES esf7_personnel_profile(id) ON DELETE CASCADE,
     school_id TEXT NOT NULL, school_year TEXT NOT NULL, grade_level TEXT, section_id VARCHAR(50), section_name TEXT,
@@ -72,7 +78,14 @@ describe.skipIf(!enabled)(
 
     afterAll(async () => {
       if (server) server.close();
-      if (pool) await pool.end();
+      if (pool) {
+        await pool
+          .query(
+            "DROP TABLE IF EXISTS esf7_shs_workload_rows, esf7_workload_rows, esf7_personnel_employment, esf7_personnel_profile CASCADE",
+          )
+          .catch(() => {});
+        await pool.end();
+      }
     });
 
     const tokenFor = (school) =>

@@ -16,15 +16,23 @@ describe("src/config/auth.ts - JWT Secret Validation", () => {
   });
 
   it("throws fatal error if JWT_SECRET is missing or empty", () => {
-    expect(() => assertJwtSecret({ JWT_SECRET: "" })).toThrow(/missing or empty/i);
-    expect(() => assertJwtSecret({ JWT_SECRET: "   " })).toThrow(/missing or empty/i);
+    expect(() => assertJwtSecret({ JWT_SECRET: "" })).toThrow(
+      /missing or empty/i,
+    );
+    expect(() => assertJwtSecret({ JWT_SECRET: "   " })).toThrow(
+      /missing or empty/i,
+    );
     expect(() => assertJwtSecret({})).toThrow(/missing or empty/i);
   });
 
   it("throws fatal error if JWT_SECRET is shorter than 32 characters", () => {
     expect(() => assertJwtSecret({ JWT_SECRET: "short" })).toThrow(/too weak/i);
-    expect(() => assertJwtSecret({ JWT_SECRET: "a".repeat(16) })).toThrow(/too weak/i);
-    expect(() => assertJwtSecret({ JWT_SECRET: "a".repeat(31) })).toThrow(/too weak/i);
+    expect(() => assertJwtSecret({ JWT_SECRET: "a".repeat(16) })).toThrow(
+      /too weak/i,
+    );
+    expect(() => assertJwtSecret({ JWT_SECRET: "a".repeat(31) })).toThrow(
+      /too weak/i,
+    );
   });
 
   it("succeeds and returns secret when JWT_SECRET is 32 characters or longer", () => {
@@ -34,7 +42,9 @@ describe("src/config/auth.ts - JWT Secret Validation", () => {
 
     const valid64HexSecret =
       "7648c1a70591a0e6d75241e69055786b5e0b9e23f926b18589aa5e004a26c6bf";
-    expect(assertJwtSecret({ JWT_SECRET: valid64HexSecret })).toBe(valid64HexSecret);
+    expect(assertJwtSecret({ JWT_SECRET: valid64HexSecret })).toBe(
+      valid64HexSecret,
+    );
   });
 });
 
@@ -54,7 +64,9 @@ describe("src/middleware/jwt.ts - Authentication Gate", () => {
       extractBearerToken({ headers: { authorization: "Basic 123" } }),
     ).toBeNull();
     expect(
-      extractBearerToken({ headers: { authorization: "BearerTokenWithoutSpace" } }),
+      extractBearerToken({
+        headers: { authorization: "BearerTokenWithoutSpace" },
+      }),
     ).toBeNull();
   });
 

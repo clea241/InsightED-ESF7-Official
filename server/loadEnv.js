@@ -6,12 +6,14 @@ const dotenv = require("dotenv");
 const rootEnvPath = path.resolve(__dirname, "../.env");
 const serverEnvPath = path.resolve(__dirname, ".env");
 
+const isTest =
+  process.env.NODE_ENV === "test" || Boolean(process.env.TEST_DATABASE_URL);
 if (fs.existsSync(rootEnvPath)) {
-  dotenv.config({ path: rootEnvPath, override: true });
+  dotenv.config({ path: rootEnvPath, override: !isTest });
 } else if (fs.existsSync(serverEnvPath)) {
-  dotenv.config({ path: serverEnvPath, override: true });
+  dotenv.config({ path: serverEnvPath, override: !isTest });
 } else {
-  dotenv.config({ override: true });
+  dotenv.config({ override: !isTest });
 }
 
 // Automatically synthesize legacy individual database fields from standardized URLs
@@ -45,7 +47,8 @@ if (primaryUrl) {
       } else {
         const isLocal =
           parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
-        process.env.DB_SSL = !isLocal && parsed.hostname.includes("azure.com") ? "true" : "false";
+        process.env.DB_SSL =
+          !isLocal && parsed.hostname.includes("azure.com") ? "true" : "false";
       }
     }
   } catch (err) {
@@ -56,8 +59,14 @@ if (primaryUrl) {
 if (process.env.USERS_DATABASE_URL) {
   try {
     const parsedUsers = new URL(process.env.USERS_DATABASE_URL);
-    if (!process.env.USERS_DB_NAME && parsedUsers.pathname && parsedUsers.pathname.length > 1) {
-      process.env.USERS_DB_NAME = decodeURIComponent(parsedUsers.pathname.slice(1));
+    if (
+      !process.env.USERS_DB_NAME &&
+      parsedUsers.pathname &&
+      parsedUsers.pathname.length > 1
+    ) {
+      process.env.USERS_DB_NAME = decodeURIComponent(
+        parsedUsers.pathname.slice(1),
+      );
     }
     if (!process.env.AUTH_DB_NAME) {
       process.env.AUTH_DB_NAME = process.env.USERS_DB_NAME;
@@ -68,8 +77,14 @@ if (process.env.USERS_DATABASE_URL) {
 if (process.env.INSIGHTED_DATABASE_URL) {
   try {
     const parsedInsight = new URL(process.env.INSIGHTED_DATABASE_URL);
-    if (!process.env.INSIGHTED_DB_NAME && parsedInsight.pathname && parsedInsight.pathname.length > 1) {
-      process.env.INSIGHTED_DB_NAME = decodeURIComponent(parsedInsight.pathname.slice(1));
+    if (
+      !process.env.INSIGHTED_DB_NAME &&
+      parsedInsight.pathname &&
+      parsedInsight.pathname.length > 1
+    ) {
+      process.env.INSIGHTED_DB_NAME = decodeURIComponent(
+        parsedInsight.pathname.slice(1),
+      );
     }
   } catch (err) {}
 }

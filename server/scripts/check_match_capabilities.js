@@ -1,11 +1,11 @@
-const { Pool } = require('../node_modules/pg');
+const { Pool } = require("../node_modules/pg");
 
 const pool = new Pool({
-  host: 'stride-posgre-prod-01.postgres.database.azure.com',
+  host: "stride-posgre-prod-01.postgres.database.azure.com",
   port: 5432,
-  user: 'Administrator1',
-  password: 'pRZTbQ2T1JD7',
-  database: 'insighted_esf7',
+  user: "Administrator1",
+  password: "pRZTbQ2T1JD7",
+  database: "insighted_esf7",
   ssl: { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
@@ -14,8 +14,8 @@ const pool = new Pool({
 async function main() {
   const client = await pool.connect();
   try {
-    console.log('--- Checking match capabilities ---');
-    
+    console.log("--- Checking match capabilities ---");
+
     // 1. Where section_id does NOT directly match any of the 4 tables, how many match regular sections by (school_id, section_name)?
     const resRegName = await client.query(`
       SELECT count(*) FROM esf7_workload_rows w
@@ -27,7 +27,10 @@ async function main() {
         AND NOT EXISTS (SELECT 1 FROM esf7_aral_sections x WHERE x.id = w.section_id)
         AND NOT EXISTS (SELECT 1 FROM esf7_sned_sections x WHERE x.id = w.section_id);
     `);
-    console.log('Unmatched workloads matching regular_sections by name:', resRegName.rows[0].count);
+    console.log(
+      "Unmatched workloads matching regular_sections by name:",
+      resRegName.rows[0].count,
+    );
 
     // 2. What about with grade_level match as well?
     const resRegGradeAndName = await client.query(`
@@ -41,7 +44,10 @@ async function main() {
         AND NOT EXISTS (SELECT 1 FROM esf7_aral_sections x WHERE x.id = w.section_id)
         AND NOT EXISTS (SELECT 1 FROM esf7_sned_sections x WHERE x.id = w.section_id);
     `);
-    console.log('Unmatched workloads matching regular_sections by name AND grade_level:', resRegGradeAndName.rows[0].count);
+    console.log(
+      "Unmatched workloads matching regular_sections by name AND grade_level:",
+      resRegGradeAndName.rows[0].count,
+    );
 
     // 3. For SNED sections
     const resSned = await client.query(`
@@ -54,7 +60,10 @@ async function main() {
         AND NOT EXISTS (SELECT 1 FROM esf7_aral_sections x WHERE x.id = w.section_id)
         AND NOT EXISTS (SELECT 1 FROM esf7_sned_sections x WHERE x.id = w.section_id);
     `);
-    console.log('Unmatched workloads matching sned_sections by name:', resSned.rows[0].count);
+    console.log(
+      "Unmatched workloads matching sned_sections by name:",
+      resSned.rows[0].count,
+    );
 
     // 4. For ALS sections
     const resAls = await client.query(`
@@ -67,7 +76,10 @@ async function main() {
         AND NOT EXISTS (SELECT 1 FROM esf7_aral_sections x WHERE x.id = w.section_id)
         AND NOT EXISTS (SELECT 1 FROM esf7_sned_sections x WHERE x.id = w.section_id);
     `);
-    console.log('Unmatched workloads matching als_sections by name:', resAls.rows[0].count);
+    console.log(
+      "Unmatched workloads matching als_sections by name:",
+      resAls.rows[0].count,
+    );
 
     // 5. For ARAL sections
     const resAral = await client.query(`
@@ -80,7 +92,10 @@ async function main() {
         AND NOT EXISTS (SELECT 1 FROM esf7_aral_sections x WHERE x.id = w.section_id)
         AND NOT EXISTS (SELECT 1 FROM esf7_sned_sections x WHERE x.id = w.section_id);
     `);
-    console.log('Unmatched workloads matching aral_sections by name:', resAral.rows[0].count);
+    console.log(
+      "Unmatched workloads matching aral_sections by name:",
+      resAral.rows[0].count,
+    );
 
     // 6. Look at a sample of matching pairs
     const sampleMatches = await client.query(`
@@ -92,9 +107,8 @@ async function main() {
       WHERE w.section_id != r.id
       LIMIT 10;
     `);
-    console.log('\nSample matching pairs (regular):');
+    console.log("\nSample matching pairs (regular):");
     console.log(sampleMatches.rows);
-
   } finally {
     client.release();
     await pool.end();

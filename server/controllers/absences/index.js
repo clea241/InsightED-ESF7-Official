@@ -45,12 +45,7 @@ function formatAbsenceRecord(row) {
 // GET all absence records for school or personnel
 router.get("/", async (req, res) => {
   try {
-    const {
-      personnel_id,
-      personnelId,
-      school_id,
-      schoolId,
-    } = req.query;
+    const { personnel_id, personnelId, school_id, schoolId } = req.query;
     const targetPersonnelId = personnel_id || personnelId;
 
     let query = `SELECT * FROM overload_absences WHERE 1=1`;

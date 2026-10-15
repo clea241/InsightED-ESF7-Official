@@ -26,7 +26,11 @@ const adminTaskPayload = codec("esf7_admin_task");
 async function resolvePersonnelId(dbClient, rawId) {
   if (!rawId || typeof rawId !== "string") return rawId;
   const trimmed = rawId.trim();
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
+  if (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      trimmed,
+    )
+  ) {
     return trimmed;
   }
   const poolOrClient = dbClient || db;
@@ -52,17 +56,25 @@ async function resolvePersonnelIdentity(dbClient, schoolId, p) {
   const sidPair = [cleanSchoolId, `SCH-${cleanSchoolId}`];
 
   const rawId = p.id ? String(p.id).trim() : null;
-  const rawLegacyId = (p.legacy_id || p.legacyId) ? String(p.legacy_id || p.legacyId).trim() : null;
+  const rawLegacyId =
+    p.legacy_id || p.legacyId ? String(p.legacy_id || p.legacyId).trim() : null;
   const rawPrn = p.prn ? String(p.prn).trim() : null;
-  const empNo = (p.employeeNo || p.employee_no) ? String(p.employeeNo || p.employee_no).trim() : null;
-  const fName = String(p.firstName || p.first_name || p.first || "").toUpperCase().trim();
-  const lName = String(p.lastName || p.last_name || p.last || "").toUpperCase().trim();
+  const empNo =
+    p.employeeNo || p.employee_no
+      ? String(p.employeeNo || p.employee_no).trim()
+      : null;
+  const fName = String(p.firstName || p.first_name || p.first || "")
+    .toUpperCase()
+    .trim();
+  const lName = String(p.lastName || p.last_name || p.last || "")
+    .toUpperCase()
+    .trim();
 
   // 1. Direct match by ID in this school
   if (rawId) {
     const byId = await poolOrClient.query(
       `SELECT id, prn, school_id, status FROM esf7_personnel_profile WHERE school_id = ANY($1) AND (id = $2 OR legacy_id = $2) LIMIT 1`,
-      [sidPair, rawId]
+      [sidPair, rawId],
     );
     if (byId.rows.length > 0) return byId.rows[0];
   }
@@ -71,7 +83,7 @@ async function resolvePersonnelIdentity(dbClient, schoolId, p) {
   if (rawLegacyId) {
     const byLeg = await poolOrClient.query(
       `SELECT id, prn, school_id, status FROM esf7_personnel_profile WHERE school_id = ANY($1) AND (legacy_id = $2 OR id = $2) LIMIT 1`,
-      [sidPair, rawLegacyId]
+      [sidPair, rawLegacyId],
     );
     if (byLeg.rows.length > 0) return byLeg.rows[0];
   }
@@ -80,7 +92,7 @@ async function resolvePersonnelIdentity(dbClient, schoolId, p) {
   if (rawPrn && rawPrn !== "N/A" && rawPrn !== "NONE" && rawPrn.length > 2) {
     const byPrn = await poolOrClient.query(
       `SELECT id, prn, school_id, status FROM esf7_personnel_profile WHERE school_id = ANY($1) AND UPPER(TRIM(prn)) = UPPER(TRIM($2)) LIMIT 1`,
-      [sidPair, rawPrn]
+      [sidPair, rawPrn],
     );
     if (byPrn.rows.length > 0) return byPrn.rows[0];
   }
@@ -89,7 +101,7 @@ async function resolvePersonnelIdentity(dbClient, schoolId, p) {
   if (empNo && empNo !== "N/A" && empNo !== "NONE" && empNo.length > 2) {
     const byEmp = await poolOrClient.query(
       `SELECT id, prn, school_id, status FROM esf7_personnel_profile WHERE school_id = ANY($1) AND TRIM(employee_no) = $2 LIMIT 1`,
-      [sidPair, empNo]
+      [sidPair, empNo],
     );
     if (byEmp.rows.length > 0) return byEmp.rows[0];
   }
@@ -102,7 +114,7 @@ async function resolvePersonnelIdentity(dbClient, schoolId, p) {
          AND UPPER(TRIM(first_name)) = $2 
          AND UPPER(TRIM(last_name)) = $3 
        LIMIT 1`,
-      [sidPair, fName, lName]
+      [sidPair, fName, lName],
     );
     if (byName.rows.length > 0) return byName.rows[0];
   }
@@ -809,17 +821,19 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
   } else {
     // 1. Primary: Fast indexed lookup on school_id in production esf7_database (< 1s)
     masterRes = await insightEdPool
-      .query(`SELECT * FROM esf7_database WHERE school_id = $1 AND (deleted IS NOT TRUE)`, [
-        cleanSchoolId,
-      ])
+      .query(
+        `SELECT * FROM esf7_database WHERE school_id = $1 AND (deleted IS NOT TRUE)`,
+        [cleanSchoolId],
+      )
       .catch(noteMasterFailure("esf7_database primary indexed query"));
 
     // Fallback: If 0 rows found with school_id, check schoool_id
     if (masterRes.rows.length === 0) {
       masterRes = await insightEdPool
-        .query(`SELECT * FROM esf7_database WHERE schoool_id = $1 AND (deleted IS NOT TRUE)`, [
-          cleanSchoolId,
-        ])
+        .query(
+          `SELECT * FROM esf7_database WHERE schoool_id = $1 AND (deleted IS NOT TRUE)`,
+          [cleanSchoolId],
+        )
         .catch(noteMasterFailure("esf7_database schoool_id query"));
     }
 
@@ -889,9 +903,9 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
     const seq = String(i + 1).padStart(3, "0");
     const profileId = String(
       row.id ||
-      (typeof crypto !== "undefined" && crypto.randomUUID
-        ? crypto.randomUUID()
-        : require("crypto").randomUUID()),
+        (typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : require("crypto").randomUUID()),
     );
     const empId = row.employmentId || profileId;
     const educId = row.educationId || `EDU-${cleanSchoolId}-${seq}`;
@@ -1740,7 +1754,6 @@ function formatPersonnelRecord(
     rawPayload: { ...rawProfile, ...rawEmp, ...rawEduc, ...rawLA },
   };
 }
-
 
 module.exports = {
   safeCoerceDate,

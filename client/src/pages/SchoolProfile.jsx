@@ -98,13 +98,11 @@ export default function SchoolProfile() {
           o.includes("ES"),
       ) || isElemActive;
     const hasJHS =
-      offerings.some(
-        (o) => o.includes("JHS") || o.includes("JUNIOR"),
-      ) || isJHSActive;
+      offerings.some((o) => o.includes("JHS") || o.includes("JUNIOR")) ||
+      isJHSActive;
     const hasSHS =
-      offerings.some(
-        (o) => o.includes("SHS") || o.includes("SENIOR"),
-      ) || isSHSActive;
+      offerings.some((o) => o.includes("SHS") || o.includes("SENIOR")) ||
+      isSHSActive;
 
     if (hasElem || (!hasJHS && !hasSHS && offerings.length === 0)) {
       grades.push(
@@ -286,10 +284,7 @@ export default function SchoolProfile() {
           localDraft || (storedStr ? JSON.parse(storedStr) : null);
         // Database first: when schoolInfo has been loaded from esf7_school_profile, database is authoritative.
         // Local draft is strictly a secondary fallback if not yet stored on server.
-        const config =
-          schoolInfo?.curricularConfigSaved
-            ? null
-            : localConfig;
+        const config = schoolInfo?.curricularConfigSaved ? null : localConfig;
 
         const allInclusive = Array.isArray(config?.inclusivePrograms)
           ? config.inclusivePrograms
@@ -663,19 +658,52 @@ export default function SchoolProfile() {
           : []),
       ];
 
-      const has_es_sned = isElemActive && hasElemInclusive === "yes" && elemInclusivePrograms.includes("SNED-ES");
-      const has_es_als = isElemActive && hasElemInclusive === "yes" && elemInclusivePrograms.includes("ALS-ES");
-      const has_es_iped = isElemActive && hasElemInclusive === "yes" && elemInclusivePrograms.includes("IPED-ES");
-      const has_es_mad = isElemActive && hasElemInclusive === "yes" && elemInclusivePrograms.includes("MADRASAH-ES");
+      const has_es_sned =
+        isElemActive &&
+        hasElemInclusive === "yes" &&
+        elemInclusivePrograms.includes("SNED-ES");
+      const has_es_als =
+        isElemActive &&
+        hasElemInclusive === "yes" &&
+        elemInclusivePrograms.includes("ALS-ES");
+      const has_es_iped =
+        isElemActive &&
+        hasElemInclusive === "yes" &&
+        elemInclusivePrograms.includes("IPED-ES");
+      const has_es_mad =
+        isElemActive &&
+        hasElemInclusive === "yes" &&
+        elemInclusivePrograms.includes("MADRASAH-ES");
 
-      const has_jhs_sned = isJHSActive && hasJhsInclusive === "yes" && jhsInclusivePrograms.includes("SNED-JHS");
-      const has_jhs_als = isJHSActive && hasJhsInclusive === "yes" && jhsInclusivePrograms.includes("ALS-JHS");
-      const has_jhs_iped = isJHSActive && hasJhsInclusive === "yes" && jhsInclusivePrograms.includes("IPED-JHS");
-      const has_jhs_mad = isJHSActive && hasJhsInclusive === "yes" && jhsInclusivePrograms.includes("MADRASAH-JHS");
+      const has_jhs_sned =
+        isJHSActive &&
+        hasJhsInclusive === "yes" &&
+        jhsInclusivePrograms.includes("SNED-JHS");
+      const has_jhs_als =
+        isJHSActive &&
+        hasJhsInclusive === "yes" &&
+        jhsInclusivePrograms.includes("ALS-JHS");
+      const has_jhs_iped =
+        isJHSActive &&
+        hasJhsInclusive === "yes" &&
+        jhsInclusivePrograms.includes("IPED-JHS");
+      const has_jhs_mad =
+        isJHSActive &&
+        hasJhsInclusive === "yes" &&
+        jhsInclusivePrograms.includes("MADRASAH-JHS");
 
-      const has_shs_sned = isSHSActive && hasShsInclusive === "yes" && shsInclusivePrograms.includes("SNED-SHS");
-      const has_shs_iped = isSHSActive && hasShsInclusive === "yes" && shsInclusivePrograms.includes("IPED-SHS");
-      const has_shs_mad = isSHSActive && hasShsInclusive === "yes" && shsInclusivePrograms.includes("MADRASAH-SHS");
+      const has_shs_sned =
+        isSHSActive &&
+        hasShsInclusive === "yes" &&
+        shsInclusivePrograms.includes("SNED-SHS");
+      const has_shs_iped =
+        isSHSActive &&
+        hasShsInclusive === "yes" &&
+        shsInclusivePrograms.includes("IPED-SHS");
+      const has_shs_mad =
+        isSHSActive &&
+        hasShsInclusive === "yes" &&
+        shsInclusivePrograms.includes("MADRASAH-SHS");
 
       configData = {
         iern: String(iern || "").trim() || null,
@@ -2663,7 +2691,8 @@ export default function SchoolProfile() {
                               color: "#0284c7",
                             }}
                           >
-                            {Object.keys(shiftsConfig || {}).length} / {offeredGradeLevels.length} Configured
+                            {Object.keys(shiftsConfig || {}).length} /{" "}
+                            {offeredGradeLevels.length} Configured
                           </span>
                         </div>
                         <p
@@ -2673,7 +2702,8 @@ export default function SchoolProfile() {
                             color: "#475569",
                           }}
                         >
-                          Select the operational shift for each offered grade level. Only one shift is permitted per grade level.
+                          Select the operational shift for each offered grade
+                          level. Only one shift is permitted per grade level.
                         </p>
                       </div>
 
@@ -2804,25 +2834,27 @@ export default function SchoolProfile() {
                             >
                               Offered Grade Level
                             </th>
-                            {["Single Shift", "Double Shift", "Triple Shift"].map(
-                              (shiftName) => (
-                                <th
-                                  key={shiftName}
-                                  style={{
-                                    padding: "12px 16px",
-                                    fontSize: "11px",
-                                    fontWeight: "800",
-                                    color: "#0369a1",
-                                    textTransform: "uppercase",
-                                    letterSpacing: "0.05em",
-                                    textAlign: "center",
-                                    width: "24%",
-                                  }}
-                                >
-                                  {shiftName}
-                                </th>
-                              ),
-                            )}
+                            {[
+                              "Single Shift",
+                              "Double Shift",
+                              "Triple Shift",
+                            ].map((shiftName) => (
+                              <th
+                                key={shiftName}
+                                style={{
+                                  padding: "12px 16px",
+                                  fontSize: "11px",
+                                  fontWeight: "800",
+                                  color: "#0369a1",
+                                  textTransform: "uppercase",
+                                  letterSpacing: "0.05em",
+                                  textAlign: "center",
+                                  width: "24%",
+                                }}
+                              >
+                                {shiftName}
+                              </th>
+                            ))}
                           </tr>
                         </thead>
                         <tbody>
@@ -2877,54 +2909,53 @@ export default function SchoolProfile() {
                                   </div>
                                 </td>
 
-                                {["Single Shift", "Double Shift", "Triple Shift"].map(
-                                  (shiftType) => {
-                                    const isChecked = currentShift === shiftType;
-                                    return (
-                                      <td
-                                        key={shiftType}
-                                        onClick={() =>
-                                          handleGradeShiftChange(grade, shiftType)
-                                        }
+                                {[
+                                  "Single Shift",
+                                  "Double Shift",
+                                  "Triple Shift",
+                                ].map((shiftType) => {
+                                  const isChecked = currentShift === shiftType;
+                                  return (
+                                    <td
+                                      key={shiftType}
+                                      onClick={() =>
+                                        handleGradeShiftChange(grade, shiftType)
+                                      }
+                                      style={{
+                                        padding: "10px 16px",
+                                        textAlign: "center",
+                                        cursor: "pointer",
+                                        background: isChecked
+                                          ? "#f0f9ff"
+                                          : "transparent",
+                                        userSelect: "none",
+                                      }}
+                                    >
+                                      <div
                                         style={{
-                                          padding: "10px 16px",
-                                          textAlign: "center",
-                                          cursor: "pointer",
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          justifyContent: "center",
+                                          width: "22px",
+                                          height: "22px",
+                                          borderRadius: "6px",
+                                          border: isChecked
+                                            ? "2px solid #0284c7"
+                                            : "1.5px solid #cbd5e1",
                                           background: isChecked
-                                            ? "#f0f9ff"
-                                            : "transparent",
-                                          userSelect: "none",
+                                            ? "#0284c7"
+                                            : "#ffffff",
+                                          color: "#ffffff",
+                                          transition: "all 0.15s ease",
                                         }}
                                       >
-                                        <div
-                                          style={{
-                                            display: "inline-flex",
-                                            alignItems: "center",
-                                            justifyContent: "center",
-                                            width: "22px",
-                                            height: "22px",
-                                            borderRadius: "6px",
-                                            border: isChecked
-                                              ? "2px solid #0284c7"
-                                              : "1.5px solid #cbd5e1",
-                                            background: isChecked
-                                              ? "#0284c7"
-                                              : "#ffffff",
-                                            color: "#ffffff",
-                                            transition: "all 0.15s ease",
-                                          }}
-                                        >
-                                          {isChecked && (
-                                            <FiCheck
-                                              size={14}
-                                              strokeWidth={3}
-                                            />
-                                          )}
-                                        </div>
-                                      </td>
-                                    );
-                                  },
-                                )}
+                                        {isChecked && (
+                                          <FiCheck size={14} strokeWidth={3} />
+                                        )}
+                                      </div>
+                                    </td>
+                                  );
+                                })}
                               </tr>
                             );
                           })}

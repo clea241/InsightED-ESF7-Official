@@ -1,6 +1,6 @@
 /**
  * Clean Slate Rebuild of esf7_als_sections, esf7_aral_sections, and esf7_sned_sections
- * 
+ *
  * Rules:
  * - Strictly isolated to insighted_esf7 (Azure DB).
  * - Creates safety backup tables for all 3 special section tables.
@@ -12,14 +12,14 @@
  * - Syncs local database esf7_local as well.
  */
 
-const { Pool } = require('../node_modules/pg');
+const { Pool } = require("../node_modules/pg");
 
 const pool = new Pool({
-  host: 'stride-posgre-prod-01.postgres.database.azure.com',
+  host: "stride-posgre-prod-01.postgres.database.azure.com",
   port: 5432,
-  user: 'Administrator1',
-  password: 'pRZTbQ2T1JD7',
-  database: 'insighted_esf7',
+  user: "Administrator1",
+  password: "pRZTbQ2T1JD7",
+  database: "insighted_esf7",
   ssl: { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
@@ -31,9 +31,15 @@ async function main() {
   const startTime = Date.now();
 
   try {
-    console.log("===================================================================");
-    console.log("⚡ CLEAN SLATE REBUILD: esf7_als_sections, esf7_aral_sections, esf7_sned_sections");
-    console.log("===================================================================");
+    console.log(
+      "===================================================================",
+    );
+    console.log(
+      "⚡ CLEAN SLATE REBUILD: esf7_als_sections, esf7_aral_sections, esf7_sned_sections",
+    );
+    console.log(
+      "===================================================================",
+    );
 
     // 1. Safety Backups
     console.log("1. Creating safety backup tables...");
@@ -152,7 +158,9 @@ async function main() {
       FROM unique_rows
       ON CONFLICT (school_id, school_year, section_name) DO NOTHING;
     `);
-    console.log(`   ✅ Ingested ${alsRes.rowCount} ALS sections into esf7_als_sections.`);
+    console.log(
+      `   ✅ Ingested ${alsRes.rowCount} ALS sections into esf7_als_sections.`,
+    );
 
     // 7. Ingest SNED sections
     console.log("7. Ingesting SNED sections into esf7_sned_sections...");
@@ -223,7 +231,9 @@ async function main() {
       FROM unique_rows
       ON CONFLICT (school_id, school_year, section_name) DO NOTHING;
     `);
-    console.log(`   ✅ Ingested ${snedRes.rowCount} SNED sections into esf7_sned_sections.`);
+    console.log(
+      `   ✅ Ingested ${snedRes.rowCount} SNED sections into esf7_sned_sections.`,
+    );
 
     // 8. Ingest ARAL sections
     console.log("8. Ingesting ARAL sections into esf7_aral_sections...");
@@ -300,7 +310,9 @@ async function main() {
       FROM unique_rows
       ON CONFLICT (id) DO NOTHING;
     `);
-    console.log(`   ✅ Ingested ${aralRes.rowCount} ARAL sections into esf7_aral_sections.`);
+    console.log(
+      `   ✅ Ingested ${aralRes.rowCount} ARAL sections into esf7_aral_sections.`,
+    );
 
     // 9. Recreate view esf7_class_sections
     console.log("9. Recreating view esf7_class_sections...");
@@ -384,17 +396,28 @@ async function main() {
     console.log("   ✅ View 'esf7_class_sections' recreated successfully.");
 
     // 10. Verification metrics
-    const countALS = await client.query(`SELECT count(*) FROM esf7_als_sections;`);
-    const countSNED = await client.query(`SELECT count(*) FROM esf7_sned_sections;`);
-    const countARAL = await client.query(`SELECT count(*) FROM esf7_aral_sections;`);
+    const countALS = await client.query(
+      `SELECT count(*) FROM esf7_als_sections;`,
+    );
+    const countSNED = await client.query(
+      `SELECT count(*) FROM esf7_sned_sections;`,
+    );
+    const countARAL = await client.query(
+      `SELECT count(*) FROM esf7_aral_sections;`,
+    );
 
-    console.log("===================================================================");
-    console.log(`🎉 SUCCESS in ${((Date.now() - startTime) / 1000).toFixed(2)}s!`);
+    console.log(
+      "===================================================================",
+    );
+    console.log(
+      `🎉 SUCCESS in ${((Date.now() - startTime) / 1000).toFixed(2)}s!`,
+    );
     console.log(`- Total ALS Sections:  ${countALS.rows[0].count}`);
     console.log(`- Total SNED Sections: ${countSNED.rows[0].count}`);
     console.log(`- Total ARAL Sections: ${countARAL.rows[0].count}`);
-    console.log("===================================================================");
-
+    console.log(
+      "===================================================================",
+    );
   } catch (err) {
     console.error("❌ Rebuild failed:", err);
     process.exit(1);

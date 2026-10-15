@@ -69,7 +69,6 @@ const isStagingEnv =
   defaultDbName === "insighted_esf7_staging" ||
   (primaryConnUrl && primaryConnUrl.includes("insighted_esf7_staging"));
 
-
 // Base configuration with bounded connection timeout and quick idle recovery
 const baseConfig = {
   ssl: dbSsl,
@@ -120,10 +119,7 @@ function getStagingPool() {
     const connStr =
       process.env.STAGING_DATABASE_URL ||
       (primaryConnUrl
-        ? primaryConnUrl.replace(
-            /\/[^/?]+(\?|$)/,
-            `/insighted_esf7_staging$1`,
-          )
+        ? primaryConnUrl.replace(/\/[^/?]+(\?|$)/, `/insighted_esf7_staging$1`)
         : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/insighted_esf7_staging`);
     console.log(
       `📦 [DB Pool] Staging Pool connected -> database: "insighted_esf7_staging" on ${dbHost}:${dbPort}`,
@@ -189,10 +185,7 @@ function getInsightEdPool() {
     const connStr =
       process.env.INSIGHTED_DATABASE_URL ||
       (primaryConnUrl
-        ? primaryConnUrl.replace(
-            /\/[^/?]+(\?|$)/,
-            `/${masterDbName}$1`,
-          )
+        ? primaryConnUrl.replace(/\/[^/?]+(\?|$)/, `/${masterDbName}$1`)
         : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${masterDbName}`);
     console.log(
       `📦 [DB Pool] insightEd (Master) Pool connected -> database: "${masterDbName}" on ${dbHost}:${dbPort}`,
@@ -223,10 +216,7 @@ function getUsersDbPool() {
       process.env.USERS_DATABASE_URL ||
       process.env.AUTH_DATABASE_URL ||
       (primaryConnUrl
-        ? primaryConnUrl.replace(
-            /\/[^/?]+(\?|$)/,
-            `/${usersDbName}$1`,
-          )
+        ? primaryConnUrl.replace(/\/[^/?]+(\?|$)/, `/${usersDbName}$1`)
         : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${usersDbName}`);
     console.log(
       `📦 [DB Pool] Auth/Users Pool connected -> database: "${usersDbName}" on ${dbHost}:${dbPort}`,
@@ -355,14 +345,19 @@ function dbMiddleware(req, res, next) {
       }
     }
 
-    const isTest = !isLoadTestMode && !isLocalHost && !isStagingEnv && isDivisionOrTestAccount(schoolId);
-    const activePool = isLoadTestMode || isLocalHost || isStagingEnv
-      ? getPool()
-      : isTest
-        ? getStagingPool()
-        : process.env.NODE_ENV === "production"
-          ? getProdPool()
-          : getPool();
+    const isTest =
+      !isLoadTestMode &&
+      !isLocalHost &&
+      !isStagingEnv &&
+      isDivisionOrTestAccount(schoolId);
+    const activePool =
+      isLoadTestMode || isLocalHost || isStagingEnv
+        ? getPool()
+        : isTest
+          ? getStagingPool()
+          : process.env.NODE_ENV === "production"
+            ? getProdPool()
+            : getPool();
 
     dbStorage.run({ schoolId, isStaging: isTest, pool: activePool }, () => {
       next();
@@ -376,14 +371,19 @@ function dbMiddleware(req, res, next) {
  * Runs a function within the context of a specific school ID
  */
 function runWithSchool(schoolId, callback) {
-  const isTest = !isLoadTestMode && !isLocalHost && !isStagingEnv && isDivisionOrTestAccount(schoolId);
-  const activePool = isLoadTestMode || isLocalHost || isStagingEnv
-    ? getPool()
-    : isTest
-      ? getStagingPool()
-      : process.env.NODE_ENV === "production"
-        ? getProdPool()
-        : getPool();
+  const isTest =
+    !isLoadTestMode &&
+    !isLocalHost &&
+    !isStagingEnv &&
+    isDivisionOrTestAccount(schoolId);
+  const activePool =
+    isLoadTestMode || isLocalHost || isStagingEnv
+      ? getPool()
+      : isTest
+        ? getStagingPool()
+        : process.env.NODE_ENV === "production"
+          ? getProdPool()
+          : getPool();
   return dbStorage.run(
     { schoolId, isStaging: isTest, pool: activePool },
     callback,

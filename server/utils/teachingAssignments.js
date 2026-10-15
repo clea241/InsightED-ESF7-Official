@@ -30,7 +30,7 @@ function parseGrades(raw) {
 
 function getAssignedGrades(profileRow) {
   if (!profileRow) return [];
-  const raw = profileRow.extras || {};
+  const raw = profileRow.extras || profileRow.raw_payload || {};
   const candidates = [
     profileRow.grade_levels_taught,
     raw.assignedGradeLevels,
@@ -46,16 +46,25 @@ function getAssignedGrades(profileRow) {
 }
 
 function isNonTeaching(profileRow) {
-  const raw = (profileRow && profileRow.extras) || {};
-  const type = String(raw.type || "")
+  const raw =
+    (profileRow && (profileRow.extras || profileRow.raw_payload)) || {};
+  const type = String(raw.type || (profileRow && profileRow.type) || "")
     .toLowerCase()
     .trim();
-  const cat = String(raw.positionCategory || raw.position_category || "")
+  const cat = String(
+    raw.positionCategory ||
+      raw.position_category ||
+      (profileRow && profileRow.position_category) ||
+      "",
+  )
     .toUpperCase()
     .trim();
   if (type === "non-teaching" || cat.includes("NON-TEACHING")) return true;
   const pos = String(
-    raw.position || raw.plantilla_position || profileRow.position || "",
+    raw.position ||
+      raw.plantilla_position ||
+      (profileRow && profileRow.position) ||
+      "",
   ).toUpperCase();
   return NON_TEACHING_POSITION_HINTS.some((h) => pos.includes(h));
 }

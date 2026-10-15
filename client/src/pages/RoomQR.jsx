@@ -192,7 +192,10 @@ export default function RoomQR({ isModal = false, onClose } = {}) {
       step: p.stepIncrement || p.step_increment || 1,
       fund: p.fundSource || p.fund_source || "",
       natAppt: p.natureOfAppointment || p.nature_of_appointment || "",
-      attain: p.highestEducationalAttainment || p.highest_educational_attainment || "",
+      attain:
+        p.highestEducationalAttainment ||
+        p.highest_educational_attainment ||
+        "",
       degree: p.collegeDegree || p.college_degree || "",
       major: p.major || "",
       email: p.depedEmail || p.deped_email || "",
@@ -205,7 +208,8 @@ export default function RoomQR({ isModal = false, onClose } = {}) {
 
   // Sync active personnel ONLY when roster actually changes (no unthrottled intervals)
   useEffect(() => {
-    if (!Array.isArray(effectivePersonnel) || effectivePersonnel.length === 0) return;
+    if (!Array.isArray(effectivePersonnel) || effectivePersonnel.length === 0)
+      return;
 
     // Cache locally for fast UI response
     try {
@@ -234,7 +238,10 @@ export default function RoomQR({ isModal = false, onClose } = {}) {
     effectivePersonnel.forEach((p) => {
       if (!p?.id) return;
       const fp = getPersonnelFingerprint(p);
-      if (!lastSyncedRosterRef.current.has(p.id) || lastSyncedRosterRef.current.get(p.id) !== fp) {
+      if (
+        !lastSyncedRosterRef.current.has(p.id) ||
+        lastSyncedRosterRef.current.get(p.id) !== fp
+      ) {
         changed.push(p);
       }
     });
@@ -255,7 +262,9 @@ export default function RoomQR({ isModal = false, onClose } = {}) {
           }
         } else {
           throw new Error(
-            res?.error || res?.message || "Failed to persist personnel roster changes to database",
+            res?.error ||
+              res?.message ||
+              "Failed to persist personnel roster changes to database",
           );
         }
       } catch (err) {

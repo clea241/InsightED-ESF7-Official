@@ -96,7 +96,9 @@ export async function readMigratedLocalDraft(newKey, legacyKeys = []) {
       if (oldVal !== null && oldVal !== undefined) {
         await setLocalDraft(newKey, oldVal);
         await deleteLocalDraft(oldKey);
-        console.info(`[IndexedDBMigration] Migrated key "${oldKey}" -> "${newKey}"`);
+        console.info(
+          `[IndexedDBMigration] Migrated key "${oldKey}" -> "${newKey}"`,
+        );
         return oldVal;
       }
     }

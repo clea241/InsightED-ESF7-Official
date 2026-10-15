@@ -1,11 +1,11 @@
-const { Pool } = require('../node_modules/pg');
+const { Pool } = require("../node_modules/pg");
 
 const pool = new Pool({
-  host: 'stride-posgre-prod-01.postgres.database.azure.com',
+  host: "stride-posgre-prod-01.postgres.database.azure.com",
   port: 5432,
-  user: 'Administrator1',
-  password: 'pRZTbQ2T1JD7',
-  database: 'insighted_esf7',
+  user: "Administrator1",
+  password: "pRZTbQ2T1JD7",
+  database: "insighted_esf7",
   ssl: { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
@@ -25,7 +25,10 @@ async function main() {
           OR UPPER(TRIM(REGEXP_REPLACE(w.section_name, '(?i)^grade\\s*\\d+\\s*-\\s*', ''))) = UPPER(TRIM(r.section_name))
         );
     `);
-    console.log('Cleaned name matches with regular_sections:', qClean.rows[0].count);
+    console.log(
+      "Cleaned name matches with regular_sections:",
+      qClean.rows[0].count,
+    );
   } finally {
     client.release();
     await pool.end();

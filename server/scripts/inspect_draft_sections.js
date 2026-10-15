@@ -1,11 +1,11 @@
-const { Pool } = require('../node_modules/pg');
+const { Pool } = require("../node_modules/pg");
 
 const pool = new Pool({
-  host: 'stride-posgre-prod-01.postgres.database.azure.com',
+  host: "stride-posgre-prod-01.postgres.database.azure.com",
   port: 5432,
-  user: 'Administrator1',
-  password: 'pRZTbQ2T1JD7',
-  database: 'insighted_esf7',
+  user: "Administrator1",
+  password: "pRZTbQ2T1JD7",
+  database: "insighted_esf7",
   ssl: { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
@@ -30,18 +30,21 @@ async function main() {
 
     for (const row of draftRes.rows) {
       console.log(`\n=== Draft for School ${row.school_id} ===`);
-      console.log('Regular sections count:', row.sections?.length);
-      console.log('Sample section:', row.sections?.slice(0, 3));
-      console.log('ALS count:', row.als?.length);
-      console.log('ARAL count:', row.aral?.length);
-      console.log('SNED count:', row.sned?.length);
-      
+      console.log("Regular sections count:", row.sections?.length);
+      console.log("Sample section:", row.sections?.slice(0, 3));
+      console.log("ALS count:", row.als?.length);
+      console.log("ARAL count:", row.aral?.length);
+      console.log("SNED count:", row.sned?.length);
+
       // Look at workload in teachers
       if (Array.isArray(row.teachers)) {
         for (const t of row.teachers) {
           const wkl = t.workload || t.workloadRows || t.schedule;
           if (Array.isArray(wkl) && wkl.length > 0) {
-            console.log(`Teacher ${t.id || t.name} workloads (first 3):`, wkl.slice(0, 3));
+            console.log(
+              `Teacher ${t.id || t.name} workloads (first 3):`,
+              wkl.slice(0, 3),
+            );
             break;
           }
         }

@@ -1,11 +1,11 @@
-const { Pool } = require('../node_modules/pg');
+const { Pool } = require("../node_modules/pg");
 
 const pool = new Pool({
-  host: 'stride-posgre-prod-01.postgres.database.azure.com',
+  host: "stride-posgre-prod-01.postgres.database.azure.com",
   port: 5432,
-  user: 'Administrator1',
-  password: 'pRZTbQ2T1JD7',
-  database: 'insighted_esf7',
+  user: "Administrator1",
+  password: "pRZTbQ2T1JD7",
+  database: "insighted_esf7",
   ssl: { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
@@ -20,7 +20,7 @@ async function main() {
       WHERE personnel_id NOT LIKE 'PER-%' AND personnel_id !~ '^[0-9]+$' 
       LIMIT 10;
     `);
-    console.log('Other ID formats sample:', res.rows);
+    console.log("Other ID formats sample:", res.rows);
   } finally {
     client.release();
     await pool.end();

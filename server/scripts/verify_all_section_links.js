@@ -1,11 +1,11 @@
-const { Pool } = require('../node_modules/pg');
+const { Pool } = require("../node_modules/pg");
 
 const pool = new Pool({
-  host: 'stride-posgre-prod-01.postgres.database.azure.com',
+  host: "stride-posgre-prod-01.postgres.database.azure.com",
   port: 5432,
-  user: 'Administrator1',
-  password: 'pRZTbQ2T1JD7',
-  database: 'insighted_esf7',
+  user: "Administrator1",
+  password: "pRZTbQ2T1JD7",
+  database: "insighted_esf7",
   ssl: { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
@@ -14,7 +14,7 @@ const pool = new Pool({
 async function main() {
   const client = await pool.connect();
   try {
-    console.log('=== Sample Linked Rows from esf7_regular_sections ===');
+    console.log("=== Sample Linked Rows from esf7_regular_sections ===");
     const sampleReg = await client.query(`
       SELECT w.id as workload_id, w.school_id, w.subject, w.section_id, r.section_name as reg_section_name, r.grade_level as reg_grade
       FROM esf7_workload_rows w
@@ -23,7 +23,7 @@ async function main() {
     `);
     console.log(sampleReg.rows);
 
-    console.log('\n=== Sample Linked Rows from esf7_als_sections ===');
+    console.log("\n=== Sample Linked Rows from esf7_als_sections ===");
     const sampleAls = await client.query(`
       SELECT w.id as workload_id, w.school_id, w.subject, w.section_id, a.section_name as als_section_name, a.grade_level as als_grade
       FROM esf7_workload_rows w
@@ -32,7 +32,7 @@ async function main() {
     `);
     console.log(sampleAls.rows);
 
-    console.log('\n=== Sample Linked Rows from esf7_aral_sections ===');
+    console.log("\n=== Sample Linked Rows from esf7_aral_sections ===");
     const sampleAral = await client.query(`
       SELECT w.id as workload_id, w.school_id, w.subject, w.section_id, ar.section_name as aral_section_name, ar.grade_level as aral_grade
       FROM esf7_workload_rows w
@@ -41,7 +41,7 @@ async function main() {
     `);
     console.log(sampleAral.rows);
 
-    console.log('\n=== Sample Linked Rows from esf7_sned_sections ===');
+    console.log("\n=== Sample Linked Rows from esf7_sned_sections ===");
     const sampleSned = await client.query(`
       SELECT w.id as workload_id, w.school_id, w.subject, w.section_id, s.section_name as sned_section_name, s.grade_level as sned_grade
       FROM esf7_workload_rows w
@@ -49,7 +49,6 @@ async function main() {
       LIMIT 3;
     `);
     console.log(sampleSned.rows);
-
   } finally {
     client.release();
     await pool.end();

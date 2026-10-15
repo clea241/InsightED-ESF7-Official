@@ -195,12 +195,10 @@ function sameAsProd(env, loadKey, prodKeys, prodEnvs) {
   const cpus = os.cpus();
   const sample = () =>
     cpus.length
-      ? os
-          .cpus()
-          .map((c) => ({
-            idle: c.times.idle,
-            total: Object.values(c.times).reduce((a, b) => a + b, 0),
-          }))
+      ? os.cpus().map((c) => ({
+          idle: c.times.idle,
+          total: Object.values(c.times).reduce((a, b) => a + b, 0),
+        }))
       : [];
   const a = sample();
   await new Promise((r) => setTimeout(r, 500));

@@ -213,7 +213,7 @@ export const formatSectionDisplay = (secOrName, secType, secId) => {
               : idStr.startsWith("REM-")
                 ? "REMEDIAL"
                 : "NON-REGULAR");
-    const label = !isDraftId && idStr ? idStr : (secOrName || fallbackType);
+    const label = !isDraftId && idStr ? idStr : secOrName || fallbackType;
     return `${label} [${fallbackType}]`;
   }
   if (typeof secOrName === "string") {
@@ -221,7 +221,9 @@ export const formatSectionDisplay = (secOrName, secType, secId) => {
   }
   return (
     secOrName?.sectionName ||
-    (!String(secOrName?.id || "").startsWith("sec-draft-") && secOrName?.id ? secOrName.id : "Section") ||
+    (!String(secOrName?.id || "").startsWith("sec-draft-") && secOrName?.id
+      ? secOrName.id
+      : "Section") ||
     "Section"
   );
 };
@@ -5742,8 +5744,12 @@ function WorkloadGanttScheduleView({
       let matchIdx = targetRow
         ? allRows.findIndex(
             (r) =>
-              (r?.id && targetRow?.id && String(r.id) === String(targetRow.id)) ||
-              (r?._id && targetRow?._id && String(r._id) === String(targetRow._id)) ||
+              (r?.id &&
+                targetRow?.id &&
+                String(r.id) === String(targetRow.id)) ||
+              (r?._id &&
+                targetRow?._id &&
+                String(r._id) === String(targetRow._id)) ||
               r === targetRow,
           )
         : -1;
@@ -5752,12 +5758,18 @@ function WorkloadGanttScheduleView({
         matchIdx = allRows.findIndex(
           (r) =>
             (r.term || "1st") === (targetRow.term || "1st") &&
-            String(r.subject || r.task || "").trim().toUpperCase() ===
-              String(targetRow.subject || targetRow.task || "").trim().toUpperCase() &&
+            String(r.subject || r.task || "")
+              .trim()
+              .toUpperCase() ===
+              String(targetRow.subject || targetRow.task || "")
+                .trim()
+                .toUpperCase() &&
             String(r.sectionId || r.section_id || "") ===
               String(targetRow.sectionId || targetRow.section_id || "") &&
-            (r.startTime || r.start_time) === (targetRow.startTime || targetRow.start_time) &&
-            (r.endTime || r.end_time) === (targetRow.endTime || targetRow.end_time),
+            (r.startTime || r.start_time) ===
+              (targetRow.startTime || targetRow.start_time) &&
+            (r.endTime || r.end_time) ===
+              (targetRow.endTime || targetRow.end_time),
         );
       }
 
@@ -6635,8 +6647,12 @@ function WorkloadGanttScheduleView({
           const allRows = [...(currentPerson?.workloadRows || [])];
           let matchIdx = allRows.findIndex(
             (r) =>
-              (r?.id && targetRow?.id && String(r.id) === String(targetRow.id)) ||
-              (r?._id && targetRow?._id && String(r._id) === String(targetRow._id)) ||
+              (r?.id &&
+                targetRow?.id &&
+                String(r.id) === String(targetRow.id)) ||
+              (r?._id &&
+                targetRow?._id &&
+                String(r._id) === String(targetRow._id)) ||
               r === targetRow,
           );
 
@@ -6644,12 +6660,18 @@ function WorkloadGanttScheduleView({
             matchIdx = allRows.findIndex(
               (r) =>
                 (r.term || "1st") === (targetRow.term || "1st") &&
-                String(r.subject || r.task || "").trim().toUpperCase() ===
-                  String(targetRow.subject || targetRow.task || "").trim().toUpperCase() &&
+                String(r.subject || r.task || "")
+                  .trim()
+                  .toUpperCase() ===
+                  String(targetRow.subject || targetRow.task || "")
+                    .trim()
+                    .toUpperCase() &&
                 String(r.sectionId || r.section_id || "") ===
                   String(targetRow.sectionId || targetRow.section_id || "") &&
-                (r.startTime || r.start_time) === (targetRow.startTime || targetRow.start_time) &&
-                (r.endTime || r.end_time) === (targetRow.endTime || targetRow.end_time),
+                (r.startTime || r.start_time) ===
+                  (targetRow.startTime || targetRow.start_time) &&
+                (r.endTime || r.end_time) ===
+                  (targetRow.endTime || targetRow.end_time),
             );
           }
 
@@ -6677,7 +6699,7 @@ function WorkloadGanttScheduleView({
           if (isSpecialSingletonRow || rowDays.length <= 1) {
             // Row is a singleton special slot (HGP/SNED/ALS) or single-day cell — update it directly in-place
             const newDay =
-              cur.type === "move" ? targetDay : (rowDays[0] || targetDay);
+              cur.type === "move" ? targetDay : rowDays[0] || targetDay;
             const updatedRow = {
               ...targetRow,
               startTime: formatMinutesToTime(finalStart),
@@ -6826,9 +6848,7 @@ function WorkloadGanttScheduleView({
 
     // 4. Portaled dropdown menus (e.g. SearchableDropdown / SearchableSelect portals)
     if (
-      target.closest?.(
-        ".searchable-dropdown-menu, .searchable-select-dropdown",
-      )
+      target.closest?.(".searchable-dropdown-menu, .searchable-select-dropdown")
     ) {
       return true;
     }
@@ -12105,7 +12125,12 @@ function WorkloadInner() {
         term,
       );
     },
-    [schoolInfo?.schoolId, schoolInfo?.schoolYear, currentSchoolYear, activeTerm],
+    [
+      schoolInfo?.schoolId,
+      schoolInfo?.schoolYear,
+      currentSchoolYear,
+      activeTerm,
+    ],
   );
 
   const readTeacherWorkloadDraft = useCallback(
@@ -13478,13 +13503,17 @@ function WorkloadInner() {
       if (skipDraft) return; // a declined draft stays exactly as it was
       try {
         const raw = readTeacherWorkloadDraft(personId);
-        if (raw)
-          writeTeacherWorkloadDraft(personId, patch(JSON.parse(raw)));
+        if (raw) writeTeacherWorkloadDraft(personId, patch(JSON.parse(raw)));
       } catch (e) {
         /* the draft is left as it was */
       }
     },
-    [setPersonnel, classSections, readTeacherWorkloadDraft, writeTeacherWorkloadDraft],
+    [
+      setPersonnel,
+      classSections,
+      readTeacherWorkloadDraft,
+      writeTeacherWorkloadDraft,
+    ],
   );
 
   const hydrateWorkloadFromServer = useCallback(
@@ -13677,7 +13706,8 @@ function WorkloadInner() {
             try {
               localStorage.removeItem(draftKey);
               removeOutboxEntryByModule({
-                schoolId: schoolInfo?.school_id || schoolInfo?.id || resolveSchoolId(),
+                schoolId:
+                  schoolInfo?.school_id || schoolInfo?.id || resolveSchoolId(),
                 user: user?.username || user?.email || "anonymous",
                 term: activeTerm || "1st",
                 module: "workload",
@@ -13839,19 +13869,25 @@ function WorkloadInner() {
     if (dbPerson?.id) {
       hydrateWorkloadFromServer(dbPerson.id, activeTerm, { afterSave: true });
     }
-  }, [personnel, dbPerson?.id, activeTerm, hydrateWorkloadFromServer, removeTeacherWorkloadDraft]);
+  }, [
+    personnel,
+    dbPerson?.id,
+    activeTerm,
+    hydrateWorkloadFromServer,
+    removeTeacherWorkloadDraft,
+  ]);
 
   const isSavingRef = useRef(false);
   const runWorkloadSaveRef = useRef(() => Promise.resolve({ ok: true }));
 
   const flushWorkloadToContext = useCallback(() => {
-    const cur = latestWorkloadRef.current?.editPerson || currentPersonRef.current;
+    const cur =
+      latestWorkloadRef.current?.editPerson || currentPersonRef.current;
     if (cur && cur.id && typeof setPersonnel === "function") {
       setPersonnel((prev) =>
         (prev || []).map((p) =>
           p &&
-          (String(p.id) === String(cur.id) ||
-            String(p._id) === String(cur.id))
+          (String(p.id) === String(cur.id) || String(p._id) === String(cur.id))
             ? { ...p, ...cur }
             : p,
         ),
@@ -13865,7 +13901,8 @@ function WorkloadInner() {
     onDiscard: handleDiscard,
     onSave: () => runWorkloadSaveRef.current(),
     onFlush: flushWorkloadToContext,
-    getPayload: () => currentPerson?.workloadRows || currentPersonRef.current?.workloadRows,
+    getPayload: () =>
+      currentPerson?.workloadRows || currentPersonRef.current?.workloadRows,
     getMetadata: () => ({
       schoolId: schoolInfo?.school_id || schoolInfo?.id || resolveSchoolId(),
       user: user?.username || user?.email || "anonymous",
@@ -13915,7 +13952,7 @@ function WorkloadInner() {
         if (entry && entry.payload) {
           const restoredRows = Array.isArray(entry.payload)
             ? entry.payload
-            : (entry.payload.workloadRows || []);
+            : entry.payload.workloadRows || [];
           if (restoredRows.length && typeof setPersonnel === "function") {
             setPersonnel((prev) =>
               (prev || []).map((p) =>
@@ -14841,15 +14878,15 @@ function WorkloadInner() {
         index = allRows.findIndex(
           (r) =>
             (r.term || "1st") === (targetRowOrIndex.term || "1st") &&
-            String(r.subject || r.task || "").trim().toUpperCase() ===
+            String(r.subject || r.task || "")
+              .trim()
+              .toUpperCase() ===
               String(targetRowOrIndex.subject || targetRowOrIndex.task || "")
                 .trim()
                 .toUpperCase() &&
             String(r.sectionId || r.section_id || "") ===
               String(
-                targetRowOrIndex.sectionId ||
-                  targetRowOrIndex.section_id ||
-                  "",
+                targetRowOrIndex.sectionId || targetRowOrIndex.section_id || "",
               ) &&
             (r.startTime || r.start_time) ===
               (targetRowOrIndex.startTime || targetRowOrIndex.start_time) &&
@@ -15461,15 +15498,15 @@ function WorkloadInner() {
         index = rows.findIndex(
           (r) =>
             (r.term || "1st") === (targetRowOrIndex.term || "1st") &&
-            String(r.subject || r.task || "").trim().toUpperCase() ===
+            String(r.subject || r.task || "")
+              .trim()
+              .toUpperCase() ===
               String(targetRowOrIndex.subject || targetRowOrIndex.task || "")
                 .trim()
                 .toUpperCase() &&
             String(r.sectionId || r.section_id || "") ===
               String(
-                targetRowOrIndex.sectionId ||
-                  targetRowOrIndex.section_id ||
-                  "",
+                targetRowOrIndex.sectionId || targetRowOrIndex.section_id || "",
               ) &&
             (r.startTime || r.start_time) ===
               (targetRowOrIndex.startTime || targetRowOrIndex.start_time) &&
@@ -16862,7 +16899,8 @@ function WorkloadInner() {
           markTeacherValidated(p.id, !edited);
           successfulTeachers.push(fullyUpdated);
           await removeOutboxEntryByModule({
-            schoolId: schoolInfo?.school_id || schoolInfo?.id || resolveSchoolId(),
+            schoolId:
+              schoolInfo?.school_id || schoolInfo?.id || resolveSchoolId(),
             user: user?.username || user?.email || "anonymous",
             term: activeTerm || "1st",
             module: "workload",
@@ -16892,10 +16930,13 @@ function WorkloadInner() {
       }
 
       if (failedSaves.length > 0) {
-        const sId = schoolInfo?.school_id || schoolInfo?.id || resolveSchoolId();
+        const sId =
+          schoolInfo?.school_id || schoolInfo?.id || resolveSchoolId();
         const uName = user?.username || user?.email || "anonymous";
         for (const f of failedSaves) {
-          const failP = changedTeachers.find((t) => String(t.id) === String(f.id));
+          const failP = changedTeachers.find(
+            (t) => String(t.id) === String(f.id),
+          );
           await upsertOutboxEntry({
             schoolId: sId,
             user: uName,
@@ -16904,7 +16945,8 @@ function WorkloadInner() {
             recordId: f.id,
             kind: "failed",
             payload: failP?.workloadRows || [],
-            baseVersion: prevWorkloadMap.get(String(f.id))?.workloadRows || null,
+            baseVersion:
+              prevWorkloadMap.get(String(f.id))?.workloadRows || null,
             lastError: f.message,
           });
         }

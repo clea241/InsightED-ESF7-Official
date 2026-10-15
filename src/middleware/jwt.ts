@@ -41,11 +41,17 @@ export function verifyJwtToken(token: string): JwtClaims {
   return jwt.verify(token, secret, { algorithms: ["HS256"] }) as JwtClaims;
 }
 
-export function jwtMiddleware(req: AuthenticatedRequest, res: any, next: (err?: any) => void): void {
+export function jwtMiddleware(
+  req: AuthenticatedRequest,
+  res: any,
+  next: (err?: any) => void,
+): void {
   const token = extractBearerToken(req);
 
   if (!token) {
-    res.status(401).json({ error: "Authentication required: missing or malformed token." });
+    res
+      .status(401)
+      .json({ error: "Authentication required: missing or malformed token." });
     return;
   }
 

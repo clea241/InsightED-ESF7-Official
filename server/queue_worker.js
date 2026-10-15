@@ -530,7 +530,9 @@ let isRedisWorkerActive = false;
 let currentProcessingJobId = null;
 
 async function processJobById(targetJobId, specificClient = null) {
-  console.log("ℹ️ [Queue Worker] processJobById bypassed: worker is deactivated.");
+  console.log(
+    "ℹ️ [Queue Worker] processJobById bypassed: worker is deactivated.",
+  );
   return false;
   let client = specificClient;
   let shouldRelease = false;
@@ -932,7 +934,11 @@ async function processJobById(targetJobId, specificClient = null) {
       let legacyId = null;
       let pStatus = p.status || null;
 
-      const isUuid = pId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(pId);
+      const isUuid =
+        pId &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          pId,
+        );
       if (pId && !isUuid) {
         legacyId = pId;
         pId = null;
@@ -943,11 +949,12 @@ async function processJobById(targetJobId, specificClient = null) {
       }
 
       if (!pStatus) {
-        pStatus = (legacyId && legacyId.startsWith("local-p-"))
-          ? "client-created"
-          : (legacyId && legacyId.startsWith("P-HARVEST-"))
-            ? "harvester-created"
-            : "canonical";
+        pStatus =
+          legacyId && legacyId.startsWith("local-p-")
+            ? "client-created"
+            : legacyId && legacyId.startsWith("P-HARVEST-")
+              ? "harvester-created"
+              : "canonical";
       }
 
       const prn = String(p.prn || p.employee_no || pId).trim();
@@ -1042,11 +1049,11 @@ async function processJobById(targetJobId, specificClient = null) {
           is_main_sh: Boolean(
             p.isMainSchoolHead !== undefined
               ? p.isMainSchoolHead
-              : (p.is_main_sh !== undefined
+              : p.is_main_sh !== undefined
                 ? p.is_main_sh
-                : (p.isMainHead !== undefined
+                : p.isMainHead !== undefined
                   ? p.isMainHead
-                  : isHead))
+                  : isHead,
           ),
           raw_payload: JSON.stringify(p.rawPayload || p),
         });
@@ -1875,12 +1882,14 @@ async function processJobById(targetJobId, specificClient = null) {
 
       for (const pRow of profileBatch) {
         if (pRow.legacy_id && pRow.legacy_id !== pRow.id) {
-          await client.query(
-            `INSERT INTO esf7_personnel_id_mapping (legacy_id, new_id, status)
+          await client
+            .query(
+              `INSERT INTO esf7_personnel_id_mapping (legacy_id, new_id, status)
              VALUES ($1, $2, $3)
              ON CONFLICT (legacy_id) DO UPDATE SET new_id = EXCLUDED.new_id, status = EXCLUDED.status`,
-            [pRow.legacy_id, pRow.id, pRow.status || "canonical"],
-          ).catch(() => {});
+              [pRow.legacy_id, pRow.id, pRow.status || "canonical"],
+            )
+            .catch(() => {});
         }
       }
 
@@ -3422,7 +3431,9 @@ function setPollInterval(ms) {
 }
 
 async function startWorker(intervalMs = 2000) {
-  console.log("ℹ️ [Queue Worker] Submissions queue worker is deactivated per user instructions.");
+  console.log(
+    "ℹ️ [Queue Worker] Submissions queue worker is deactivated per user instructions.",
+  );
   return;
   if (workerInterval || isRedisWorkerActive) return;
 

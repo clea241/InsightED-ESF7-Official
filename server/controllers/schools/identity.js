@@ -331,10 +331,16 @@ const handleGetSchool = async (req, res) => {
       has_shs_mad = Boolean(pRow.has_shs_mad);
 
       // Rollups
-      hasSned = Boolean(pRow.has_sned ?? (has_es_sned || has_jhs_sned || has_shs_sned));
+      hasSned = Boolean(
+        pRow.has_sned ?? (has_es_sned || has_jhs_sned || has_shs_sned),
+      );
       hasAls = Boolean(pRow.has_als ?? (has_es_als || has_jhs_als));
-      hasIped = Boolean(pRow.has_iped ?? (has_es_iped || has_jhs_iped || has_shs_iped));
-      hasMadrasah = Boolean(pRow.has_madrasah ?? (has_es_mad || has_jhs_mad || has_shs_mad));
+      hasIped = Boolean(
+        pRow.has_iped ?? (has_es_iped || has_jhs_iped || has_shs_iped),
+      );
+      hasMadrasah = Boolean(
+        pRow.has_madrasah ?? (has_es_mad || has_jhs_mad || has_shs_mad),
+      );
 
       // Reconstruct program tags
       elemInclusivePrograms = [];
@@ -357,18 +363,28 @@ const handleGetSchool = async (req, res) => {
       if (has_shs_mad) shsInclusivePrograms.push("MADRASAH-SHS");
       hasShsInclusive = shsInclusivePrograms.length > 0;
 
-      inclusivePrograms = Array.isArray(pRow.inclusive_programs) && pRow.inclusive_programs.length > 0
-        ? pRow.inclusive_programs
-        : [
-            ...elemInclusivePrograms,
-            ...jhsInclusivePrograms,
-            ...shsInclusivePrograms,
-          ];
+      inclusivePrograms =
+        Array.isArray(pRow.inclusive_programs) &&
+        pRow.inclusive_programs.length > 0
+          ? pRow.inclusive_programs
+          : [
+              ...elemInclusivePrograms,
+              ...jhsInclusivePrograms,
+              ...shsInclusivePrograms,
+            ];
 
       hasShifts = Boolean(pRow.has_shifts);
       shiftsConfig = pRow.shifts_config || {};
-      shiftStartTime = shiftsConfig.shiftStartTime || shiftsConfig.shift_start_time || pRow.shift_start_time || null;
-      shiftEndTime = shiftsConfig.shiftEndTime || shiftsConfig.shift_end_time || pRow.shift_end_time || null;
+      shiftStartTime =
+        shiftsConfig.shiftStartTime ||
+        shiftsConfig.shift_start_time ||
+        pRow.shift_start_time ||
+        null;
+      shiftEndTime =
+        shiftsConfig.shiftEndTime ||
+        shiftsConfig.shift_end_time ||
+        pRow.shift_end_time ||
+        null;
     }
 
     specialPrograms = [
@@ -385,7 +401,11 @@ const handleGetSchool = async (req, res) => {
       schoolYear,
       numberOfShifts,
       curricularOffering,
-      mcoc: rawMCOC || (Array.isArray(curricularOffering) ? curricularOffering.join(", ") : null),
+      mcoc:
+        rawMCOC ||
+        (Array.isArray(curricularOffering)
+          ? curricularOffering.join(", ")
+          : null),
       certifiedBy,
       certifiedSignature,
       certifiedAt,

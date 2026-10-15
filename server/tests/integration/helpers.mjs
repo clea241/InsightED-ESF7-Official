@@ -109,6 +109,9 @@ export async function applyAppSchema(pool) {
     "utf8",
   );
   await pool.query(
+    "DROP TABLE IF EXISTS esf7_shs_workload_rows, esf7_workload_rows, esf7_personnel_employment, esf7_personnel_profile CASCADE",
+  );
+  await pool.query(
     "CREATE TABLE IF NOT EXISTS esf7_class_sections (id VARCHAR(50) PRIMARY KEY)",
   );
   await pool.query(all);

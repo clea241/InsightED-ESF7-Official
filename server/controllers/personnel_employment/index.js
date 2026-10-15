@@ -297,10 +297,19 @@ router.post("/:personnel_id", async (req, res) => {
       deploy,
       schoolsJson,
       gradesJson,
-      coerceDateField(first_service_date || firstServiceDate, "first_service_date"),
-      coerceDateField(last_promotion_date || lastPromotionDate, "last_promotion_date"),
+      coerceDateField(
+        first_service_date || firstServiceDate,
+        "first_service_date",
+      ),
+      coerceDateField(
+        last_promotion_date || lastPromotionDate,
+        "last_promotion_date",
+      ),
       coerceDateField(new_station_date || newStationDate, "new_station_date"),
-      coerceDateField(last_lateral_movement_date || lastLateralMovementDate, "last_lateral_movement_date"),
+      coerceDateField(
+        last_lateral_movement_date || lastLateralMovementDate,
+        "last_lateral_movement_date",
+      ),
     ];
 
     const result = await db.query(query, values);

@@ -81,7 +81,9 @@ async function main() {
   const url = target === "local" ? env.LOCAL_APP_URL : env.STAGING_APP_URL;
   const host = hostOf(url);
   if (!host) {
-    fail(`${target === "local" ? "LOCAL_APP_URL" : "STAGING_APP_URL"} missing or not a URL`);
+    fail(
+      `${target === "local" ? "LOCAL_APP_URL" : "STAGING_APP_URL"} missing or not a URL`,
+    );
     return;
   }
   if (prod.includes(host)) {
@@ -105,7 +107,9 @@ async function main() {
       (testEnv && (testEnv.DATABASE_URL || testEnv.TEST_DATABASE_URL)) ||
       env.LOCAL_DATABASE_URL;
     if (!dbUrl) {
-      fail("no local database URL (.env.test or LOCAL_DATABASE_URL); cannot confirm a test database");
+      fail(
+        "no local database URL (.env.test or LOCAL_DATABASE_URL); cannot confirm a test database",
+      );
       return;
     }
     let u;
@@ -117,7 +121,8 @@ async function main() {
     }
     const dbHost = u.hostname.replace(/^\[|\]$/g, "").toLowerCase();
     const dbName = u.pathname.replace(/^\//, "").toLowerCase();
-    if (LOCAL.has(dbHost) && !prod.includes(dbHost)) pass("database host is local");
+    if (LOCAL.has(dbHost) && !prod.includes(dbHost))
+      pass("database host is local");
     else fail("database host is not local or is listed in PRODUCTION_HOSTS");
     if (dbName.includes("test")) pass("database name contains 'test'");
     else fail("database name does not contain 'test'");
@@ -128,7 +133,8 @@ async function main() {
     fail("--confirm-host is required for staging");
     return;
   }
-  if (confirmHost === host) pass("--confirm-host equals the host in STAGING_APP_URL");
+  if (confirmHost === host)
+    pass("--confirm-host equals the host in STAGING_APP_URL");
   else {
     fail("--confirm-host does not exactly equal the host in STAGING_APP_URL");
     return;
@@ -140,7 +146,8 @@ async function main() {
   }
   pass("staging host resolves");
   const prodIps = new Set();
-  for (const p of prod) for (const a of (await resolveAll(p)) || []) prodIps.add(a);
+  for (const p of prod)
+    for (const a of (await resolveAll(p)) || []) prodIps.add(a);
   if (ips.some((a) => prodIps.has(a)))
     fail("staging host resolves to the same IP as a production host");
   else pass("staging IP differs from every production IP");

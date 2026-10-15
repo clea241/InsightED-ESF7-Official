@@ -1,6 +1,6 @@
 const { Pool } = require("pg");
 const path = require("path");
-require("./loadEnv"); });
+require("./loadEnv");
 
 const pool = new Pool({
   user: process.env.DB_USER,

@@ -2368,7 +2368,14 @@ export default function PersonnelProfile() {
     return () => {
       isMounted = false;
     };
-  }, [activeTab, activePersonnelId, schoolInfo?.schoolId, schoolInfo?.schoolYear, user?.username, user?.email]);
+  }, [
+    activeTab,
+    activePersonnelId,
+    schoolInfo?.schoolId,
+    schoolInfo?.schoolYear,
+    user?.username,
+    user?.email,
+  ]);
   const [showRa1080Modal, setShowRa1080Modal] = useState(false);
   const [ra1080InputText, setRa1080InputText] = useState("");
 
@@ -3777,13 +3784,18 @@ export default function PersonnelProfile() {
           .savePersonnelNode(personToSave.id, "node_04_profile", {
             schoolYear: schoolInfo?.schoolYear || "SY 26-27",
             personnelName: `${personToSave.lastName || ""}, ${personToSave.firstName || ""}`,
-            positionTitle: personToSave.position || personToSave.position_title || "",
-            category: personToSave.positionCategory || personToSave.position_category || "TEACHING",
+            positionTitle:
+              personToSave.position || personToSave.position_title || "",
+            category:
+              personToSave.positionCategory ||
+              personToSave.position_category ||
+              "TEACHING",
             isSchoolHead: !!personToSave.isSchoolHead,
             isComplete: true,
             payload: {
               status: "COMPLETED",
-              degrees: personToSave.degreeRows || personToSave.collegeDegrees || [],
+              degrees:
+                personToSave.degreeRows || personToSave.collegeDegrees || [],
               highest_educational_attainment:
                 personToSave.highestEducationalAttainment ||
                 personToSave.highest_educational_attainment ||
@@ -3826,7 +3838,9 @@ export default function PersonnelProfile() {
       localStorage.removeItem(`draft_personnel_${personToSave.id}`);
       localStorage.removeItem(`draft_learning_areas_${personToSave.id}`);
       if (typeof deleteLocalDraft === "function") {
-        await deleteLocalDraft(`draft_personnel_${personToSave.id}`).catch(() => {});
+        await deleteLocalDraft(`draft_personnel_${personToSave.id}`).catch(
+          () => {},
+        );
         await deleteLocalDraft(canonicalKey).catch(() => {});
       }
 
@@ -3903,7 +3917,8 @@ export default function PersonnelProfile() {
         ok: false,
         title: "Personnel Profile Not Saved",
         message:
-          "Failed to save personnel profile: " + (err?.message || "Unknown error"),
+          "Failed to save personnel profile: " +
+          (err?.message || "Unknown error"),
       };
     }
   };
@@ -4222,7 +4237,9 @@ export default function PersonnelProfile() {
           const text = (l.textContent || "")
             .toLowerCase()
             .replace(/[^a-z0-9]/g, "");
-          return text && (text.includes(cleanTarget) || cleanTarget.includes(text));
+          return (
+            text && (text.includes(cleanTarget) || cleanTarget.includes(text))
+          );
         });
         if (matched) {
           el = matched.closest(".form-group, div") || matched.parentElement;
@@ -4242,11 +4259,11 @@ export default function PersonnelProfile() {
           } catch (_) {}
         }
 
-        const targetBox =
-          el.classList.contains("deped-email-field")
-            ? el
-            : el.querySelector(".searchable-select, input, select, .deped-email-field") ||
-              el;
+        const targetBox = el.classList.contains("deped-email-field")
+          ? el
+          : el.querySelector(
+              ".searchable-select, input, select, .deped-email-field",
+            ) || el;
         targetBox.classList.remove("missing-field-highlight-active");
         void targetBox.offsetWidth; // Trigger reflow to restart animation
         targetBox.classList.add("missing-field-highlight-active");
@@ -4267,9 +4284,7 @@ export default function PersonnelProfile() {
   const handleJumpToMissingField = (person, err) => {
     if (!person || !err) return;
     const targetTab =
-      err.tab === "personal"
-        ? "identity"
-        : err.tab || "identity";
+      err.tab === "personal" ? "identity" : err.tab || "identity";
 
     const executeJump = () => {
       if (String(activePersonnelId) !== String(person.id)) {
@@ -4511,7 +4526,8 @@ export default function PersonnelProfile() {
             {incomingRequests && incomingRequests.length > 0 && (
               <span
                 style={{
-                  background: profileMode === "requests" ? "#FFFFFF" : "#EF4444",
+                  background:
+                    profileMode === "requests" ? "#FFFFFF" : "#EF4444",
                   color: profileMode === "requests" ? "#1D4ED8" : "#FFFFFF",
                   padding: "1px 7px",
                   borderRadius: "999px",
@@ -4531,422 +4547,2285 @@ export default function PersonnelProfile() {
         <RequestCenter embedded={true} />
       ) : (
         <article className="card" style={{ overflow: "hidden" }}>
-        <div style={{ display: "flex", height: "100%", minHeight: "80vh" }}>
-          {/* ── LEFT SIDEBAR ─────────────────────────────── */}
-          <div
-            style={{
-              width: "300px",
-              minWidth: "300px",
-              borderRight: "1.5px solid var(--line)",
-              display: "flex",
-              flexDirection: "column",
-              background: "#f8fafc",
-            }}
-          >
-            {/* Header */}
+          <div style={{ display: "flex", height: "100%", minHeight: "80vh" }}>
+            {/* ── LEFT SIDEBAR ─────────────────────────────── */}
             <div
               style={{
-                padding: "18px 16px 12px",
-                borderBottom: "1.5px solid var(--line)",
+                width: "300px",
+                minWidth: "300px",
+                borderRight: "1.5px solid var(--line)",
+                display: "flex",
+                flexDirection: "column",
+                background: "#f8fafc",
               }}
             >
+              {/* Header */}
               <div
                 style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: "4px",
+                  padding: "18px 16px 12px",
+                  borderBottom: "1.5px solid var(--line)",
                 }}
               >
-                <h2
+                <div
                   style={{
-                    margin: 0,
-                    fontSize: "16px",
-                    fontWeight: "800",
-                    color: "var(--navy)",
-                  }}
-                >
-                  Personnel Profiling
-                </h2>
-                <button
-                  type="button"
-                  onClick={handleAutoPopulateMissingInfo}
-                  style={{
-                    background:
-                      "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "6px",
-                    padding: "3px 8px",
-                    fontSize: "11px",
-                    fontWeight: "700",
-                    cursor: "pointer",
                     display: "flex",
+                    justifyContent: "space-between",
                     alignItems: "center",
-                    gap: "4px",
-                  }}
-                  title="Auto-fill missing profile details & classifications for all personnel"
-                >
-                  <FiZap size={12} />
-                  <span>Auto-Populate</span>
-                </button>
-              </div>
-              <p
-                style={{
-                  margin: "0 0 12px",
-                  fontSize: "12px",
-                  color: "var(--muted)",
-                }}
-              >
-                {nonDraftPersonnel.length} personnel record
-                {nonDraftPersonnel.length !== 1 ? "s" : ""}
-              </p>
-              {/* Search */}
-              <div style={{ position: "relative" }}>
-                <span
-                  style={{
-                    position: "absolute",
-                    left: "10px",
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    fontSize: "14px",
-                    color: "#94a3b8",
-                    display: "flex",
-                    alignItems: "center",
+                    marginBottom: "4px",
                   }}
                 >
-                  <FiSearch size={14} />
-                </span>
-                <input
-                  type="text"
-                  placeholder="Search name or position..."
-                  value={personnelSearch}
-                  onChange={(e) => setPersonnelSearch(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "8px 10px 8px 32px",
-                    borderRadius: "10px",
-                    border: "1.5px solid var(--line)",
-                    fontSize: "13px",
-                    background: "white",
-                    outline: "none",
-                    boxSizing: "border-box",
-                    transition: "border-color 0.15s",
-                  }}
-                  onFocus={(e) => (e.target.style.borderColor = "var(--blue)")}
-                  onBlur={(e) => (e.target.style.borderColor = "var(--line)")}
-                />
-              </div>
-              {/* Category Pills */}
-              <div
-                style={{
-                  display: "flex",
-                  gap: "4px",
-                  marginTop: "8px",
-                  flexWrap: "wrap",
-                }}
-              >
-                {[
-                  ["all", "All", "#64748b", "#f1f5f9"],
-                  ["teaching", "Teaching", "#0369a1", "#e0f2fe"],
-                  ["teaching-related", "Related", "#6d28d9", "#ede9fe"],
-                  ["non-teaching", "Non-Teaching", "#065f46", "#d1fae5"],
-                ].map(([val, label, color, bg]) => (
-                  <button
-                    key={val}
-                    type="button"
-                    onClick={() => setCategoryFilter(val)}
+                  <h2
                     style={{
-                      padding: "3px 10px",
-                      borderRadius: "999px",
-                      border: `1.5px solid ${categoryFilter === val ? color : "transparent"}`,
-                      background: categoryFilter === val ? bg : "transparent",
-                      color: categoryFilter === val ? color : "#94a3b8",
+                      margin: 0,
+                      fontSize: "16px",
+                      fontWeight: "800",
+                      color: "var(--navy)",
+                    }}
+                  >
+                    Personnel Profiling
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={handleAutoPopulateMissingInfo}
+                    style={{
+                      background:
+                        "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "6px",
+                      padding: "3px 8px",
                       fontSize: "11px",
                       fontWeight: "700",
                       cursor: "pointer",
-                      transition: "all 0.15s",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "4px",
+                    }}
+                    title="Auto-fill missing profile details & classifications for all personnel"
+                  >
+                    <FiZap size={12} />
+                    <span>Auto-Populate</span>
+                  </button>
+                </div>
+                <p
+                  style={{
+                    margin: "0 0 12px",
+                    fontSize: "12px",
+                    color: "var(--muted)",
+                  }}
+                >
+                  {nonDraftPersonnel.length} personnel record
+                  {nonDraftPersonnel.length !== 1 ? "s" : ""}
+                </p>
+                {/* Search */}
+                <div style={{ position: "relative" }}>
+                  <span
+                    style={{
+                      position: "absolute",
+                      left: "10px",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      fontSize: "14px",
+                      color: "#94a3b8",
+                      display: "flex",
+                      alignItems: "center",
                     }}
                   >
-                    {label}
-                  </button>
-                ))}
+                    <FiSearch size={14} />
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Search name or position..."
+                    value={personnelSearch}
+                    onChange={(e) => setPersonnelSearch(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "8px 10px 8px 32px",
+                      borderRadius: "10px",
+                      border: "1.5px solid var(--line)",
+                      fontSize: "13px",
+                      background: "white",
+                      outline: "none",
+                      boxSizing: "border-box",
+                      transition: "border-color 0.15s",
+                    }}
+                    onFocus={(e) =>
+                      (e.target.style.borderColor = "var(--blue)")
+                    }
+                    onBlur={(e) => (e.target.style.borderColor = "var(--line)")}
+                  />
+                </div>
+                {/* Category Pills */}
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "4px",
+                    marginTop: "8px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {[
+                    ["all", "All", "#64748b", "#f1f5f9"],
+                    ["teaching", "Teaching", "#0369a1", "#e0f2fe"],
+                    ["teaching-related", "Related", "#6d28d9", "#ede9fe"],
+                    ["non-teaching", "Non-Teaching", "#065f46", "#d1fae5"],
+                  ].map(([val, label, color, bg]) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setCategoryFilter(val)}
+                      style={{
+                        padding: "3px 10px",
+                        borderRadius: "999px",
+                        border: `1.5px solid ${categoryFilter === val ? color : "transparent"}`,
+                        background: categoryFilter === val ? bg : "transparent",
+                        color: categoryFilter === val ? color : "#94a3b8",
+                        fontSize: "11px",
+                        fontWeight: "700",
+                        cursor: "pointer",
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
 
-            {/* Scrollable People List (10 per page) */}
-            <div
-              style={{
-                flex: 1,
-                overflowY: "auto",
-                padding: "8px",
-                display: "flex",
-                flexDirection: "column",
-              }}
-            >
-              {(() => {
-                const totalPages = Math.ceil(sidebarPeople.length / 10) || 1;
-                const paginatedPeople = sidebarPeople.slice(
-                  (sidebarPage - 1) * 10,
-                  sidebarPage * 10,
-                );
+              {/* Scrollable People List (10 per page) */}
+              <div
+                style={{
+                  flex: 1,
+                  overflowY: "auto",
+                  padding: "8px",
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                {(() => {
+                  const totalPages = Math.ceil(sidebarPeople.length / 10) || 1;
+                  const paginatedPeople = sidebarPeople.slice(
+                    (sidebarPage - 1) * 10,
+                    sidebarPage * 10,
+                  );
 
-                return (
-                  <>
-                    <div style={{ flex: 1, overflowY: "auto" }}>
-                      {sidebarPeople.length === 0 && (
-                        <div
-                          style={{
-                            padding: "24px 12px",
-                            textAlign: "center",
-                            color: "#94a3b8",
-                            fontSize: "13px",
-                          }}
-                        >
-                          No personnel match your search.
-                        </div>
-                      )}
-                      {paginatedPeople.map((p, pIdx) => {
-                        const isActive = p.id === currentPerson.id;
-                        const hasDraft = !!localStorage.getItem(
-                          `draft_personnel_${p.id}`,
-                        );
-                        const pType = getPersonCategoryType(p);
-                        const catInfo = categoryLabels[pType] || {
-                          label: pType,
-                          color: "#64748b",
-                          bg: "#f1f5f9",
-                        };
-                        const initials =
-                          `${(p.firstName || "")[0] || ""}${(p.lastName || "")[0] || ""}`.toUpperCase();
-                        const {
-                          percentage: completionPct,
-                          missingFields,
-                          errors: missingErrors,
-                        } = getPersonValidationDetails(p, currentPerson);
-                        const isComplete = completionPct === 100;
-                        return (
+                  return (
+                    <>
+                      <div style={{ flex: 1, overflowY: "auto" }}>
+                        {sidebarPeople.length === 0 && (
                           <div
-                            key={p.id}
-                            onClick={() =>
-                              confirmAction(
-                                () => {
-                                  setActivePersonnelId(p.id);
-                                  setActiveTab("identity");
-                                },
-                                { actionType: "tab" },
-                              )
-                            }
                             style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "10px",
-                              padding: "10px 12px",
-                              borderRadius: "12px",
-                              marginBottom: "4px",
-                              cursor: "pointer",
-                              background: isActive ? "white" : "transparent",
-                              border: isActive
-                                ? "1.5px solid var(--line)"
-                                : "1.5px solid transparent",
-                              boxShadow: isActive
-                                ? "0 1px 4px rgba(0,0,0,0.06)"
-                                : "none",
-                              transition: "all 0.15s",
-                            }}
-                            onMouseEnter={(e) => {
-                              if (!isActive)
-                                e.currentTarget.style.background = "white";
-                            }}
-                            onMouseLeave={(e) => {
-                              if (!isActive)
-                                e.currentTarget.style.background =
-                                  "transparent";
+                              padding: "24px 12px",
+                              textAlign: "center",
+                              color: "#94a3b8",
+                              fontSize: "13px",
                             }}
                           >
-                            {/* Avatar */}
+                            No personnel match your search.
+                          </div>
+                        )}
+                        {paginatedPeople.map((p, pIdx) => {
+                          const isActive = p.id === currentPerson.id;
+                          const hasDraft = !!localStorage.getItem(
+                            `draft_personnel_${p.id}`,
+                          );
+                          const pType = getPersonCategoryType(p);
+                          const catInfo = categoryLabels[pType] || {
+                            label: pType,
+                            color: "#64748b",
+                            bg: "#f1f5f9",
+                          };
+                          const initials =
+                            `${(p.firstName || "")[0] || ""}${(p.lastName || "")[0] || ""}`.toUpperCase();
+                          const {
+                            percentage: completionPct,
+                            missingFields,
+                            errors: missingErrors,
+                          } = getPersonValidationDetails(p, currentPerson);
+                          const isComplete = completionPct === 100;
+                          return (
                             <div
+                              key={p.id}
+                              onClick={() =>
+                                confirmAction(
+                                  () => {
+                                    setActivePersonnelId(p.id);
+                                    setActiveTab("identity");
+                                  },
+                                  { actionType: "tab" },
+                                )
+                              }
                               style={{
-                                width: "36px",
-                                height: "36px",
-                                borderRadius: "50%",
-                                background: isActive ? catInfo.bg : "#e2e8f0",
-                                color: isActive ? catInfo.color : "#64748b",
                                 display: "flex",
                                 alignItems: "center",
-                                justifyContent: "center",
-                                fontWeight: "800",
-                                fontSize: "13px",
-                                flexShrink: 0,
-                                position: "relative",
+                                gap: "10px",
+                                padding: "10px 12px",
+                                borderRadius: "12px",
+                                marginBottom: "4px",
+                                cursor: "pointer",
+                                background: isActive ? "white" : "transparent",
+                                border: isActive
+                                  ? "1.5px solid var(--line)"
+                                  : "1.5px solid transparent",
+                                boxShadow: isActive
+                                  ? "0 1px 4px rgba(0,0,0,0.06)"
+                                  : "none",
+                                transition: "all 0.15s",
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!isActive)
+                                  e.currentTarget.style.background = "white";
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!isActive)
+                                  e.currentTarget.style.background =
+                                    "transparent";
                               }}
                             >
-                              {initials || "?"}
-                              {hasDraft && (
-                                <span
-                                  style={{
-                                    position: "absolute",
-                                    top: "-2px",
-                                    right: "-2px",
-                                    width: "10px",
-                                    height: "10px",
-                                    borderRadius: "50%",
-                                    background: "#f59e0b",
-                                    border: "2px solid #f8fafc",
-                                  }}
-                                  title="Has unsaved changes"
-                                />
-                              )}
-                            </div>
-                            {/* Name & Position */}
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <p
+                              {/* Avatar */}
+                              <div
                                 style={{
-                                  margin: 0,
-                                  fontSize: "13px",
-                                  fontWeight: isActive ? "700" : "600",
-                                  color: isActive ? "var(--navy)" : "#334155",
-                                  whiteSpace: "nowrap",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                }}
-                              >
-                                {p.firstName} {p.lastName}
-                                {p.nameExtension ? ` ${p.nameExtension}` : ""}
-                              </p>
-                              <p
-                                style={{
-                                  margin: "2px 0 0",
+                                  width: "36px",
+                                  height: "36px",
+                                  borderRadius: "50%",
+                                  background: isActive ? catInfo.bg : "#e2e8f0",
+                                  color: isActive ? catInfo.color : "#64748b",
                                   display: "flex",
                                   alignItems: "center",
-                                  gap: "6px",
-                                  minWidth: 0,
+                                  justifyContent: "center",
+                                  fontWeight: "800",
+                                  fontSize: "13px",
+                                  flexShrink: 0,
+                                  position: "relative",
                                 }}
                               >
-                                <span
+                                {initials || "?"}
+                                {hasDraft && (
+                                  <span
+                                    style={{
+                                      position: "absolute",
+                                      top: "-2px",
+                                      right: "-2px",
+                                      width: "10px",
+                                      height: "10px",
+                                      borderRadius: "50%",
+                                      background: "#f59e0b",
+                                      border: "2px solid #f8fafc",
+                                    }}
+                                    title="Has unsaved changes"
+                                  />
+                                )}
+                              </div>
+                              {/* Name & Position */}
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <p
                                   style={{
-                                    fontSize: "11px",
-                                    color: "#64748b",
+                                    margin: 0,
+                                    fontSize: "13px",
+                                    fontWeight: isActive ? "700" : "600",
+                                    color: isActive ? "var(--navy)" : "#334155",
                                     whiteSpace: "nowrap",
                                     overflow: "hidden",
                                     textOverflow: "ellipsis",
+                                  }}
+                                >
+                                  {p.firstName} {p.lastName}
+                                  {p.nameExtension ? ` ${p.nameExtension}` : ""}
+                                </p>
+                                <p
+                                  style={{
+                                    margin: "2px 0 0",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "6px",
                                     minWidth: 0,
                                   }}
                                 >
-                                  {p.position || "No position set"}
-                                </span>
-                                <span
+                                  <span
+                                    style={{
+                                      fontSize: "11px",
+                                      color: "#64748b",
+                                      whiteSpace: "nowrap",
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      minWidth: 0,
+                                    }}
+                                  >
+                                    {p.position || "No position set"}
+                                  </span>
+                                  <span
+                                    style={{
+                                      padding: "1px 6px",
+                                      borderRadius: "6px",
+                                      background: catInfo.bg,
+                                      color: catInfo.color,
+                                      fontSize: "9px",
+                                      fontWeight: "700",
+                                      flexShrink: 0,
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    {catInfo.label}
+                                  </span>
+                                </p>
+                                {/* Completion percentage progress bar */}
+                                <div
+                                  className="completion-progress-container"
                                   style={{
-                                    padding: "1px 6px",
-                                    borderRadius: "6px",
-                                    background: catInfo.bg,
-                                    color: catInfo.color,
-                                    fontSize: "9px",
-                                    fontWeight: "700",
-                                    flexShrink: 0,
-                                    whiteSpace: "nowrap",
+                                    marginTop: "4px",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "6px",
+                                    position: "relative",
+                                    cursor: !isComplete ? "help" : "default",
                                   }}
                                 >
-                                  {catInfo.label}
-                                </span>
-                              </p>
-                              {/* Completion percentage progress bar */}
+                                  <div
+                                    style={{
+                                      flex: 1,
+                                      height: "4px",
+                                      background: "#e2e8f0",
+                                      borderRadius: "2px",
+                                      overflow: "hidden",
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        width: `${completionPct}%`,
+                                        height: "100%",
+                                        background: isComplete
+                                          ? "#10b981"
+                                          : "#0284c7",
+                                        borderRadius: "2px",
+                                        transition: "width 0.3s",
+                                      }}
+                                    />
+                                  </div>
+                                  <div
+                                    style={{
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "3px",
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    {!isComplete && (
+                                      <FiAlertCircle
+                                        size={11}
+                                        style={{
+                                          color: "#f59e0b",
+                                          flexShrink: 0,
+                                        }}
+                                      />
+                                    )}
+                                    <span
+                                      style={{
+                                        fontSize: "10px",
+                                        fontWeight: "700",
+                                        color: isComplete
+                                          ? "#10b981"
+                                          : "#d97706",
+                                        minWidth: "24px",
+                                        textAlign: "right",
+                                      }}
+                                    >
+                                      {completionPct}%
+                                    </span>
+                                  </div>
+
+                                  {/* Floating Hover Marker Tooltip */}
+                                  {!isComplete && missingFields.length > 0 && (
+                                    <div
+                                      className={`missing-fields-tooltip ${pIdx >= 6 ? "tooltip-top" : "tooltip-bottom"}`}
+                                      onClick={(e) => e.stopPropagation()}
+                                      style={{
+                                        position: "absolute",
+                                        ...(pIdx >= 6
+                                          ? { bottom: "calc(100% + 10px)" }
+                                          : { top: "calc(100% + 10px)" }),
+                                        right: "-8px",
+                                        width: "272px",
+                                        maxWidth: "272px",
+                                        background: "#ffffff",
+                                        border: "1.5px solid #fcd34d",
+                                        borderRadius: "12px",
+                                        boxShadow:
+                                          "0 14px 34px -4px rgba(180, 83, 9, 0.22), 0 8px 16px -4px rgba(0,0,0,0.08)",
+                                        zIndex: 100,
+                                        pointerEvents: "auto",
+                                        textAlign: "left",
+                                      }}
+                                    >
+                                      {/* Tooltip Header */}
+                                      <div
+                                        style={{
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "space-between",
+                                          padding: "8px 10px",
+                                          background:
+                                            "linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)",
+                                          borderBottom: "1px solid #fde68a",
+                                          borderRadius: "10.5px 10.5px 0 0",
+                                        }}
+                                      >
+                                        <div
+                                          style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: "6px",
+                                          }}
+                                        >
+                                          <FiAlertCircle
+                                            size={13}
+                                            style={{
+                                              color: "#d97706",
+                                              flexShrink: 0,
+                                            }}
+                                          />
+                                          <span
+                                            style={{
+                                              fontSize: "11px",
+                                              fontWeight: "800",
+                                              color: "#92400e",
+                                              letterSpacing: "-0.2px",
+                                            }}
+                                          >
+                                            Missing Fields
+                                          </span>
+                                          <span
+                                            style={{
+                                              background: "#f59e0b",
+                                              color: "#ffffff",
+                                              padding: "1px 6px",
+                                              borderRadius: "10px",
+                                              fontSize: "10px",
+                                              fontWeight: "800",
+                                              lineHeight: 1.2,
+                                            }}
+                                          >
+                                            {missingErrors.length}
+                                          </span>
+                                        </div>
+                                        <span
+                                          style={{
+                                            fontSize: "9.5px",
+                                            fontWeight: "700",
+                                            color: "#b45309",
+                                            opacity: 0.9,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: "2px",
+                                          }}
+                                        >
+                                          Click to jump ⚡
+                                        </span>
+                                      </div>
+
+                                      {/* Tooltip Body Rows */}
+                                      <div
+                                        style={{
+                                          padding: "6px",
+                                          display: "flex",
+                                          flexDirection: "column",
+                                          gap: "4px",
+                                          maxHeight: "165px",
+                                          overflowY: "auto",
+                                        }}
+                                      >
+                                        {missingErrors
+                                          .slice(0, 5)
+                                          .map((err, idx) => {
+                                            const parsed = parseErrorLabel(
+                                              err.label || err.id,
+                                            );
+                                            const badgeTheme = getTabBadgeTheme(
+                                              err.tab,
+                                            );
+                                            return (
+                                              <div
+                                                key={err.id || idx}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleJumpToMissingField(
+                                                    p,
+                                                    err,
+                                                  );
+                                                }}
+                                                className="missing-field-row"
+                                                style={{
+                                                  display: "flex",
+                                                  alignItems: "center",
+                                                  justifyContent:
+                                                    "space-between",
+                                                  gap: "6px",
+                                                  cursor: "pointer",
+                                                  userSelect: "none",
+                                                }}
+                                                title={`Jump to ${parsed.title} (${err.tab || "details"})`}
+                                              >
+                                                <div
+                                                  style={{
+                                                    display: "flex",
+                                                    alignItems: "center",
+                                                    gap: "6px",
+                                                    minWidth: 0,
+                                                    flex: 1,
+                                                  }}
+                                                >
+                                                  <span
+                                                    style={{
+                                                      width: "5px",
+                                                      height: "5px",
+                                                      borderRadius: "50%",
+                                                      background: "#f59e0b",
+                                                      flexShrink: 0,
+                                                    }}
+                                                  />
+                                                  <div
+                                                    style={{
+                                                      display: "flex",
+                                                      flexDirection: "column",
+                                                      minWidth: 0,
+                                                      lineHeight: "1.2",
+                                                    }}
+                                                  >
+                                                    <span
+                                                      className="missing-field-title"
+                                                      style={{
+                                                        fontSize: "11px",
+                                                        fontWeight: "700",
+                                                        color: "#1e293b",
+                                                        whiteSpace: "nowrap",
+                                                        overflow: "hidden",
+                                                        textOverflow:
+                                                          "ellipsis",
+                                                      }}
+                                                    >
+                                                      {parsed.title}
+                                                    </span>
+                                                    {parsed.subtitle && (
+                                                      <span
+                                                        style={{
+                                                          fontSize: "9px",
+                                                          fontWeight: "600",
+                                                          color: "#b45309",
+                                                          marginTop: "1px",
+                                                          whiteSpace: "nowrap",
+                                                          overflow: "hidden",
+                                                          textOverflow:
+                                                            "ellipsis",
+                                                        }}
+                                                      >
+                                                        {parsed.subtitle}
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                </div>
+
+                                                <div
+                                                  style={{
+                                                    display: "flex",
+                                                    alignItems: "center",
+                                                    gap: "4px",
+                                                    flexShrink: 0,
+                                                  }}
+                                                >
+                                                  {err.tab && (
+                                                    <span
+                                                      style={{
+                                                        fontSize: "9px",
+                                                        fontWeight: "700",
+                                                        color: badgeTheme.color,
+                                                        background:
+                                                          badgeTheme.bg,
+                                                        border: `1px solid ${badgeTheme.border}`,
+                                                        padding: "1px 6px",
+                                                        borderRadius: "4px",
+                                                        textTransform:
+                                                          "capitalize",
+                                                        letterSpacing: "-0.2px",
+                                                      }}
+                                                    >
+                                                      {err.tab}
+                                                    </span>
+                                                  )}
+                                                  <FiChevronRight
+                                                    size={11}
+                                                    className="missing-field-arrow"
+                                                    style={{
+                                                      color: "#94a3b8",
+                                                      transition:
+                                                        "all 0.15s ease",
+                                                    }}
+                                                  />
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+
+                                        {missingErrors.length > 5 && (
+                                          <div
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleJumpToMissingField(
+                                                p,
+                                                missingErrors[5],
+                                              );
+                                            }}
+                                            style={{
+                                              fontSize: "10px",
+                                              fontWeight: "700",
+                                              color: "#b45309",
+                                              padding: "5px 8px",
+                                              textAlign: "center",
+                                              cursor: "pointer",
+                                              background: "#fffbeb",
+                                              borderRadius: "6px",
+                                              border: "1px dashed #fcd34d",
+                                              marginTop: "2px",
+                                            }}
+                                            title="Click to jump to next missing field"
+                                          >
+                                            +{missingErrors.length - 5} more
+                                            field
+                                            {missingErrors.length - 5 > 1
+                                              ? "s"
+                                              : ""}{" "}
+                                            — click to inspect
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Pagination Bar */}
+                      {totalPages > 1 && (
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            paddingTop: "8px",
+                            borderTop: "1.5px solid var(--line)",
+                            marginTop: "auto",
+                          }}
+                        >
+                          <button
+                            type="button"
+                            disabled={sidebarPage === 1}
+                            onClick={() =>
+                              setSidebarPage((prev) => Math.max(1, prev - 1))
+                            }
+                            style={{
+                              padding: "4px 8px",
+                              borderRadius: "6px",
+                              border: "1px solid var(--line)",
+                              background:
+                                sidebarPage === 1 ? "#f8fafc" : "white",
+                              color:
+                                sidebarPage === 1 ? "#cbd5e1" : "var(--navy)",
+                              fontSize: "11px",
+                              fontWeight: "bold",
+                              cursor:
+                                sidebarPage === 1 ? "not-allowed" : "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "3px",
+                            }}
+                          >
+                            <FiChevronLeft size={12} />
+                            <span>Prev</span>
+                          </button>
+                          <span
+                            style={{
+                              fontSize: "11px",
+                              color: "#64748b",
+                              fontWeight: "700",
+                            }}
+                          >
+                            Page {sidebarPage} of {totalPages}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={sidebarPage >= totalPages}
+                            onClick={() =>
+                              setSidebarPage((prev) =>
+                                Math.min(totalPages, prev + 1),
+                              )
+                            }
+                            style={{
+                              padding: "4px 8px",
+                              borderRadius: "6px",
+                              border: "1px solid var(--line)",
+                              background:
+                                sidebarPage >= totalPages ? "#f8fafc" : "white",
+                              color:
+                                sidebarPage >= totalPages
+                                  ? "#cbd5e1"
+                                  : "var(--navy)",
+                              fontSize: "11px",
+                              fontWeight: "bold",
+                              cursor:
+                                sidebarPage >= totalPages
+                                  ? "not-allowed"
+                                  : "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "3px",
+                            }}
+                          >
+                            <span>Next</span>
+                            <FiChevronRight size={12} />
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* ── RIGHT EDITOR PANEL ───────────────────────── */}
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+              }}
+            >
+              {/* ── Personnel Header ── */}
+              <div
+                style={{
+                  padding: "16px 24px",
+                  borderBottom: "1.5px solid var(--line)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "14px",
+                  background: "white",
+                }}
+              >
+                <div
+                  style={{
+                    width: "48px",
+                    height: "48px",
+                    borderRadius: "50%",
+                    background:
+                      categoryLabels[currentPerson.type]?.bg || "#e2e8f0",
+                    color:
+                      categoryLabels[currentPerson.type]?.color || "#64748b",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontWeight: "900",
+                    fontSize: "17px",
+                    flexShrink: 0,
+                  }}
+                >
+                  {`${(currentPerson.firstName || "")[0] || ""}${(currentPerson.lastName || "")[0] || ""}`.toUpperCase() ||
+                    "?"}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <h2
+                    style={{
+                      margin: "0 0 2px",
+                      fontSize: "18px",
+                      fontWeight: "800",
+                      color: "var(--navy)",
+                    }}
+                  >
+                    {currentPerson.firstName} {currentPerson.lastName}
+                    {currentPerson.nameExtension
+                      ? ` ${currentPerson.nameExtension}`
+                      : ""}
+                  </h2>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "6px",
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: "12px",
+                        color: "#64748b",
+                        fontWeight: "600",
+                      }}
+                    >
+                      {currentPerson.position || "No position"}
+                    </span>
+                    {currentPerson.profilingCode && (
+                      <span
+                        style={{
+                          padding: "1px 7px",
+                          borderRadius: "5px",
+                          background: "#f1f5f9",
+                          color: "#475569",
+                          fontSize: "11px",
+                          fontWeight: "700",
+                          letterSpacing: "0.05em",
+                        }}
+                      >
+                        PRN: {currentPerson.profilingCode}
+                      </span>
+                    )}
+                    {currentPerson.tin && (
+                      <span
+                        style={{
+                          padding: "1px 7px",
+                          borderRadius: "5px",
+                          background: "#f1f5f9",
+                          color: "#475569",
+                          fontSize: "11px",
+                          fontWeight: "700",
+                          letterSpacing: "0.05em",
+                        }}
+                      >
+                        TIN: {currentPerson.tin}
+                      </span>
+                    )}
+                    {currentPerson.deploymentStatus && (
+                      <span
+                        style={{
+                          padding: "1px 7px",
+                          borderRadius: "5px",
+                          background: isReassignedRejected
+                            ? "#FEE2E2"
+                            : String(
+                                  currentPerson.deploymentStatus,
+                                ).toUpperCase() === "BORROWED"
+                              ? "#FEF3C7"
+                              : "#E0F2FE",
+                          color: isReassignedRejected
+                            ? "#DC2626"
+                            : String(
+                                  currentPerson.deploymentStatus,
+                                ).toUpperCase() === "BORROWED"
+                              ? "#92400E"
+                              : "#0369A1",
+                          border: isReassignedRejected
+                            ? "1px solid #F87171"
+                            : String(
+                                  currentPerson.deploymentStatus,
+                                ).toUpperCase() === "BORROWED"
+                              ? "1px solid #FCD34D"
+                              : "1px solid #BAE6FD",
+                          fontSize: "11px",
+                          fontWeight: "700",
+                        }}
+                      >
+                        STATUS:{" "}
+                        {isReassignedRejected
+                          ? "REJECTED"
+                          : String(
+                              currentPerson.deploymentStatus,
+                            ).toUpperCase()}
+                      </span>
+                    )}
+                    {currentPerson.isShared && (
+                      <span
+                        style={{
+                          padding: "1px 7px",
+                          borderRadius: "5px",
+                          background: "#e0e7ff",
+                          color: "#3730a3",
+                          fontSize: "11px",
+                          fontWeight: "700",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                        }}
+                      >
+                        <FiLink size={11} /> Shared from{" "}
+                        {DIVISION_SCHOOL_OPTIONS.find(
+                          (s) => s.schoolId === currentPerson.sourceSchoolId,
+                        )?.name?.toUpperCase() || "Mother School"}
+                      </span>
+                    )}
+                    {currentPerson.personalVerified && (
+                      <span
+                        style={{
+                          padding: "1px 7px",
+                          borderRadius: "5px",
+                          background: "#d1fae5",
+                          color: "#065f46",
+                          fontSize: "11px",
+                          fontWeight: "700",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                        }}
+                      >
+                        <FiCheck size={11} /> Verified
+                      </span>
+                    )}
+                    {dbPerson &&
+                      localStorage.getItem(
+                        `draft_personnel_${dbPerson.id}`,
+                      ) && (
+                        <span
+                          style={{
+                            padding: "1px 7px",
+                            borderRadius: "5px",
+                            background: "#fef3c7",
+                            color: "#92400e",
+                            fontSize: "11px",
+                            fontWeight: "700",
+                          }}
+                        >
+                          ● Unsaved Draft
+                        </span>
+                      )}
+                  </div>
+                </div>
+                {/* Discard Draft button in header area */}
+                {dbPerson &&
+                  localStorage.getItem(`draft_personnel_${dbPerson.id}`) && (
+                    <button
+                      className="btn secondary"
+                      style={{
+                        minHeight: "32px",
+                        padding: "0 12px",
+                        fontSize: "12px",
+                        whiteSpace: "nowrap",
+                      }}
+                      type="button"
+                      onClick={async () => {
+                        if (
+                          await showConfirm(
+                            "Discard Draft?",
+                            "Revert to the saved database version?",
+                          )
+                        ) {
+                          const targetKeys = [
+                            dbPerson.id,
+                            dbPerson.legacy_id,
+                            dbPerson.prn,
+                          ].filter(Boolean);
+                          targetKeys.forEach((k) => {
+                            localStorage.removeItem(`draft_personnel_${k}`);
+                            localStorage.removeItem(
+                              `draft_learning_areas_${k}`,
+                            );
+                            localStorage.removeItem(`esf7_workload_draft_${k}`);
+                            localStorage.removeItem(`draft_workload_${k}`);
+                          });
+                          setEditPerson(dbPerson);
+                        }
+                      }}
+                    >
+                      Discard Draft
+                    </button>
+                  )}
+              </div>
+
+              {/* Borrowed Personnel Notice Banner */}
+              {isBorrowedUnresolved && (
+                <div
+                  style={{
+                    margin: "16px 24px 0 24px",
+                    padding: "16px",
+                    borderRadius: "12px",
+                    background: "#eff6ff",
+                    border: "1.5px solid #93c5fd",
+                    display: "flex",
+                    alignItems: "flex-start",
+                    justifyContent: "space-between",
+                    gap: "16px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: "280px" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        color: "#1e40af",
+                        fontWeight: "800",
+                        fontSize: "14px",
+                      }}
+                    >
+                      <FiAlertCircle size={18} />
+                      <span>Incoming Borrowed Personnel Notice</span>
+                    </div>
+                    <p
+                      style={{
+                        margin: "6px 0 0 0",
+                        fontSize: "13px",
+                        color: "#1e3a8a",
+                        lineHeight: "1.5",
+                      }}
+                    >
+                      This teacher is marked as <strong>BORROWED</strong> from a
+                      Mother School. In DepEd plantilla operations, borrowed
+                      teachers must be initiated by their Mother School as
+                      Reassigned and accepted via the Request Center, or
+                      converted to Permanent (Own Station).
+                    </p>
+                  </div>
+                  <div
+                    style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setShowBorrowedPromptModal(true)}
+                      style={{
+                        padding: "8px 16px",
+                        fontSize: "12px",
+                        fontWeight: "700",
+                        background:
+                          "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+                        color: "#ffffff",
+                        border: "none",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        boxShadow: "0 2px 6px rgba(37, 99, 235, 0.2)",
+                      }}
+                    >
+                      <FiTag size={14} /> Review & Resolve Status
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Horizontal Tabs ── */}
+              <div
+                style={{
+                  display: "flex",
+                  gap: "0",
+                  borderBottom: "1.5px solid var(--line)",
+                  background: "#f8fafc",
+                  padding: "0 24px",
+                }}
+              >
+                {tabs.map(({ tab, label, Icon }) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() =>
+                      confirmAction(() => setActiveTab(tab), {
+                        actionType: "tab",
+                      })
+                    }
+                    style={{
+                      padding: "12px 18px",
+                      fontSize: "13px",
+                      fontWeight: activeTab === tab ? "700" : "600",
+                      color: activeTab === tab ? "var(--blue)" : "#64748b",
+                      background: "transparent",
+                      border: "none",
+                      borderBottom:
+                        activeTab === tab
+                          ? "3px solid var(--blue)"
+                          : "3px solid transparent",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    <Icon size={14} />
+                    <span>{label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* ── Form Content ── */}
+              <div
+                style={{
+                  flex: 1,
+                  overflowY: "auto",
+                  padding: "20px 24px",
+                  position: "relative",
+                }}
+              >
+                <div>
+                  {isReassignedRejected && (
+                    <div
+                      style={{
+                        background: "#FEF2F2",
+                        padding: "14px 18px",
+                        borderRadius: "12px",
+                        border: "1.5px solid #FCA5A5",
+                        marginBottom: "20px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "16px",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "10px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "36px",
+                            height: "36px",
+                            borderRadius: "8px",
+                            background: "#FEE2E2",
+                            color: "#DC2626",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                          }}
+                        >
+                          <FiAlertCircle size={20} />
+                        </div>
+                        <div>
+                          <strong
+                            style={{
+                              fontSize: "13px",
+                              color: "#991B1B",
+                              display: "block",
+                            }}
+                          >
+                            Inter-School Reassignment Request Rejected
+                          </strong>
+                          <span style={{ fontSize: "12px", color: "#B91C1C" }}>
+                            The target receiving school declined this transfer
+                            request. You can edit all profile details or revert
+                            status back to Own Station.
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleFieldChange("deploymentStatus", "Stationed");
+                          showToast(
+                            "Reset status to Stationed (Own Station)",
+                            "info",
+                          );
+                        }}
+                        style={{
+                          padding: "6px 14px",
+                          fontSize: "12px",
+                          fontWeight: "700",
+                          background: "#DC2626",
+                          color: "white",
+                          border: "none",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                        }}
+                      >
+                        <FiRefreshCw size={13} /> Revert to Own Station
+                      </button>
+                    </div>
+                  )}
+                  {currentPerson.isShared && (
+                    <div
+                      style={{
+                        background: "#F0FDF4",
+                        padding: "14px 16px",
+                        borderRadius: "12px",
+                        border: "1.5px solid #BBF7D0",
+                        marginBottom: "20px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                        }}
+                      >
+                        <strong
+                          style={{
+                            fontSize: "13px",
+                            color: "#166534",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                          }}
+                        >
+                          <FiInfo size={16} />
+                          <span>
+                            Active Stationed Faculty (Borrowed / Reassigned)
+                          </span>
+                        </strong>
+                        <span
+                          style={{
+                            padding: "3px 10px",
+                            borderRadius: "20px",
+                            background: "#DCFCE7",
+                            color: "#15803D",
+                            fontWeight: "bold",
+                            fontSize: "11px",
+                            border: "1px solid #86EFAC",
+                          }}
+                        >
+                          EDITING ENABLED IN HOST STATION
+                        </span>
+                      </div>
+                      <p
+                        style={{
+                          margin: "6px 0 0 0",
+                          color: "#14532D",
+                          fontSize: "12px",
+                        }}
+                      >
+                        This personnel is stationed at your school. You have
+                        full administrative access to edit and complete their
+                        profile, qualifications, and learning areas.
+                      </p>
+                    </div>
+                  )}
+                  <div className="profile-editor-layout">
+                    {/* Editing Form fields dynamically */}
+                    <div>
+                      <p
+                        className="profile-section-note"
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                        }}
+                      >
+                        {activeTab === "identity" && (
+                          <>
+                            <FiCreditCard size={14} />{" "}
+                            <span>
+                              Editing identity and minimum record creation
+                              fields.
+                            </span>
+                          </>
+                        )}
+                        {activeTab === "personal" && (
+                          <>
+                            <FiUser size={14} />{" "}
+                            <span>
+                              Editing demographic, civil status, birthdate,
+                              PhilSys, religion, and ethnicity fields.
+                            </span>
+                          </>
+                        )}
+                        {activeTab === "employment" && (
+                          <>
+                            <FiBriefcase size={14} />{" "}
+                            <span>
+                              Editing position, designation, fund source,
+                              appointment, hiring arrangement, email,
+                              deployment, and service dates.
+                            </span>
+                          </>
+                        )}
+                        {activeTab === "education" && (
+                          <>
+                            <FiAward size={14} />{" "}
+                            <span>
+                              Editing degree, major/minor, post-graduate degree,
+                              discipline, eligibility, and PRC specialization.
+                            </span>
+                          </>
+                        )}
+                        {activeTab === "development" && (
+                          <>
+                            <FiFileText size={14} />{" "}
+                            <span>
+                              Editing NEAP trainings, TESDA NCs, certifications,
+                              and other professional development records.
+                            </span>
+                          </>
+                        )}
+                        {activeTab === "teaching" && (
+                          <>
+                            <FiLayers size={14} />{" "}
+                            <span>
+                              Editing teaching grade level assignments.
+                            </span>
+                          </>
+                        )}
+                        {activeTab === "learning-area" && (
+                          <>
+                            <FiBook size={14} />{" "}
+                            <span>
+                              Record taught learning areas per school year.
+                            </span>
+                          </>
+                        )}
+                      </p>
+
+                      <div className="form-grid profile-form-grid">
+                        {activeTab === "identity" && (
+                          <>
+                            <div style={{ gridColumn: "1 / -1" }}>
+                              <label>TIN</label>
                               <div
-                                className="completion-progress-container"
                                 style={{
-                                  marginTop: "4px",
                                   display: "flex",
                                   alignItems: "center",
-                                  gap: "6px",
-                                  position: "relative",
-                                  cursor: !isComplete ? "help" : "default",
+                                  gap: "16px",
+                                  flexWrap: "wrap",
                                 }}
                               >
                                 <div
                                   style={{
-                                    flex: 1,
-                                    height: "4px",
-                                    background: "#e2e8f0",
-                                    borderRadius: "2px",
-                                    overflow: "hidden",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "8px",
                                   }}
                                 >
-                                  <div
+                                  <input
+                                    type="text"
+                                    id="field-tin"
+                                    data-field="tin"
+                                    placeholder="123-456-789"
+                                    disabled={currentPerson.noTin}
+                                    value={currentPerson.tin || ""}
+                                    maxLength={11}
+                                    className={
+                                      !currentPerson.noTin && !currentPerson.tin
+                                        ? "empty-field"
+                                        : ""
+                                    }
                                     style={{
-                                      width: `${completionPct}%`,
-                                      height: "100%",
-                                      background: isComplete
-                                        ? "#10b981"
-                                        : "#0284c7",
-                                      borderRadius: "2px",
-                                      transition: "width 0.3s",
+                                      width: "160px",
+                                      textAlign: "center",
+                                      fontWeight: "500",
+                                      letterSpacing: "0.05em",
+                                    }}
+                                    onChange={(e) => {
+                                      let val = e.target.value.replace(
+                                        /\D/g,
+                                        "",
+                                      ); // Extract numbers only
+                                      val = val.slice(0, 9); // Limit to max 9 digits
+
+                                      let formatted = "";
+                                      if (val.length > 0) {
+                                        formatted += val.slice(0, 3);
+                                      }
+                                      if (val.length > 3) {
+                                        formatted += "-" + val.slice(3, 6);
+                                      }
+                                      if (val.length > 6) {
+                                        formatted += "-" + val.slice(6, 9);
+                                      }
+
+                                      handleFieldChange("tin", formatted);
                                     }}
                                   />
                                 </div>
-                                <div
+                                <label
+                                  className="checkline"
                                   style={{
-                                    display: "inline-flex",
+                                    textTransform: "none",
+                                    fontSize: "12px",
+                                    margin: 0,
+                                    display: "flex",
                                     alignItems: "center",
-                                    gap: "3px",
-                                    flexShrink: 0,
+                                    gap: "6px",
+                                    cursor: "pointer",
+                                    userSelect: "none",
                                   }}
                                 >
-                                  {!isComplete && (
-                                    <FiAlertCircle
-                                      size={11}
+                                  <input
+                                    type="checkbox"
+                                    checked={
+                                      !!(
+                                        currentPerson.noTin ||
+                                        currentPerson.no_tin
+                                      )
+                                    }
+                                    onChange={(e) => {
+                                      const isChecked = e.target.checked;
+                                      setEditPerson((prev) => {
+                                        const updated = {
+                                          ...prev,
+                                          noTin: isChecked,
+                                          no_tin: isChecked,
+                                        };
+                                        if (isChecked) updated.tin = "";
+                                        localStorage.setItem(
+                                          `draft_personnel_${currentPerson.id}`,
+                                          JSON.stringify(updated),
+                                        );
+                                        return updated;
+                                      });
+                                    }}
+                                  />{" "}
+                                  No TIN available
+                                </label>
+                              </div>
+                              <p
+                                className="field-help"
+                                style={{ marginTop: "6px" }}
+                              >
+                                PRN is used as the professional system ID, so no
+                                temporary ID is needed.
+                              </p>
+                            </div>
+                            <div className="profile-subsection">Legal Name</div>
+                            <div>
+                              <label>First Name</label>
+                              <input
+                                className={
+                                  !currentPerson.firstName ? "empty-field" : ""
+                                }
+                                value={currentPerson.firstName || ""}
+                                onChange={(e) =>
+                                  handleFieldChange(
+                                    "firstName",
+                                    e.target.value.toUpperCase(),
+                                  )
+                                }
+                              />
+                            </div>
+                            <div>
+                              <label>Middle Name</label>
+                              <input
+                                value={currentPerson.middleName || ""}
+                                onChange={(e) =>
+                                  handleFieldChange(
+                                    "middleName",
+                                    e.target.value.toUpperCase(),
+                                  )
+                                }
+                              />
+                            </div>
+                            <div>
+                              <label>Last Name</label>
+                              <input
+                                className={
+                                  !currentPerson.lastName ? "empty-field" : ""
+                                }
+                                value={currentPerson.lastName || ""}
+                                onChange={(e) =>
+                                  handleFieldChange(
+                                    "lastName",
+                                    e.target.value.toUpperCase(),
+                                  )
+                                }
+                              />
+                            </div>
+                            <div>
+                              <label>Extension Name (Optional)</label>
+                              <input
+                                maxLength={5}
+                                value={currentPerson.nameExtension || ""}
+                                onChange={(e) =>
+                                  handleFieldChange(
+                                    "nameExtension",
+                                    e.target.value.toUpperCase().slice(0, 5),
+                                  )
+                                }
+                                placeholder="e.g. JR., SR., III, IV"
+                              />
+                            </div>
+
+                            <div className="profile-subsection">
+                              Demographic Profile
+                            </div>
+                            <div>
+                              <label>Sex at Birth</label>
+                              <SearchableDropdown
+                                options={["FEMALE", "MALE"]}
+                                value={currentPerson.sexAtBirth || ""}
+                                onChange={(val) =>
+                                  handleFieldChange("sexAtBirth", val)
+                                }
+                                placeholder="SELECT SEX..."
+                                required
+                              />
+                            </div>
+                            <div>
+                              <label>Civil Status</label>
+                              <SearchableDropdown
+                                options={[
+                                  "SINGLE",
+                                  "MARRIED",
+                                  "WIDOWED",
+                                  "LEGALLY SEPARATED",
+                                ]}
+                                value={currentPerson.civilStatus || ""}
+                                onChange={(val) =>
+                                  handleFieldChange("civilStatus", val)
+                                }
+                                placeholder="SELECT CIVIL STATUS..."
+                                required
+                              />
+                            </div>
+                            <div>
+                              <label>Solo Parent</label>
+                              <SearchableDropdown
+                                options={["NO", "YES"]}
+                                value={currentPerson.soloParent || "NO"}
+                                onChange={(val) =>
+                                  handleFieldChange("soloParent", val)
+                                }
+                                placeholder="SELECT SOLO PARENT STATUS..."
+                              />
+                            </div>
+                            <div>
+                              <label>Religion</label>
+                              <SearchableDropdown
+                                options={RELIGION_OPTIONS.map((r) =>
+                                  r.toUpperCase(),
+                                )}
+                                value={currentPerson.religion || ""}
+                                onChange={(val) =>
+                                  handleFieldChange("religion", val)
+                                }
+                                placeholder="SELECT RELIGION..."
+                                required
+                              />
+                            </div>
+                            <div>
+                              <label>Ethnic Group</label>
+                              <SearchableDropdown
+                                options={ETHNIC_GROUP_OPTIONS}
+                                value={currentPerson.ethnicGroup || ""}
+                                onChange={(val) =>
+                                  handleFieldChange("ethnicGroup", val)
+                                }
+                                placeholder="Select or search ethnic group..."
+                                required
+                              />
+                            </div>
+                            <div className="profile-subsection">
+                              Government ID and Birthdate
+                            </div>
+                            <div>
+                              {(() => {
+                                const cleanPs = String(
+                                  currentPerson.philsysNo ||
+                                    currentPerson.philsys_no ||
+                                    "",
+                                ).replace(/\D/g, "");
+                                const isNA = !!(
+                                  currentPerson.noPhilsys ||
+                                  currentPerson.no_philsys
+                                );
+                                const isValid = isNA || cleanPs.length === 16;
+                                return (
+                                  <>
+                                    <label
                                       style={{
-                                        color: "#f59e0b",
-                                        flexShrink: 0,
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "space-between",
+                                      }}
+                                    >
+                                      <span>PhilSys No. / National ID</span>
+                                      {(isNA || cleanPs.length > 0) && (
+                                        <span
+                                          style={{
+                                            color: isNA
+                                              ? "#64748b"
+                                              : cleanPs.length === 16
+                                                ? "#059669"
+                                                : "#DC2626",
+                                            fontWeight: 600,
+                                            fontSize: "11px",
+                                          }}
+                                        >
+                                          {isNA
+                                            ? "N/A"
+                                            : cleanPs.length === 16
+                                              ? "16/16 digits ✓"
+                                              : `${cleanPs.length}/16 digits`}
+                                        </span>
+                                      )}
+                                    </label>
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "12px",
+                                        flexWrap: "wrap",
+                                      }}
+                                    >
+                                      <input
+                                        placeholder="16-digit PhilSys Card Number"
+                                        maxLength={16}
+                                        disabled={isNA}
+                                        value={
+                                          isNA
+                                            ? ""
+                                            : currentPerson.philsysNo || ""
+                                        }
+                                        onChange={(e) => {
+                                          const val = e.target.value.replace(
+                                            /\D/g,
+                                            "",
+                                          ); // numbers only
+                                          handleFieldChange("philsysNo", val);
+                                        }}
+                                        style={{
+                                          flex: 1,
+                                          minWidth: "160px",
+                                          ...(isNA
+                                            ? {
+                                                background: "#f1f5f9",
+                                                color: "#94a3b8",
+                                                cursor: "not-allowed",
+                                              }
+                                            : {}),
+                                          ...(!isValid && cleanPs.length > 0
+                                            ? {
+                                                borderColor: "#EF4444",
+                                                background: "#FEF2F2",
+                                              }
+                                            : {}),
+                                        }}
+                                      />
+                                      <label
+                                        className="checkline"
+                                        style={{
+                                          textTransform: "none",
+                                          fontSize: "12px",
+                                          margin: 0,
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: "6px",
+                                          cursor: "pointer",
+                                          userSelect: "none",
+                                          whiteSpace: "nowrap",
+                                        }}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={isNA}
+                                          onChange={(e) => {
+                                            const isChecked = e.target.checked;
+                                            setEditPerson((prev) => {
+                                              const updated = {
+                                                ...prev,
+                                                noPhilsys: isChecked,
+                                                no_philsys: isChecked,
+                                              };
+                                              if (isChecked) {
+                                                updated.philsysNo = "";
+                                                updated.philsys_no = "";
+                                              }
+                                              localStorage.setItem(
+                                                `draft_personnel_${currentPerson.id}`,
+                                                JSON.stringify(updated),
+                                              );
+                                              return updated;
+                                            });
+                                          }}
+                                        />{" "}
+                                        N/A
+                                      </label>
+                                    </div>
+                                    <p
+                                      className="field-help"
+                                      style={{
+                                        marginTop: "4px",
+                                        fontSize: "11px",
+                                        color: "#64748b",
+                                      }}
+                                    >
+                                      16-digit PhilSys National ID number. If
+                                      not yet issued or unavailable, click{" "}
+                                      <strong>N/A</strong>.
+                                    </p>
+                                  </>
+                                );
+                              })()}
+                            </div>
+                            <div>
+                              <label>Birthdate</label>
+                              <DatePickerDropdowns
+                                value={currentPerson.birthdate || ""}
+                                onChange={(val) =>
+                                  handleFieldChange("birthdate", val)
+                                }
+                                maxDate={maxBirthdate}
+                                required
+                              />
+                            </div>
+                            <div>
+                              <label>Computed Age</label>
+                              <input
+                                value={age === null ? "—" : age}
+                                disabled
+                                style={{
+                                  background: "#f1f5f9",
+                                  color: "#64748b",
+                                }}
+                              />
+                            </div>
+                            <div>
+                              <label>Age Validation</label>
+                              <div style={{ marginTop: "8px" }}>
+                                <span
+                                  className={ageStatusClass}
+                                  style={{
+                                    padding: "6px 12px",
+                                    borderRadius: "20px",
+                                    fontSize: "11px",
+                                    fontWeight: "bold",
+                                  }}
+                                >
+                                  {ageStatusText}
+                                </span>
+                              </div>
+                            </div>
+                          </>
+                        )}
+
+                        {activeTab === "employment" && (
+                          <>
+                            <div className="profile-subsection">
+                              Role and Appointment
+                            </div>
+                            <div>
+                              <label>Personnel Category</label>
+                              <SearchableDropdown
+                                options={[
+                                  "TEACHING",
+                                  "RELATED TEACHING",
+                                  "NON-TEACHING",
+                                ]}
+                                value={
+                                  !currentPerson.type &&
+                                  !isCanonicalPosition(currentPerson.position)
+                                    ? ""
+                                    : currentPerson.type === "non-teaching"
+                                      ? "NON-TEACHING"
+                                      : currentPerson.type ===
+                                          "teaching-related"
+                                        ? "RELATED TEACHING"
+                                        : currentPerson.type === "teaching"
+                                          ? "TEACHING"
+                                          : ""
+                                }
+                                onChange={(val) => {
+                                  const mapping = {
+                                    TEACHING: "teaching",
+                                    "RELATED TEACHING": "teaching-related",
+                                    "NON-TEACHING": "non-teaching",
+                                  };
+                                  const newType = mapping[val] || "";
+                                  const validPositions = (
+                                    POSITION_OPTIONS_BY_CATEGORY[newType] || []
+                                  ).map((p) => p.toUpperCase());
+                                  let newPosition =
+                                    currentPerson.position || "";
+                                  if (
+                                    newPosition &&
+                                    !validPositions.includes(
+                                      newPosition.toUpperCase(),
+                                    ) &&
+                                    !newPosition
+                                      .toUpperCase()
+                                      .startsWith("OTHERS")
+                                  ) {
+                                    newPosition = "";
+                                  }
+                                  const updated = {
+                                    ...currentPerson,
+                                    type: newType,
+                                    position: newPosition,
+                                    positionCategory: val || "",
+                                    position_category: val || "",
+                                  };
+                                  setEditPerson(updated);
+                                  localStorage.setItem(
+                                    `draft_personnel_${currentPerson.id}`,
+                                    JSON.stringify(updated),
+                                  );
+                                }}
+                                placeholder="SELECT CATEGORY..."
+                              />
+                            </div>
+                            <div>
+                              <label>Plantilla Position</label>
+                              <SearchableDropdown
+                                options={(() => {
+                                  const rawType = String(
+                                    currentPerson.type || "",
+                                  ).toLowerCase();
+                                  const categoryKey =
+                                    rawType === "teaching"
+                                      ? "teaching"
+                                      : rawType === "teaching-related"
+                                        ? "teaching-related"
+                                        : rawType === "non-teaching"
+                                          ? "non-teaching"
+                                          : null;
+                                  if (!categoryKey) {
+                                    // If no category selected yet, offer all positions
+                                    return [
+                                      ...POSITION_OPTIONS_BY_CATEGORY.teaching,
+                                      ...POSITION_OPTIONS_BY_CATEGORY[
+                                        "teaching-related"
+                                      ],
+                                      ...POSITION_OPTIONS_BY_CATEGORY[
+                                        "non-teaching"
+                                      ],
+                                    ].map((p) => p.toUpperCase());
+                                  }
+                                  const list =
+                                    POSITION_OPTIONS_BY_CATEGORY[categoryKey] ||
+                                    [];
+                                  return list.map((p) => p.toUpperCase());
+                                })()}
+                                value={
+                                  isCanonicalPosition(currentPerson.position)
+                                    ? currentPerson.position?.startsWith(
+                                        "OTHERS",
+                                      )
+                                      ? "OTHERS"
+                                      : currentPerson.position || ""
+                                    : ""
+                                }
+                                onChange={(val) => {
+                                  const selectedPos =
+                                    val === "OTHERS" ? "OTHERS" : val;
+                                  const autoType =
+                                    getCategoryForCanonicalPosition(
+                                      selectedPos,
+                                    ) ||
+                                    detectPersonnelTypeFromPosition(
+                                      selectedPos,
+                                    ) ||
+                                    currentPerson.type ||
+                                    "";
+                                  const catName =
+                                    autoType === "teaching"
+                                      ? "TEACHING"
+                                      : autoType === "teaching-related"
+                                        ? "RELATED TEACHING"
+                                        : autoType === "non-teaching"
+                                          ? "NON-TEACHING"
+                                          : "";
+                                  const isCook =
+                                    String(selectedPos || "")
+                                      .trim()
+                                      .toUpperCase() === "COOK";
+                                  const updated = {
+                                    ...currentPerson,
+                                    position: selectedPos,
+                                    plantilla_position: selectedPos,
+                                    type: autoType,
+                                    positionCategory: catName,
+                                    position_category: catName,
+                                    ...(isCook
+                                      ? {
+                                          natureOfAppointment: "CONTRACTUAL",
+                                          nature_of_appointment: "CONTRACTUAL",
+                                          hiringArrangement: "CONTRACTUAL",
+                                          hiring_arrangement: "CONTRACTUAL",
+                                          fundSource: "SBFP",
+                                          fund_source: "SBFP",
+                                        }
+                                      : String(
+                                            currentPerson.fundSource || "",
+                                          ).toUpperCase() === "SBFP"
+                                        ? {
+                                            fundSource: "NATIONAL",
+                                            fund_source: "NATIONAL",
+                                          }
+                                        : {}),
+                                  };
+                                  setEditPerson(updated);
+                                  localStorage.setItem(
+                                    `draft_personnel_${currentPerson.id}`,
+                                    JSON.stringify(updated),
+                                  );
+                                }}
+                                placeholder="SELECT PLANTILLA POSITION..."
+                                required
+                              />
+                              {(currentPerson.type === "non-teaching" ||
+                                currentPerson.type === "NON-TEACHING") &&
+                                (currentPerson.position === "OTHERS" ||
+                                  currentPerson.position?.startsWith(
+                                    "OTHERS",
+                                  )) && (
+                                  <div style={{ marginTop: "8px" }}>
+                                    <label
+                                      style={{
+                                        fontSize: "11px",
+                                        color: "#64748B",
+                                      }}
+                                    >
+                                      Specify Position (Max 50 characters)
+                                    </label>
+                                    <input
+                                      type="text"
+                                      maxLength={50}
+                                      placeholder="Specify position title..."
+                                      value={
+                                        currentPerson.position === "OTHERS"
+                                          ? ""
+                                          : currentPerson.position.replace(
+                                              /^OTHERS\s*-\s*/i,
+                                              "",
+                                            )
+                                      }
+                                      onChange={(e) => {
+                                        const val = e.target.value
+                                          .substring(0, 50)
+                                          .toUpperCase();
+                                        handleFieldChange(
+                                          "position",
+                                          val ? `OTHERS - ${val}` : "OTHERS",
+                                        );
+                                      }}
+                                      required
+                                      style={{
+                                        width: "100%",
+                                        padding: "8px 12px",
+                                        fontSize: "13px",
+                                        borderRadius: "8px",
+                                        border: "1.5px solid #BAE6FD",
+                                        background: "#F0F9FF",
                                       }}
                                     />
-                                  )}
-                                  <span
-                                    style={{
-                                      fontSize: "10px",
-                                      fontWeight: "700",
-                                      color: isComplete ? "#10b981" : "#d97706",
-                                      minWidth: "24px",
-                                      textAlign: "right",
-                                    }}
-                                  >
-                                    {completionPct}%
-                                  </span>
-                                </div>
+                                    <div
+                                      style={{
+                                        fontSize: "10px",
+                                        color: "#94A3B8",
+                                        textAlign: "right",
+                                        marginTop: "2px",
+                                      }}
+                                    >
+                                      {
+                                        (currentPerson.position === "OTHERS"
+                                          ? ""
+                                          : currentPerson.position.replace(
+                                              /^OTHERS\s*-\s*/i,
+                                              "",
+                                            )
+                                        ).length
+                                      }
+                                      /50 characters
+                                    </div>
+                                  </div>
+                                )}
+                            </div>
+                            {(() => {
+                              const personCategory =
+                                detectPersonnelTypeFromPosition(
+                                  currentPerson.position,
+                                ) ||
+                                currentPerson.type ||
+                                "teaching";
+                              const isNonTeaching =
+                                personCategory === "non-teaching";
+                              const currentNature = String(
+                                currentPerson.natureOfAppointment || "",
+                              ).toUpperCase();
 
-                                {/* Floating Hover Marker Tooltip */}
-                                {!isComplete && missingFields.length > 0 && (
-                                  <div
-                                    className={`missing-fields-tooltip ${pIdx >= 6 ? "tooltip-top" : "tooltip-bottom"}`}
-                                    onClick={(e) => e.stopPropagation()}
-                                    style={{
-                                      position: "absolute",
-                                      ...(pIdx >= 6
-                                        ? { bottom: "calc(100% + 10px)" }
-                                        : { top: "calc(100% + 10px)" }),
-                                      right: "-8px",
-                                      width: "272px",
-                                      maxWidth: "272px",
-                                      background: "#ffffff",
-                                      border: "1.5px solid #fcd34d",
-                                      borderRadius: "12px",
-                                      boxShadow:
-                                        "0 14px 34px -4px rgba(180, 83, 9, 0.22), 0 8px 16px -4px rgba(0,0,0,0.08)",
-                                      zIndex: 100,
-                                      pointerEvents: "auto",
-                                      textAlign: "left",
-                                    }}
-                                  >
-                                    {/* Tooltip Header */}
+                              // 1. Nature of Appointment Options
+                              const natureOptions = isNonTeaching
+                                ? [
+                                    "REGULAR PERMANENT",
+                                    "CONTRACTUAL",
+                                    "CASUAL/EMERGENCY",
+                                    "JOB ORDER/CONTRACT OF SERVICE",
+                                    "VOLUNTEER",
+                                  ]
+                                : [
+                                    "REGULAR PERMANENT",
+                                    "PROVISIONAL",
+                                    "CONTRACTUAL",
+                                    "SUBSTITUTE",
+                                    "CASUAL/EMERGENCY",
+                                    "JOB ORDER/CONTRACT OF SERVICE",
+                                    "VOLUNTEER",
+                                  ];
+
+                              // 2. Hiring Arrangement Config
+                              let hiringOptions = [];
+                              let isHiringDisabled = false;
+                              let hiringValue =
+                                currentPerson.hiringArrangement || "";
+
+                              if (currentNature === "REGULAR PERMANENT") {
+                                if (isNonTeaching) {
+                                  hiringOptions = ["REGULAR"];
+                                  hiringValue = "REGULAR";
+                                  isHiringDisabled = true;
+                                } else {
+                                  hiringOptions = [
+                                    "REGULAR",
+                                    "SPIMS",
+                                    "4PS",
+                                    "DOST",
+                                  ];
+                                  isHiringDisabled = false;
+                                  if (
+                                    !hiringValue ||
+                                    hiringValue === "N/A" ||
+                                    !hiringOptions.includes(
+                                      hiringValue.toUpperCase(),
+                                    )
+                                  ) {
+                                    hiringValue = "REGULAR";
+                                  }
+                                }
+                              } else if (currentNature === "PROVISIONAL") {
+                                hiringOptions = ["DOST"];
+                                hiringValue = "DOST";
+                                isHiringDisabled = true;
+                              } else if (
+                                [
+                                  "CONTRACTUAL",
+                                  "SUBSTITUTE",
+                                  "CASUAL/EMERGENCY",
+                                  "JOB ORDER/CONTRACT OF SERVICE",
+                                  "VOLUNTEER",
+                                ].includes(currentNature)
+                              ) {
+                                hiringOptions = ["N/A"];
+                                hiringValue = "N/A";
+                                isHiringDisabled = true;
+                              } else {
+                                hiringOptions = isNonTeaching
+                                  ? ["REGULAR", "N/A"]
+                                  : ["REGULAR", "SPIMS", "4PS", "DOST", "N/A"];
+                                isHiringDisabled = false;
+                              }
+
+                              // 3. Fund Source Config
+                              const isCookPosition =
+                                String(currentPerson.position || "")
+                                  .trim()
+                                  .toUpperCase() === "COOK";
+                              let fundOptions = [];
+                              let isFundDisabled = false;
+                              let fundValue = currentPerson.fundSource || "";
+
+                              if (
+                                currentNature === "REGULAR PERMANENT" ||
+                                currentNature === "PROVISIONAL"
+                              ) {
+                                fundOptions = ["NATIONAL"];
+                                fundValue = "NATIONAL";
+                                isFundDisabled = true;
+                              } else if (
+                                [
+                                  "CONTRACTUAL",
+                                  "SUBSTITUTE",
+                                  "CASUAL/EMERGENCY",
+                                  "JOB ORDER/CONTRACT OF SERVICE",
+                                  "VOLUNTEER",
+                                ].includes(currentNature)
+                              ) {
+                                const allowsNational =
+                                  NATIONAL_FUND_ELIGIBLE_NATURES.includes(
+                                    currentNature,
+                                  );
+                                fundOptions = isCookPosition
+                                  ? [
+                                      "SBFP",
+                                      ...(allowsNational ? ["NATIONAL"] : []),
+                                      "SEF",
+                                      "LGU",
+                                      "PTA",
+                                      "NGO",
+                                      "SCHOOL MOOE",
+                                    ]
+                                  : [
+                                      ...(allowsNational ? ["NATIONAL"] : []),
+                                      "SEF",
+                                      "LGU",
+                                      "PTA",
+                                      "NGO",
+                                      "SCHOOL MOOE",
+                                    ];
+                                isFundDisabled = false;
+                                if (
+                                  !isCookPosition &&
+                                  String(fundValue).toUpperCase() === "SBFP"
+                                ) {
+                                  fundValue = "SEF";
+                                } else if (
+                                  String(fundValue).toUpperCase() ===
+                                    "NATIONAL" &&
+                                  !allowsNational
+                                ) {
+                                  fundValue = isCookPosition ? "SBFP" : "";
+                                } else if (
+                                  String(fundValue).toUpperCase() === "MOOE"
+                                ) {
+                                  fundValue = "SCHOOL MOOE";
+                                }
+                              } else {
+                                fundOptions = isCookPosition
+                                  ? [
+                                      "SBFP",
+                                      "NATIONAL",
+                                      "SEF",
+                                      "LGU",
+                                      "PTA",
+                                      "NGO",
+                                      "SCHOOL MOOE",
+                                    ]
+                                  : [
+                                      "NATIONAL",
+                                      "SEF",
+                                      "LGU",
+                                      "PTA",
+                                      "NGO",
+                                      "SCHOOL MOOE",
+                                    ];
+                                isFundDisabled = false;
+                                if (
+                                  !isCookPosition &&
+                                  String(fundValue).toUpperCase() === "SBFP"
+                                ) {
+                                  fundValue = "NATIONAL";
+                                }
+                              }
+
+                              return (
+                                <>
+                                  <div>
+                                    <label>Nature of Appointment</label>
+                                    <SearchableDropdown
+                                      options={natureOptions}
+                                      value={
+                                        currentPerson.natureOfAppointment || ""
+                                      }
+                                      onChange={(val) =>
+                                        handleFieldChange(
+                                          "natureOfAppointment",
+                                          val,
+                                        )
+                                      }
+                                      placeholder="Select nature of appointment..."
+                                      required
+                                    />
+                                  </div>
+                                  <div>
+                                    <label>Hiring Arrangement</label>
+                                    <SearchableDropdown
+                                      options={hiringOptions}
+                                      value={hiringValue}
+                                      disabled={isHiringDisabled}
+                                      onChange={(val) =>
+                                        handleFieldChange(
+                                          "hiringArrangement",
+                                          val,
+                                        )
+                                      }
+                                      placeholder="Select hiring arrangement..."
+                                      required
+                                    />
+                                  </div>
+                                  <div>
+                                    <label>Fund Source</label>
+                                    <SearchableDropdown
+                                      options={fundOptions}
+                                      value={fundValue}
+                                      disabled={isFundDisabled}
+                                      onChange={(val) =>
+                                        handleFieldChange("fundSource", val)
+                                      }
+                                      placeholder="SELECT FUND SOURCE..."
+                                      required
+                                    />
+                                  </div>
+                                </>
+                              );
+                            })()}
+                            <div>
+                              <label>Employee No.</label>
+                              {(() => {
+                                const cleanEmpNo =
+                                  currentPerson.employeeNo &&
+                                  !String(currentPerson.employeeNo)
+                                    .toUpperCase()
+                                    .startsWith("PRN")
+                                    ? currentPerson.employeeNo
+                                    : "";
+                                return (
+                                  <input
+                                    type="text"
+                                    id="field-employeeNumber"
+                                    data-field="employeeNumber"
+                                    placeholder="e.g. 4250732"
+                                    className={!cleanEmpNo ? "empty-field" : ""}
+                                    value={cleanEmpNo}
+                                    onChange={(e) =>
+                                      handleFieldChange(
+                                        "employeeNo",
+                                        e.target.value,
+                                      )
+                                    }
+                                  />
+                                );
+                              })()}
+                            </div>
+                            <div>
+                              {(() => {
+                                const isPermanent =
+                                  String(
+                                    currentPerson.natureOfAppointment ||
+                                      currentPerson.nature_of_appointment ||
+                                      "",
+                                  ).toUpperCase() === "REGULAR PERMANENT";
+                                const isEmailNA =
+                                  !isPermanent &&
+                                  Boolean(
+                                    currentPerson.noDepedEmail ||
+                                    currentPerson.no_deped_email ||
+                                    currentPerson.depedEmail === "N/A" ||
+                                    currentPerson.deped_email === "N/A",
+                                  );
+                                const hasDiscrepancy = Boolean(
+                                  currentPerson.allowEmailDiscrepancy ||
+                                  currentPerson.allow_email_discrepancy,
+                                );
+                                const rawEmail = isEmailNA
+                                  ? "N/A"
+                                  : currentPerson.depedEmail ||
+                                    currentPerson.deped_email ||
+                                    "";
+                                const emailVal =
+                                  !rawEmail || isEmailNA
+                                    ? { isValid: true, error: null }
+                                    : validateDepEdEmail(
+                                        rawEmail,
+                                        currentPerson.firstName,
+                                        currentPerson.lastName,
+                                        currentPerson.middleName,
+                                        hasDiscrepancy,
+                                      );
+
+                                const localVal = isEmailNA
+                                  ? "N/A"
+                                  : getEmailLocal(rawEmail);
+                                const hasError =
+                                  !emailVal.isValid && !isEmailNA && !!rawEmail;
+
+                                return (
+                                  <>
                                     <div
                                       style={{
                                         display: "flex",
                                         alignItems: "center",
                                         justifyContent: "space-between",
-                                        padding: "8px 10px",
-                                        background:
-                                          "linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)",
-                                        borderBottom: "1px solid #fde68a",
-                                        borderRadius: "10.5px 10.5px 0 0",
+                                        marginBottom: "4px",
                                       }}
                                     >
                                       <div
@@ -4956,2516 +6835,910 @@ export default function PersonnelProfile() {
                                           gap: "6px",
                                         }}
                                       >
-                                        <FiAlertCircle
-                                          size={13}
+                                        <label style={{ margin: 0 }}>
+                                          DepEd Official Email
+                                        </label>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setIsEmailInfoOpen(true)
+                                          }
+                                          title="DepEd Email Policy & Validation Notice"
                                           style={{
-                                            color: "#d97706",
-                                            flexShrink: 0,
-                                          }}
-                                        />
-                                        <span
-                                          style={{
+                                            background: "#E0F2FE",
+                                            color: "#0284C7",
+                                            border: "1px solid #BAE6FD",
+                                            borderRadius: "50%",
+                                            width: "18px",
+                                            height: "18px",
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
                                             fontSize: "11px",
                                             fontWeight: "800",
-                                            color: "#92400e",
-                                            letterSpacing: "-0.2px",
+                                            cursor: "pointer",
+                                            lineHeight: 1,
+                                            padding: 0,
                                           }}
                                         >
-                                          Missing Fields
-                                        </span>
+                                          i
+                                        </button>
+                                      </div>
+                                      {isEmailNA && (
                                         <span
                                           style={{
-                                            background: "#f59e0b",
-                                            color: "#ffffff",
+                                            fontSize: "10.5px",
+                                            color: "#047857",
+                                            background: "#ECFDF5",
                                             padding: "1px 6px",
-                                            borderRadius: "10px",
-                                            fontSize: "10px",
-                                            fontWeight: "800",
-                                            lineHeight: 1.2,
-                                          }}
-                                        >
-                                          {missingErrors.length}
-                                        </span>
-                                      </div>
-                                      <span
-                                        style={{
-                                          fontSize: "9.5px",
-                                          fontWeight: "700",
-                                          color: "#b45309",
-                                          opacity: 0.9,
-                                          display: "flex",
-                                          alignItems: "center",
-                                          gap: "2px",
-                                        }}
-                                      >
-                                        Click to jump ⚡
-                                      </span>
-                                    </div>
-
-                                    {/* Tooltip Body Rows */}
-                                    <div
-                                      style={{
-                                        padding: "6px",
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        gap: "4px",
-                                        maxHeight: "165px",
-                                        overflowY: "auto",
-                                      }}
-                                    >
-                                      {missingErrors.slice(0, 5).map((err, idx) => {
-                                        const parsed = parseErrorLabel(
-                                          err.label || err.id,
-                                        );
-                                        const badgeTheme = getTabBadgeTheme(
-                                          err.tab,
-                                        );
-                                        return (
-                                          <div
-                                            key={err.id || idx}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleJumpToMissingField(p, err);
-                                            }}
-                                            className="missing-field-row"
-                                            style={{
-                                              display: "flex",
-                                              alignItems: "center",
-                                              justifyContent: "space-between",
-                                              gap: "6px",
-                                              cursor: "pointer",
-                                              userSelect: "none",
-                                            }}
-                                            title={`Jump to ${parsed.title} (${err.tab || "details"})`}
-                                          >
-                                            <div
-                                              style={{
-                                                display: "flex",
-                                                alignItems: "center",
-                                                gap: "6px",
-                                                minWidth: 0,
-                                                flex: 1,
-                                              }}
-                                            >
-                                              <span
-                                                style={{
-                                                  width: "5px",
-                                                  height: "5px",
-                                                  borderRadius: "50%",
-                                                  background: "#f59e0b",
-                                                  flexShrink: 0,
-                                                }}
-                                              />
-                                              <div
-                                                style={{
-                                                  display: "flex",
-                                                  flexDirection: "column",
-                                                  minWidth: 0,
-                                                  lineHeight: "1.2",
-                                                }}
-                                              >
-                                                <span
-                                                  className="missing-field-title"
-                                                  style={{
-                                                    fontSize: "11px",
-                                                    fontWeight: "700",
-                                                    color: "#1e293b",
-                                                    whiteSpace: "nowrap",
-                                                    overflow: "hidden",
-                                                    textOverflow: "ellipsis",
-                                                  }}
-                                                >
-                                                  {parsed.title}
-                                                </span>
-                                                {parsed.subtitle && (
-                                                  <span
-                                                    style={{
-                                                      fontSize: "9px",
-                                                      fontWeight: "600",
-                                                      color: "#b45309",
-                                                      marginTop: "1px",
-                                                      whiteSpace: "nowrap",
-                                                      overflow: "hidden",
-                                                      textOverflow: "ellipsis",
-                                                    }}
-                                                  >
-                                                    {parsed.subtitle}
-                                                  </span>
-                                                )}
-                                              </div>
-                                            </div>
-
-                                            <div
-                                              style={{
-                                                display: "flex",
-                                                alignItems: "center",
-                                                gap: "4px",
-                                                flexShrink: 0,
-                                              }}
-                                            >
-                                              {err.tab && (
-                                                <span
-                                                  style={{
-                                                    fontSize: "9px",
-                                                    fontWeight: "700",
-                                                    color: badgeTheme.color,
-                                                    background: badgeTheme.bg,
-                                                    border: `1px solid ${badgeTheme.border}`,
-                                                    padding: "1px 6px",
-                                                    borderRadius: "4px",
-                                                    textTransform: "capitalize",
-                                                    letterSpacing: "-0.2px",
-                                                  }}
-                                                >
-                                                  {err.tab}
-                                                </span>
-                                              )}
-                                              <FiChevronRight
-                                                size={11}
-                                                className="missing-field-arrow"
-                                                style={{
-                                                  color: "#94a3b8",
-                                                  transition:
-                                                    "all 0.15s ease",
-                                                }}
-                                              />
-                                            </div>
-                                          </div>
-                                        );
-                                      })}
-
-                                      {missingErrors.length > 5 && (
-                                        <div
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleJumpToMissingField(
-                                              p,
-                                              missingErrors[5],
-                                            );
-                                          }}
-                                          style={{
-                                            fontSize: "10px",
+                                            borderRadius: "4px",
+                                            border: "1px solid #A7F3D0",
                                             fontWeight: "700",
-                                            color: "#b45309",
-                                            padding: "5px 8px",
-                                            textAlign: "center",
-                                            cursor: "pointer",
-                                            background: "#fffbeb",
-                                            borderRadius: "6px",
-                                            border: "1px dashed #fcd34d",
-                                            marginTop: "2px",
                                           }}
-                                          title="Click to jump to next missing field"
                                         >
-                                          +{missingErrors.length - 5} more field
-                                          {missingErrors.length - 5 > 1
-                                            ? "s"
-                                            : ""}{" "}
-                                          — click to inspect
-                                        </div>
+                                          N/A (No Issuance)
+                                        </span>
                                       )}
                                     </div>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
 
-                    {/* Pagination Bar */}
-                    {totalPages > 1 && (
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          paddingTop: "8px",
-                          borderTop: "1.5px solid var(--line)",
-                          marginTop: "auto",
-                        }}
-                      >
-                        <button
-                          type="button"
-                          disabled={sidebarPage === 1}
-                          onClick={() =>
-                            setSidebarPage((prev) => Math.max(1, prev - 1))
-                          }
-                          style={{
-                            padding: "4px 8px",
-                            borderRadius: "6px",
-                            border: "1px solid var(--line)",
-                            background: sidebarPage === 1 ? "#f8fafc" : "white",
-                            color:
-                              sidebarPage === 1 ? "#cbd5e1" : "var(--navy)",
-                            fontSize: "11px",
-                            fontWeight: "bold",
-                            cursor:
-                              sidebarPage === 1 ? "not-allowed" : "pointer",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "3px",
-                          }}
-                        >
-                          <FiChevronLeft size={12} />
-                          <span>Prev</span>
-                        </button>
-                        <span
-                          style={{
-                            fontSize: "11px",
-                            color: "#64748b",
-                            fontWeight: "700",
-                          }}
-                        >
-                          Page {sidebarPage} of {totalPages}
-                        </span>
-                        <button
-                          type="button"
-                          disabled={sidebarPage >= totalPages}
-                          onClick={() =>
-                            setSidebarPage((prev) =>
-                              Math.min(totalPages, prev + 1),
-                            )
-                          }
-                          style={{
-                            padding: "4px 8px",
-                            borderRadius: "6px",
-                            border: "1px solid var(--line)",
-                            background:
-                              sidebarPage >= totalPages ? "#f8fafc" : "white",
-                            color:
-                              sidebarPage >= totalPages
-                                ? "#cbd5e1"
-                                : "var(--navy)",
-                            fontSize: "11px",
-                            fontWeight: "bold",
-                            cursor:
-                              sidebarPage >= totalPages
-                                ? "not-allowed"
-                                : "pointer",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "3px",
-                          }}
-                        >
-                          <span>Next</span>
-                          <FiChevronRight size={12} />
-                        </button>
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-          </div>
-
-          {/* ── RIGHT EDITOR PANEL ───────────────────────── */}
-          <div
-            style={{
-              flex: 1,
-              display: "flex",
-              flexDirection: "column",
-              overflow: "hidden",
-            }}
-          >
-            {/* ── Personnel Header ── */}
-            <div
-              style={{
-                padding: "16px 24px",
-                borderBottom: "1.5px solid var(--line)",
-                display: "flex",
-                alignItems: "center",
-                gap: "14px",
-                background: "white",
-              }}
-            >
-              <div
-                style={{
-                  width: "48px",
-                  height: "48px",
-                  borderRadius: "50%",
-                  background:
-                    categoryLabels[currentPerson.type]?.bg || "#e2e8f0",
-                  color: categoryLabels[currentPerson.type]?.color || "#64748b",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontWeight: "900",
-                  fontSize: "17px",
-                  flexShrink: 0,
-                }}
-              >
-                {`${(currentPerson.firstName || "")[0] || ""}${(currentPerson.lastName || "")[0] || ""}`.toUpperCase() ||
-                  "?"}
-              </div>
-              <div style={{ flex: 1 }}>
-                <h2
-                  style={{
-                    margin: "0 0 2px",
-                    fontSize: "18px",
-                    fontWeight: "800",
-                    color: "var(--navy)",
-                  }}
-                >
-                  {currentPerson.firstName} {currentPerson.lastName}
-                  {currentPerson.nameExtension
-                    ? ` ${currentPerson.nameExtension}`
-                    : ""}
-                </h2>
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "6px",
-                    alignItems: "center",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: "12px",
-                      color: "#64748b",
-                      fontWeight: "600",
-                    }}
-                  >
-                    {currentPerson.position || "No position"}
-                  </span>
-                  {currentPerson.profilingCode && (
-                    <span
-                      style={{
-                        padding: "1px 7px",
-                        borderRadius: "5px",
-                        background: "#f1f5f9",
-                        color: "#475569",
-                        fontSize: "11px",
-                        fontWeight: "700",
-                        letterSpacing: "0.05em",
-                      }}
-                    >
-                      PRN: {currentPerson.profilingCode}
-                    </span>
-                  )}
-                  {currentPerson.tin && (
-                    <span
-                      style={{
-                        padding: "1px 7px",
-                        borderRadius: "5px",
-                        background: "#f1f5f9",
-                        color: "#475569",
-                        fontSize: "11px",
-                        fontWeight: "700",
-                        letterSpacing: "0.05em",
-                      }}
-                    >
-                      TIN: {currentPerson.tin}
-                    </span>
-                  )}
-                  {currentPerson.deploymentStatus && (
-                    <span
-                      style={{
-                        padding: "1px 7px",
-                        borderRadius: "5px",
-                        background: isReassignedRejected
-                          ? "#FEE2E2"
-                          : String(
-                                currentPerson.deploymentStatus,
-                              ).toUpperCase() === "BORROWED"
-                            ? "#FEF3C7"
-                            : "#E0F2FE",
-                        color: isReassignedRejected
-                          ? "#DC2626"
-                          : String(
-                                currentPerson.deploymentStatus,
-                              ).toUpperCase() === "BORROWED"
-                            ? "#92400E"
-                            : "#0369A1",
-                        border: isReassignedRejected
-                          ? "1px solid #F87171"
-                          : String(
-                                currentPerson.deploymentStatus,
-                              ).toUpperCase() === "BORROWED"
-                            ? "1px solid #FCD34D"
-                            : "1px solid #BAE6FD",
-                        fontSize: "11px",
-                        fontWeight: "700",
-                      }}
-                    >
-                      STATUS:{" "}
-                      {isReassignedRejected
-                        ? "REJECTED"
-                        : String(currentPerson.deploymentStatus).toUpperCase()}
-                    </span>
-                  )}
-                  {currentPerson.isShared && (
-                    <span
-                      style={{
-                        padding: "1px 7px",
-                        borderRadius: "5px",
-                        background: "#e0e7ff",
-                        color: "#3730a3",
-                        fontSize: "11px",
-                        fontWeight: "700",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "4px",
-                      }}
-                    >
-                      <FiLink size={11} /> Shared from{" "}
-                      {DIVISION_SCHOOL_OPTIONS.find(
-                        (s) => s.schoolId === currentPerson.sourceSchoolId,
-                      )?.name?.toUpperCase() || "Mother School"}
-                    </span>
-                  )}
-                  {currentPerson.personalVerified && (
-                    <span
-                      style={{
-                        padding: "1px 7px",
-                        borderRadius: "5px",
-                        background: "#d1fae5",
-                        color: "#065f46",
-                        fontSize: "11px",
-                        fontWeight: "700",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "4px",
-                      }}
-                    >
-                      <FiCheck size={11} /> Verified
-                    </span>
-                  )}
-                  {dbPerson &&
-                    localStorage.getItem(`draft_personnel_${dbPerson.id}`) && (
-                      <span
-                        style={{
-                          padding: "1px 7px",
-                          borderRadius: "5px",
-                          background: "#fef3c7",
-                          color: "#92400e",
-                          fontSize: "11px",
-                          fontWeight: "700",
-                        }}
-                      >
-                        ● Unsaved Draft
-                      </span>
-                    )}
-                </div>
-              </div>
-              {/* Discard Draft button in header area */}
-              {dbPerson &&
-                localStorage.getItem(`draft_personnel_${dbPerson.id}`) && (
-                  <button
-                    className="btn secondary"
-                    style={{
-                      minHeight: "32px",
-                      padding: "0 12px",
-                      fontSize: "12px",
-                      whiteSpace: "nowrap",
-                    }}
-                    type="button"
-                    onClick={async () => {
-                      if (
-                        await showConfirm(
-                          "Discard Draft?",
-                          "Revert to the saved database version?",
-                        )
-                      ) {
-                        const targetKeys = [
-                          dbPerson.id,
-                          dbPerson.legacy_id,
-                          dbPerson.prn,
-                        ].filter(Boolean);
-                        targetKeys.forEach((k) => {
-                          localStorage.removeItem(`draft_personnel_${k}`);
-                          localStorage.removeItem(`draft_learning_areas_${k}`);
-                          localStorage.removeItem(`esf7_workload_draft_${k}`);
-                          localStorage.removeItem(`draft_workload_${k}`);
-                        });
-                        setEditPerson(dbPerson);
-                      }
-                    }}
-                  >
-                    Discard Draft
-                  </button>
-                )}
-            </div>
-
-            {/* Borrowed Personnel Notice Banner */}
-            {isBorrowedUnresolved && (
-              <div
-                style={{
-                  margin: "16px 24px 0 24px",
-                  padding: "16px",
-                  borderRadius: "12px",
-                  background: "#eff6ff",
-                  border: "1.5px solid #93c5fd",
-                  display: "flex",
-                  alignItems: "flex-start",
-                  justifyContent: "space-between",
-                  gap: "16px",
-                  flexWrap: "wrap",
-                }}
-              >
-                <div style={{ flex: 1, minWidth: "280px" }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      color: "#1e40af",
-                      fontWeight: "800",
-                      fontSize: "14px",
-                    }}
-                  >
-                    <FiAlertCircle size={18} />
-                    <span>Incoming Borrowed Personnel Notice</span>
-                  </div>
-                  <p
-                    style={{
-                      margin: "6px 0 0 0",
-                      fontSize: "13px",
-                      color: "#1e3a8a",
-                      lineHeight: "1.5",
-                    }}
-                  >
-                    This teacher is marked as <strong>BORROWED</strong> from a
-                    Mother School. In DepEd plantilla operations, borrowed
-                    teachers must be initiated by their Mother School as
-                    Reassigned and accepted via the Request Center, or converted
-                    to Permanent (Own Station).
-                  </p>
-                </div>
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                  <button
-                    type="button"
-                    onClick={() => setShowBorrowedPromptModal(true)}
-                    style={{
-                      padding: "8px 16px",
-                      fontSize: "12px",
-                      fontWeight: "700",
-                      background:
-                        "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
-                      color: "#ffffff",
-                      border: "none",
-                      borderRadius: "8px",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      boxShadow: "0 2px 6px rgba(37, 99, 235, 0.2)",
-                    }}
-                  >
-                    <FiTag size={14} /> Review & Resolve Status
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* ── Horizontal Tabs ── */}
-            <div
-              style={{
-                display: "flex",
-                gap: "0",
-                borderBottom: "1.5px solid var(--line)",
-                background: "#f8fafc",
-                padding: "0 24px",
-              }}
-            >
-              {tabs.map(({ tab, label, Icon }) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() =>
-                    confirmAction(() => setActiveTab(tab), {
-                      actionType: "tab",
-                    })
-                  }
-                  style={{
-                    padding: "12px 18px",
-                    fontSize: "13px",
-                    fontWeight: activeTab === tab ? "700" : "600",
-                    color: activeTab === tab ? "var(--blue)" : "#64748b",
-                    background: "transparent",
-                    border: "none",
-                    borderBottom:
-                      activeTab === tab
-                        ? "3px solid var(--blue)"
-                        : "3px solid transparent",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    transition: "all 0.15s",
-                  }}
-                >
-                  <Icon size={14} />
-                  <span>{label}</span>
-                </button>
-              ))}
-            </div>
-
-            {/* ── Form Content ── */}
-            <div
-              style={{
-                flex: 1,
-                overflowY: "auto",
-                padding: "20px 24px",
-                position: "relative",
-              }}
-            >
-              <div>
-                {isReassignedRejected && (
-                  <div
-                    style={{
-                      background: "#FEF2F2",
-                      padding: "14px 18px",
-                      borderRadius: "12px",
-                      border: "1.5px solid #FCA5A5",
-                      marginBottom: "20px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: "16px",
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: "36px",
-                          height: "36px",
-                          borderRadius: "8px",
-                          background: "#FEE2E2",
-                          color: "#DC2626",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flexShrink: 0,
-                        }}
-                      >
-                        <FiAlertCircle size={20} />
-                      </div>
-                      <div>
-                        <strong
-                          style={{
-                            fontSize: "13px",
-                            color: "#991B1B",
-                            display: "block",
-                          }}
-                        >
-                          Inter-School Reassignment Request Rejected
-                        </strong>
-                        <span style={{ fontSize: "12px", color: "#B91C1C" }}>
-                          The target receiving school declined this transfer
-                          request. You can edit all profile details or revert
-                          status back to Own Station.
-                        </span>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleFieldChange("deploymentStatus", "Stationed");
-                        showToast(
-                          "Reset status to Stationed (Own Station)",
-                          "info",
-                        );
-                      }}
-                      style={{
-                        padding: "6px 14px",
-                        fontSize: "12px",
-                        fontWeight: "700",
-                        background: "#DC2626",
-                        color: "white",
-                        border: "none",
-                        borderRadius: "6px",
-                        cursor: "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "6px",
-                      }}
-                    >
-                      <FiRefreshCw size={13} /> Revert to Own Station
-                    </button>
-                  </div>
-                )}
-                {currentPerson.isShared && (
-                  <div
-                    style={{
-                      background: "#F0FDF4",
-                      padding: "14px 16px",
-                      borderRadius: "12px",
-                      border: "1.5px solid #BBF7D0",
-                      marginBottom: "20px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      }}
-                    >
-                      <strong
-                        style={{
-                          fontSize: "13px",
-                          color: "#166534",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "6px",
-                        }}
-                      >
-                        <FiInfo size={16} />
-                        <span>
-                          Active Stationed Faculty (Borrowed / Reassigned)
-                        </span>
-                      </strong>
-                      <span
-                        style={{
-                          padding: "3px 10px",
-                          borderRadius: "20px",
-                          background: "#DCFCE7",
-                          color: "#15803D",
-                          fontWeight: "bold",
-                          fontSize: "11px",
-                          border: "1px solid #86EFAC",
-                        }}
-                      >
-                        EDITING ENABLED IN HOST STATION
-                      </span>
-                    </div>
-                    <p
-                      style={{
-                        margin: "6px 0 0 0",
-                        color: "#14532D",
-                        fontSize: "12px",
-                      }}
-                    >
-                      This personnel is stationed at your school. You have full
-                      administrative access to edit and complete their profile,
-                      qualifications, and learning areas.
-                    </p>
-                  </div>
-                )}
-                <div className="profile-editor-layout">
-                  {/* Editing Form fields dynamically */}
-                  <div>
-                    <p
-                      className="profile-section-note"
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "6px",
-                      }}
-                    >
-                      {activeTab === "identity" && (
-                        <>
-                          <FiCreditCard size={14} />{" "}
-                          <span>
-                            Editing identity and minimum record creation fields.
-                          </span>
-                        </>
-                      )}
-                      {activeTab === "personal" && (
-                        <>
-                          <FiUser size={14} />{" "}
-                          <span>
-                            Editing demographic, civil status, birthdate,
-                            PhilSys, religion, and ethnicity fields.
-                          </span>
-                        </>
-                      )}
-                      {activeTab === "employment" && (
-                        <>
-                          <FiBriefcase size={14} />{" "}
-                          <span>
-                            Editing position, designation, fund source,
-                            appointment, hiring arrangement, email, deployment,
-                            and service dates.
-                          </span>
-                        </>
-                      )}
-                      {activeTab === "education" && (
-                        <>
-                          <FiAward size={14} />{" "}
-                          <span>
-                            Editing degree, major/minor, post-graduate degree,
-                            discipline, eligibility, and PRC specialization.
-                          </span>
-                        </>
-                      )}
-                      {activeTab === "development" && (
-                        <>
-                          <FiFileText size={14} />{" "}
-                          <span>
-                            Editing NEAP trainings, TESDA NCs, certifications,
-                            and other professional development records.
-                          </span>
-                        </>
-                      )}
-                      {activeTab === "teaching" && (
-                        <>
-                          <FiLayers size={14} />{" "}
-                          <span>Editing teaching grade level assignments.</span>
-                        </>
-                      )}
-                      {activeTab === "learning-area" && (
-                        <>
-                          <FiBook size={14} />{" "}
-                          <span>
-                            Record taught learning areas per school year.
-                          </span>
-                        </>
-                      )}
-                    </p>
-
-                    <div className="form-grid profile-form-grid">
-                      {activeTab === "identity" && (
-                        <>
-                          <div style={{ gridColumn: "1 / -1" }}>
-                            <label>TIN</label>
-                            <div
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "16px",
-                                flexWrap: "wrap",
-                              }}
-                            >
-                              <div
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: "8px",
-                                }}
-                              >
-                                <input
-                                  type="text"
-                                  id="field-tin"
-                                  data-field="tin"
-                                  placeholder="123-456-789"
-                                  disabled={currentPerson.noTin}
-                                  value={currentPerson.tin || ""}
-                                  maxLength={11}
-                                  className={
-                                    !currentPerson.noTin && !currentPerson.tin
-                                      ? "empty-field"
-                                      : ""
-                                  }
-                                  style={{
-                                    width: "160px",
-                                    textAlign: "center",
-                                    fontWeight: "500",
-                                    letterSpacing: "0.05em",
-                                  }}
-                                  onChange={(e) => {
-                                    let val = e.target.value.replace(/\D/g, ""); // Extract numbers only
-                                    val = val.slice(0, 9); // Limit to max 9 digits
-
-                                    let formatted = "";
-                                    if (val.length > 0) {
-                                      formatted += val.slice(0, 3);
-                                    }
-                                    if (val.length > 3) {
-                                      formatted += "-" + val.slice(3, 6);
-                                    }
-                                    if (val.length > 6) {
-                                      formatted += "-" + val.slice(6, 9);
-                                    }
-
-                                    handleFieldChange("tin", formatted);
-                                  }}
-                                />
-                              </div>
-                              <label
-                                className="checkline"
-                                style={{
-                                  textTransform: "none",
-                                  fontSize: "12px",
-                                  margin: 0,
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: "6px",
-                                  cursor: "pointer",
-                                  userSelect: "none",
-                                }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={
-                                    !!(
-                                      currentPerson.noTin ||
-                                      currentPerson.no_tin
-                                    )
-                                  }
-                                  onChange={(e) => {
-                                    const isChecked = e.target.checked;
-                                    setEditPerson((prev) => {
-                                      const updated = {
-                                        ...prev,
-                                        noTin: isChecked,
-                                        no_tin: isChecked,
-                                      };
-                                      if (isChecked) updated.tin = "";
-                                      localStorage.setItem(
-                                        `draft_personnel_${currentPerson.id}`,
-                                        JSON.stringify(updated),
-                                      );
-                                      return updated;
-                                    });
-                                  }}
-                                />{" "}
-                                No TIN available
-                              </label>
-                            </div>
-                            <p
-                              className="field-help"
-                              style={{ marginTop: "6px" }}
-                            >
-                              PRN is used as the professional system ID, so no
-                              temporary ID is needed.
-                            </p>
-                          </div>
-                          <div className="profile-subsection">Legal Name</div>
-                          <div>
-                            <label>First Name</label>
-                            <input
-                              className={
-                                !currentPerson.firstName ? "empty-field" : ""
-                              }
-                              value={currentPerson.firstName || ""}
-                              onChange={(e) =>
-                                handleFieldChange(
-                                  "firstName",
-                                  e.target.value.toUpperCase(),
-                                )
-                              }
-                            />
-                          </div>
-                          <div>
-                            <label>Middle Name</label>
-                            <input
-                              value={currentPerson.middleName || ""}
-                              onChange={(e) =>
-                                handleFieldChange(
-                                  "middleName",
-                                  e.target.value.toUpperCase(),
-                                )
-                              }
-                            />
-                          </div>
-                          <div>
-                            <label>Last Name</label>
-                            <input
-                              className={
-                                !currentPerson.lastName ? "empty-field" : ""
-                              }
-                              value={currentPerson.lastName || ""}
-                              onChange={(e) =>
-                                handleFieldChange(
-                                  "lastName",
-                                  e.target.value.toUpperCase(),
-                                )
-                              }
-                            />
-                          </div>
-                          <div>
-                            <label>Extension Name (Optional)</label>
-                            <input
-                              maxLength={5}
-                              value={currentPerson.nameExtension || ""}
-                              onChange={(e) =>
-                                handleFieldChange(
-                                  "nameExtension",
-                                  e.target.value.toUpperCase().slice(0, 5),
-                                )
-                              }
-                              placeholder="e.g. JR., SR., III, IV"
-                            />
-                          </div>
-
-                          <div className="profile-subsection">
-                            Demographic Profile
-                          </div>
-                          <div>
-                            <label>Sex at Birth</label>
-                            <SearchableDropdown
-                              options={["FEMALE", "MALE"]}
-                              value={currentPerson.sexAtBirth || ""}
-                              onChange={(val) =>
-                                handleFieldChange("sexAtBirth", val)
-                              }
-                              placeholder="SELECT SEX..."
-                              required
-                            />
-                          </div>
-                          <div>
-                            <label>Civil Status</label>
-                            <SearchableDropdown
-                              options={[
-                                "SINGLE",
-                                "MARRIED",
-                                "WIDOWED",
-                                "LEGALLY SEPARATED",
-                              ]}
-                              value={currentPerson.civilStatus || ""}
-                              onChange={(val) =>
-                                handleFieldChange("civilStatus", val)
-                              }
-                              placeholder="SELECT CIVIL STATUS..."
-                              required
-                            />
-                          </div>
-                          <div>
-                            <label>Solo Parent</label>
-                            <SearchableDropdown
-                              options={["NO", "YES"]}
-                              value={currentPerson.soloParent || "NO"}
-                              onChange={(val) =>
-                                handleFieldChange("soloParent", val)
-                              }
-                              placeholder="SELECT SOLO PARENT STATUS..."
-                            />
-                          </div>
-                          <div>
-                            <label>Religion</label>
-                            <SearchableDropdown
-                              options={RELIGION_OPTIONS.map((r) =>
-                                r.toUpperCase(),
-                              )}
-                              value={currentPerson.religion || ""}
-                              onChange={(val) =>
-                                handleFieldChange("religion", val)
-                              }
-                              placeholder="SELECT RELIGION..."
-                              required
-                            />
-                          </div>
-                          <div>
-                            <label>Ethnic Group</label>
-                            <SearchableDropdown
-                              options={ETHNIC_GROUP_OPTIONS}
-                              value={currentPerson.ethnicGroup || ""}
-                              onChange={(val) =>
-                                handleFieldChange("ethnicGroup", val)
-                              }
-                              placeholder="Select or search ethnic group..."
-                              required
-                            />
-                          </div>
-                          <div className="profile-subsection">
-                            Government ID and Birthdate
-                          </div>
-                          <div>
-                            {(() => {
-                              const cleanPs = String(
-                                currentPerson.philsysNo ||
-                                  currentPerson.philsys_no ||
-                                  "",
-                              ).replace(/\D/g, "");
-                              const isNA = !!(
-                                currentPerson.noPhilsys ||
-                                currentPerson.no_philsys
-                              );
-                              const isValid = isNA || cleanPs.length === 16;
-                              return (
-                                <>
-                                  <label
-                                    style={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      justifyContent: "space-between",
-                                    }}
-                                  >
-                                    <span>PhilSys No. / National ID</span>
-                                    {(isNA || cleanPs.length > 0) && (
-                                      <span
-                                        style={{
-                                          color: isNA
-                                            ? "#64748b"
-                                            : cleanPs.length === 16
-                                              ? "#059669"
-                                              : "#DC2626",
-                                          fontWeight: 600,
-                                          fontSize: "11px",
-                                        }}
-                                      >
-                                        {isNA
-                                          ? "N/A"
-                                          : cleanPs.length === 16
-                                            ? "16/16 digits ✓"
-                                            : `${cleanPs.length}/16 digits`}
-                                      </span>
-                                    )}
-                                  </label>
-                                  <div
-                                    style={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: "12px",
-                                      flexWrap: "wrap",
-                                    }}
-                                  >
-                                    <input
-                                      placeholder="16-digit PhilSys Card Number"
-                                      maxLength={16}
-                                      disabled={isNA}
-                                      value={
-                                        isNA
-                                          ? ""
-                                          : currentPerson.philsysNo || ""
-                                      }
-                                      onChange={(e) => {
-                                        const val = e.target.value.replace(
-                                          /\D/g,
-                                          "",
-                                        ); // numbers only
-                                        handleFieldChange("philsysNo", val);
-                                      }}
+                                    <div
+                                      className="deped-email-field"
+                                      id="field-depedEmail"
+                                      data-field="depedEmail"
                                       style={{
-                                        flex: 1,
-                                        minWidth: "160px",
-                                        ...(isNA
-                                          ? {
-                                              background: "#f1f5f9",
-                                              color: "#94a3b8",
-                                              cursor: "not-allowed",
-                                            }
-                                          : {}),
-                                        ...(!isValid && cleanPs.length > 0
-                                          ? {
-                                              borderColor: "#EF4444",
-                                              background: "#FEF2F2",
-                                            }
-                                          : {}),
-                                      }}
-                                    />
-                                    <label
-                                      className="checkline"
-                                      style={{
-                                        textTransform: "none",
-                                        fontSize: "12px",
-                                        margin: 0,
                                         display: "flex",
                                         alignItems: "center",
-                                        gap: "6px",
-                                        cursor: "pointer",
-                                        userSelect: "none",
-                                        whiteSpace: "nowrap",
+                                        borderRadius: "12px",
+                                        border: hasError
+                                          ? "2px solid #EF4444"
+                                          : isEmailNA
+                                            ? "1.5px solid #CBD5E1"
+                                            : "1.5px solid var(--line, #BAE6FD)",
+                                        background: hasError
+                                          ? "#FEF2F2"
+                                          : isEmailNA
+                                            ? "#F1F5F9"
+                                            : "white",
+                                        overflow: "hidden",
                                       }}
                                     >
                                       <input
-                                        type="checkbox"
-                                        checked={isNA}
+                                        type="text"
+                                        disabled={isEmailNA}
+                                        value={localVal}
+                                        onKeyDown={(e) => {
+                                          if (e.key === "@") {
+                                            e.preventDefault();
+                                          }
+                                        }}
                                         onChange={(e) => {
-                                          const isChecked = e.target.checked;
-                                          setEditPerson((prev) => {
-                                            const updated = {
-                                              ...prev,
-                                              noPhilsys: isChecked,
-                                              no_philsys: isChecked,
-                                            };
-                                            if (isChecked) {
-                                              updated.philsysNo = "";
-                                              updated.philsys_no = "";
-                                            }
-                                            localStorage.setItem(
-                                              `draft_personnel_${currentPerson.id}`,
-                                              JSON.stringify(updated),
-                                            );
-                                            return updated;
-                                          });
+                                          const clean = e.target.value.replace(
+                                            /@/g,
+                                            "",
+                                          );
+                                          handleEmailLocalChange(clean);
                                         }}
-                                      />{" "}
-                                      N/A
-                                    </label>
-                                  </div>
-                                  <p
-                                    className="field-help"
-                                    style={{
-                                      marginTop: "4px",
-                                      fontSize: "11px",
-                                      color: "#64748b",
-                                    }}
-                                  >
-                                    16-digit PhilSys National ID number. If not
-                                    yet issued or unavailable, click{" "}
-                                    <strong>N/A</strong>.
-                                  </p>
-                                </>
-                              );
-                            })()}
-                          </div>
-                          <div>
-                            <label>Birthdate</label>
-                            <DatePickerDropdowns
-                              value={currentPerson.birthdate || ""}
-                              onChange={(val) =>
-                                handleFieldChange("birthdate", val)
-                              }
-                              maxDate={maxBirthdate}
-                              required
-                            />
-                          </div>
-                          <div>
-                            <label>Computed Age</label>
-                            <input
-                              value={age === null ? "—" : age}
-                              disabled
-                              style={{
-                                background: "#f1f5f9",
-                                color: "#64748b",
-                              }}
-                            />
-                          </div>
-                          <div>
-                            <label>Age Validation</label>
-                            <div style={{ marginTop: "8px" }}>
-                              <span
-                                className={ageStatusClass}
-                                style={{
-                                  padding: "6px 12px",
-                                  borderRadius: "20px",
-                                  fontSize: "11px",
-                                  fontWeight: "bold",
-                                }}
-                              >
-                                {ageStatusText}
-                              </span>
-                            </div>
-                          </div>
-                        </>
-                      )}
-
-                      {activeTab === "employment" && (
-                        <>
-                          <div className="profile-subsection">
-                            Role and Appointment
-                          </div>
-                          <div>
-                            <label>Personnel Category</label>
-                            <SearchableDropdown
-                              options={[
-                                "TEACHING",
-                                "RELATED TEACHING",
-                                "NON-TEACHING",
-                              ]}
-                              value={
-                                !currentPerson.type &&
-                                !isCanonicalPosition(currentPerson.position)
-                                  ? ""
-                                  : currentPerson.type === "non-teaching"
-                                    ? "NON-TEACHING"
-                                    : currentPerson.type === "teaching-related"
-                                      ? "RELATED TEACHING"
-                                      : currentPerson.type === "teaching"
-                                        ? "TEACHING"
-                                        : ""
-                              }
-                              onChange={(val) => {
-                                const mapping = {
-                                  TEACHING: "teaching",
-                                  "RELATED TEACHING": "teaching-related",
-                                  "NON-TEACHING": "non-teaching",
-                                };
-                                const newType = mapping[val] || "";
-                                const validPositions = (
-                                  POSITION_OPTIONS_BY_CATEGORY[newType] || []
-                                ).map((p) => p.toUpperCase());
-                                let newPosition = currentPerson.position || "";
-                                if (
-                                  newPosition &&
-                                  !validPositions.includes(
-                                    newPosition.toUpperCase(),
-                                  ) &&
-                                  !newPosition
-                                    .toUpperCase()
-                                    .startsWith("OTHERS")
-                                ) {
-                                  newPosition = "";
-                                }
-                                const updated = {
-                                  ...currentPerson,
-                                  type: newType,
-                                  position: newPosition,
-                                  positionCategory: val || "",
-                                  position_category: val || "",
-                                };
-                                setEditPerson(updated);
-                                localStorage.setItem(
-                                  `draft_personnel_${currentPerson.id}`,
-                                  JSON.stringify(updated),
-                                );
-                              }}
-                              placeholder="SELECT CATEGORY..."
-                            />
-                          </div>
-                          <div>
-                            <label>Plantilla Position</label>
-                            <SearchableDropdown
-                              options={(() => {
-                                const rawType = String(
-                                  currentPerson.type || "",
-                                ).toLowerCase();
-                                const categoryKey =
-                                  rawType === "teaching"
-                                    ? "teaching"
-                                    : rawType === "teaching-related"
-                                      ? "teaching-related"
-                                      : rawType === "non-teaching"
-                                        ? "non-teaching"
-                                        : null;
-                                if (!categoryKey) {
-                                  // If no category selected yet, offer all positions
-                                  return [
-                                    ...POSITION_OPTIONS_BY_CATEGORY.teaching,
-                                    ...POSITION_OPTIONS_BY_CATEGORY[
-                                      "teaching-related"
-                                    ],
-                                    ...POSITION_OPTIONS_BY_CATEGORY[
-                                      "non-teaching"
-                                    ],
-                                  ].map((p) => p.toUpperCase());
-                                }
-                                const list =
-                                  POSITION_OPTIONS_BY_CATEGORY[categoryKey] ||
-                                  [];
-                                return list.map((p) => p.toUpperCase());
-                              })()}
-                              value={
-                                isCanonicalPosition(currentPerson.position)
-                                  ? currentPerson.position?.startsWith("OTHERS")
-                                    ? "OTHERS"
-                                    : currentPerson.position || ""
-                                  : ""
-                              }
-                              onChange={(val) => {
-                                const selectedPos =
-                                  val === "OTHERS" ? "OTHERS" : val;
-                                const autoType =
-                                  getCategoryForCanonicalPosition(
-                                    selectedPos,
-                                  ) ||
-                                  detectPersonnelTypeFromPosition(
-                                    selectedPos,
-                                  ) ||
-                                  currentPerson.type ||
-                                  "";
-                                const catName =
-                                  autoType === "teaching"
-                                    ? "TEACHING"
-                                    : autoType === "teaching-related"
-                                      ? "RELATED TEACHING"
-                                      : autoType === "non-teaching"
-                                        ? "NON-TEACHING"
-                                        : "";
-                                const isCook =
-                                  String(selectedPos || "")
-                                    .trim()
-                                    .toUpperCase() === "COOK";
-                                const updated = {
-                                  ...currentPerson,
-                                  position: selectedPos,
-                                  plantilla_position: selectedPos,
-                                  type: autoType,
-                                  positionCategory: catName,
-                                  position_category: catName,
-                                  ...(isCook
-                                    ? {
-                                        natureOfAppointment: "CONTRACTUAL",
-                                        nature_of_appointment: "CONTRACTUAL",
-                                        hiringArrangement: "CONTRACTUAL",
-                                        hiring_arrangement: "CONTRACTUAL",
-                                        fundSource: "SBFP",
-                                        fund_source: "SBFP",
-                                      }
-                                    : String(
-                                          currentPerson.fundSource || "",
-                                        ).toUpperCase() === "SBFP"
-                                      ? {
-                                          fundSource: "NATIONAL",
-                                          fund_source: "NATIONAL",
+                                        placeholder={isEmailNA ? "N/A" : ""}
+                                        className={
+                                          !localVal && !isEmailNA
+                                            ? "empty-field"
+                                            : ""
                                         }
-                                      : {}),
-                                };
-                                setEditPerson(updated);
-                                localStorage.setItem(
-                                  `draft_personnel_${currentPerson.id}`,
-                                  JSON.stringify(updated),
-                                );
-                              }}
-                              placeholder="SELECT PLANTILLA POSITION..."
-                              required
-                            />
-                            {(currentPerson.type === "non-teaching" ||
-                              currentPerson.type === "NON-TEACHING") &&
-                              (currentPerson.position === "OTHERS" ||
-                                currentPerson.position?.startsWith(
-                                  "OTHERS",
-                                )) && (
-                                <div style={{ marginTop: "8px" }}>
-                                  <label
-                                    style={{
-                                      fontSize: "11px",
-                                      color: "#64748B",
-                                    }}
-                                  >
-                                    Specify Position (Max 50 characters)
-                                  </label>
-                                  <input
-                                    type="text"
-                                    maxLength={50}
-                                    placeholder="Specify position title..."
-                                    value={
-                                      currentPerson.position === "OTHERS"
-                                        ? ""
-                                        : currentPerson.position.replace(
-                                            /^OTHERS\s*-\s*/i,
-                                            "",
-                                          )
-                                    }
-                                    onChange={(e) => {
-                                      const val = e.target.value
-                                        .substring(0, 50)
-                                        .toUpperCase();
-                                      handleFieldChange(
-                                        "position",
-                                        val ? `OTHERS - ${val}` : "OTHERS",
-                                      );
-                                    }}
-                                    required
-                                    style={{
-                                      width: "100%",
-                                      padding: "8px 12px",
-                                      fontSize: "13px",
-                                      borderRadius: "8px",
-                                      border: "1.5px solid #BAE6FD",
-                                      background: "#F0F9FF",
-                                    }}
-                                  />
-                                  <div
-                                    style={{
-                                      fontSize: "10px",
-                                      color: "#94A3B8",
-                                      textAlign: "right",
-                                      marginTop: "2px",
-                                    }}
-                                  >
-                                    {
-                                      (currentPerson.position === "OTHERS"
-                                        ? ""
-                                        : currentPerson.position.replace(
-                                            /^OTHERS\s*-\s*/i,
-                                            "",
-                                          )
-                                      ).length
-                                    }
-                                    /50 characters
-                                  </div>
-                                </div>
-                              )}
-                          </div>
-                          {(() => {
-                            const personCategory =
-                              detectPersonnelTypeFromPosition(
-                                currentPerson.position,
-                              ) ||
-                              currentPerson.type ||
-                              "teaching";
-                            const isNonTeaching =
-                              personCategory === "non-teaching";
-                            const currentNature = String(
-                              currentPerson.natureOfAppointment || "",
-                            ).toUpperCase();
-
-                            // 1. Nature of Appointment Options
-                            const natureOptions = isNonTeaching
-                              ? [
-                                  "REGULAR PERMANENT",
-                                  "CONTRACTUAL",
-                                  "CASUAL/EMERGENCY",
-                                  "JOB ORDER/CONTRACT OF SERVICE",
-                                  "VOLUNTEER",
-                                ]
-                              : [
-                                  "REGULAR PERMANENT",
-                                  "PROVISIONAL",
-                                  "CONTRACTUAL",
-                                  "SUBSTITUTE",
-                                  "CASUAL/EMERGENCY",
-                                  "JOB ORDER/CONTRACT OF SERVICE",
-                                  "VOLUNTEER",
-                                ];
-
-                            // 2. Hiring Arrangement Config
-                            let hiringOptions = [];
-                            let isHiringDisabled = false;
-                            let hiringValue =
-                              currentPerson.hiringArrangement || "";
-
-                            if (currentNature === "REGULAR PERMANENT") {
-                              if (isNonTeaching) {
-                                hiringOptions = ["REGULAR"];
-                                hiringValue = "REGULAR";
-                                isHiringDisabled = true;
-                              } else {
-                                hiringOptions = [
-                                  "REGULAR",
-                                  "SPIMS",
-                                  "4PS",
-                                  "DOST",
-                                ];
-                                isHiringDisabled = false;
-                                if (
-                                  !hiringValue ||
-                                  hiringValue === "N/A" ||
-                                  !hiringOptions.includes(
-                                    hiringValue.toUpperCase(),
-                                  )
-                                ) {
-                                  hiringValue = "REGULAR";
-                                }
-                              }
-                            } else if (currentNature === "PROVISIONAL") {
-                              hiringOptions = ["DOST"];
-                              hiringValue = "DOST";
-                              isHiringDisabled = true;
-                            } else if (
-                              [
-                                "CONTRACTUAL",
-                                "SUBSTITUTE",
-                                "CASUAL/EMERGENCY",
-                                "JOB ORDER/CONTRACT OF SERVICE",
-                                "VOLUNTEER",
-                              ].includes(currentNature)
-                            ) {
-                              hiringOptions = ["N/A"];
-                              hiringValue = "N/A";
-                              isHiringDisabled = true;
-                            } else {
-                              hiringOptions = isNonTeaching
-                                ? ["REGULAR", "N/A"]
-                                : ["REGULAR", "SPIMS", "4PS", "DOST", "N/A"];
-                              isHiringDisabled = false;
-                            }
-
-                            // 3. Fund Source Config
-                            const isCookPosition =
-                              String(currentPerson.position || "")
-                                .trim()
-                                .toUpperCase() === "COOK";
-                            let fundOptions = [];
-                            let isFundDisabled = false;
-                            let fundValue = currentPerson.fundSource || "";
-
-                            if (
-                              currentNature === "REGULAR PERMANENT" ||
-                              currentNature === "PROVISIONAL"
-                            ) {
-                              fundOptions = ["NATIONAL"];
-                              fundValue = "NATIONAL";
-                              isFundDisabled = true;
-                            } else if (
-                              [
-                                "CONTRACTUAL",
-                                "SUBSTITUTE",
-                                "CASUAL/EMERGENCY",
-                                "JOB ORDER/CONTRACT OF SERVICE",
-                                "VOLUNTEER",
-                              ].includes(currentNature)
-                            ) {
-                              const allowsNational =
-                                NATIONAL_FUND_ELIGIBLE_NATURES.includes(
-                                  currentNature,
-                                );
-                              fundOptions = isCookPosition
-                                ? [
-                                    "SBFP",
-                                    ...(allowsNational ? ["NATIONAL"] : []),
-                                    "SEF",
-                                    "LGU",
-                                    "PTA",
-                                    "NGO",
-                                    "SCHOOL MOOE",
-                                  ]
-                                : [
-                                    ...(allowsNational ? ["NATIONAL"] : []),
-                                    "SEF",
-                                    "LGU",
-                                    "PTA",
-                                    "NGO",
-                                    "SCHOOL MOOE",
-                                  ];
-                              isFundDisabled = false;
-                              if (
-                                !isCookPosition &&
-                                String(fundValue).toUpperCase() === "SBFP"
-                              ) {
-                                fundValue = "SEF";
-                              } else if (
-                                String(fundValue).toUpperCase() ===
-                                  "NATIONAL" &&
-                                !allowsNational
-                              ) {
-                                fundValue = isCookPosition ? "SBFP" : "";
-                              } else if (
-                                String(fundValue).toUpperCase() === "MOOE"
-                              ) {
-                                fundValue = "SCHOOL MOOE";
-                              }
-                            } else {
-                              fundOptions = isCookPosition
-                                ? [
-                                    "SBFP",
-                                    "NATIONAL",
-                                    "SEF",
-                                    "LGU",
-                                    "PTA",
-                                    "NGO",
-                                    "SCHOOL MOOE",
-                                  ]
-                                : [
-                                    "NATIONAL",
-                                    "SEF",
-                                    "LGU",
-                                    "PTA",
-                                    "NGO",
-                                    "SCHOOL MOOE",
-                                  ];
-                              isFundDisabled = false;
-                              if (
-                                !isCookPosition &&
-                                String(fundValue).toUpperCase() === "SBFP"
-                              ) {
-                                fundValue = "NATIONAL";
-                              }
-                            }
-
-                            return (
-                              <>
-                                <div>
-                                  <label>Nature of Appointment</label>
-                                  <SearchableDropdown
-                                    options={natureOptions}
-                                    value={
-                                      currentPerson.natureOfAppointment || ""
-                                    }
-                                    onChange={(val) =>
-                                      handleFieldChange(
-                                        "natureOfAppointment",
-                                        val,
-                                      )
-                                    }
-                                    placeholder="Select nature of appointment..."
-                                    required
-                                  />
-                                </div>
-                                <div>
-                                  <label>Hiring Arrangement</label>
-                                  <SearchableDropdown
-                                    options={hiringOptions}
-                                    value={hiringValue}
-                                    disabled={isHiringDisabled}
-                                    onChange={(val) =>
-                                      handleFieldChange(
-                                        "hiringArrangement",
-                                        val,
-                                      )
-                                    }
-                                    placeholder="Select hiring arrangement..."
-                                    required
-                                  />
-                                </div>
-                                <div>
-                                  <label>Fund Source</label>
-                                  <SearchableDropdown
-                                    options={fundOptions}
-                                    value={fundValue}
-                                    disabled={isFundDisabled}
-                                    onChange={(val) =>
-                                      handleFieldChange("fundSource", val)
-                                    }
-                                    placeholder="SELECT FUND SOURCE..."
-                                    required
-                                  />
-                                </div>
-                              </>
-                            );
-                          })()}
-                          <div>
-                            <label>Employee No.</label>
-                            {(() => {
-                              const cleanEmpNo =
-                                currentPerson.employeeNo &&
-                                !String(currentPerson.employeeNo)
-                                  .toUpperCase()
-                                  .startsWith("PRN")
-                                  ? currentPerson.employeeNo
-                                  : "";
-                              return (
-                                <input
-                                  type="text"
-                                  id="field-employeeNumber"
-                                  data-field="employeeNumber"
-                                  placeholder="e.g. 4250732"
-                                  className={!cleanEmpNo ? "empty-field" : ""}
-                                  value={cleanEmpNo}
-                                  onChange={(e) =>
-                                    handleFieldChange(
-                                      "employeeNo",
-                                      e.target.value,
-                                    )
-                                  }
-                                />
-                              );
-                            })()}
-                          </div>
-                          <div>
-                            {(() => {
-                              const isPermanent =
-                                String(
-                                  currentPerson.natureOfAppointment ||
-                                    currentPerson.nature_of_appointment ||
-                                    "",
-                                ).toUpperCase() === "REGULAR PERMANENT";
-                              const isEmailNA =
-                                !isPermanent &&
-                                Boolean(
-                                  currentPerson.noDepedEmail ||
-                                  currentPerson.no_deped_email ||
-                                  currentPerson.depedEmail === "N/A" ||
-                                  currentPerson.deped_email === "N/A",
-                                );
-                              const hasDiscrepancy = Boolean(
-                                currentPerson.allowEmailDiscrepancy ||
-                                currentPerson.allow_email_discrepancy,
-                              );
-                              const rawEmail = isEmailNA
-                                ? "N/A"
-                                : currentPerson.depedEmail ||
-                                  currentPerson.deped_email ||
-                                  "";
-                              const emailVal =
-                                !rawEmail || isEmailNA
-                                  ? { isValid: true, error: null }
-                                  : validateDepEdEmail(
-                                      rawEmail,
-                                      currentPerson.firstName,
-                                      currentPerson.lastName,
-                                      currentPerson.middleName,
-                                      hasDiscrepancy,
-                                    );
-
-                              const localVal = isEmailNA
-                                ? "N/A"
-                                : getEmailLocal(rawEmail);
-                              const hasError =
-                                !emailVal.isValid && !isEmailNA && !!rawEmail;
-
-                              return (
-                                <>
-                                  <div
-                                    style={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      justifyContent: "space-between",
-                                      marginBottom: "4px",
-                                    }}
-                                  >
-                                    <div
-                                      style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: "6px",
-                                      }}
-                                    >
-                                      <label style={{ margin: 0 }}>
-                                        DepEd Official Email
-                                      </label>
-                                      <button
-                                        type="button"
-                                        onClick={() => setIsEmailInfoOpen(true)}
-                                        title="DepEd Email Policy & Validation Notice"
                                         style={{
-                                          background: "#E0F2FE",
-                                          color: "#0284C7",
-                                          border: "1px solid #BAE6FD",
-                                          borderRadius: "50%",
-                                          width: "18px",
-                                          height: "18px",
-                                          display: "inline-flex",
-                                          alignItems: "center",
-                                          justifyContent: "center",
-                                          fontSize: "11px",
-                                          fontWeight: "800",
-                                          cursor: "pointer",
-                                          lineHeight: 1,
-                                          padding: 0,
+                                          flex: 1,
+                                          border: "none",
+                                          background: "transparent",
+                                          borderRadius: 0,
+                                          padding: "10px 12px",
+                                          fontSize: "14px",
+                                          color: isEmailNA
+                                            ? "#64748B"
+                                            : hasError
+                                              ? "#B91C1C"
+                                              : "var(--text, #0F172A)",
+                                          fontWeight: isEmailNA
+                                            ? "bold"
+                                            : "normal",
+                                          outline: "none",
                                         }}
-                                      >
-                                        i
-                                      </button>
-                                    </div>
-                                    {isEmailNA && (
+                                      />
                                       <span
                                         style={{
-                                          fontSize: "10.5px",
-                                          color: "#047857",
-                                          background: "#ECFDF5",
-                                          padding: "1px 6px",
-                                          borderRadius: "4px",
-                                          border: "1px solid #A7F3D0",
-                                          fontWeight: "700",
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          height: "42px",
+                                          padding: "0 12px",
+                                          background: hasError
+                                            ? "#FEE2E2"
+                                            : isEmailNA
+                                              ? "#E2E8F0"
+                                              : "var(--blue-50, #F0F9FF)",
+                                          borderLeft: hasError
+                                            ? "1px solid #FCA5A5"
+                                            : "1px solid var(--line, #BAE6FD)",
+                                          fontSize: "13px",
+                                          color: hasError
+                                            ? "#DC2626"
+                                            : isEmailNA
+                                              ? "#94A3B8"
+                                              : "var(--blue, #0284C7)",
+                                          fontWeight: "bold",
+                                          userSelect: "none",
+                                          whiteSpace: "nowrap",
                                         }}
                                       >
-                                        N/A (No Issuance)
+                                        @deped.gov.ph
                                       </span>
-                                    )}
-                                  </div>
+                                    </div>
 
-                                  <div
-                                    className="deped-email-field"
-                                    id="field-depedEmail"
-                                    data-field="depedEmail"
-                                    style={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      borderRadius: "12px",
-                                      border: hasError
-                                        ? "2px solid #EF4444"
-                                        : isEmailNA
-                                          ? "1.5px solid #CBD5E1"
-                                          : "1.5px solid var(--line, #BAE6FD)",
-                                      background: hasError
-                                        ? "#FEF2F2"
-                                        : isEmailNA
-                                          ? "#F1F5F9"
-                                          : "white",
-                                      overflow: "hidden",
-                                    }}
-                                  >
-                                    <input
-                                      type="text"
-                                      disabled={isEmailNA}
-                                      value={localVal}
-                                      onKeyDown={(e) => {
-                                        if (e.key === "@") {
-                                          e.preventDefault();
-                                        }
-                                      }}
-                                      onChange={(e) => {
-                                        const clean = e.target.value.replace(
-                                          /@/g,
-                                          "",
-                                        );
-                                        handleEmailLocalChange(clean);
-                                      }}
-                                      placeholder={isEmailNA ? "N/A" : ""}
-                                      className={
-                                        !localVal && !isEmailNA
-                                          ? "empty-field"
-                                          : ""
-                                      }
-                                      style={{
-                                        flex: 1,
-                                        border: "none",
-                                        background: "transparent",
-                                        borderRadius: 0,
-                                        padding: "10px 12px",
-                                        fontSize: "14px",
-                                        color: isEmailNA
-                                          ? "#64748B"
-                                          : hasError
-                                            ? "#B91C1C"
-                                            : "var(--text, #0F172A)",
-                                        fontWeight: isEmailNA
-                                          ? "bold"
-                                          : "normal",
-                                        outline: "none",
-                                      }}
-                                    />
-                                    <span
-                                      style={{
-                                        display: "inline-flex",
-                                        alignItems: "center",
-                                        height: "42px",
-                                        padding: "0 12px",
-                                        background: hasError
-                                          ? "#FEE2E2"
-                                          : isEmailNA
-                                            ? "#E2E8F0"
-                                            : "var(--blue-50, #F0F9FF)",
-                                        borderLeft: hasError
-                                          ? "1px solid #FCA5A5"
-                                          : "1px solid var(--line, #BAE6FD)",
-                                        fontSize: "13px",
-                                        color: hasError
-                                          ? "#DC2626"
-                                          : isEmailNA
-                                            ? "#94A3B8"
-                                            : "var(--blue, #0284C7)",
-                                        fontWeight: "bold",
-                                        userSelect: "none",
-                                        whiteSpace: "nowrap",
-                                      }}
-                                    >
-                                      @deped.gov.ph
-                                    </span>
-                                  </div>
-
-                                  {/* Red error alert inline if invalid */}
-                                  {hasError && (
-                                    <p
-                                      style={{
-                                        margin: "4px 0 0 0",
-                                        fontSize: "11px",
-                                        color: "#DC2626",
-                                        fontWeight: "700",
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: "4px",
-                                      }}
-                                    >
-                                      <FiAlertCircle
-                                        size={14}
-                                        color="#DC2626"
-                                      />{" "}
-                                      {emailVal.error}
-                                    </p>
-                                  )}
-
-                                  {/* Allow Email Discrepancy (Birth Certificate / Legal Name Change) Premium Toggle Card */}
-                                  {!isEmailNA && (
-                                    <div
-                                      onClick={() => {
-                                        if (!hasDiscrepancy) {
-                                          setConfirmDiscrepancyInput("");
-                                          setIsConfirmDiscrepancyModalOpen(
-                                            true,
-                                          );
-                                        } else {
-                                          handleMultipleFieldsChange({
-                                            allowEmailDiscrepancy: false,
-                                            allow_email_discrepancy: false,
-                                          });
-                                        }
-                                      }}
-                                      style={{
-                                        marginTop: "8px",
-                                        padding: "10px 14px",
-                                        borderRadius: "12px",
-                                        border: hasDiscrepancy
-                                          ? "1.5px solid #38BDF8"
-                                          : "1.5px solid #E2E8F0",
-                                        background: hasDiscrepancy
-                                          ? "linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%)"
-                                          : "#F8FAFC",
-                                        boxShadow: hasDiscrepancy
-                                          ? "0 4px 12px -2px rgba(14, 165, 233, 0.15)"
-                                          : "none",
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "space-between",
-                                        gap: "12px",
-                                        cursor: "pointer",
-                                        transition:
-                                          "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
-                                        userSelect: "none",
-                                      }}
-                                      onMouseEnter={(e) => {
-                                        if (!hasDiscrepancy) {
-                                          e.currentTarget.style.borderColor =
-                                            "#CBD5E1";
-                                          e.currentTarget.style.background =
-                                            "#F1F5F9";
-                                        }
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        if (!hasDiscrepancy) {
-                                          e.currentTarget.style.borderColor =
-                                            "#E2E8F0";
-                                          e.currentTarget.style.background =
-                                            "#F8FAFC";
-                                        }
-                                      }}
-                                    >
-                                      <div
+                                    {/* Red error alert inline if invalid */}
+                                    {hasError && (
+                                      <p
                                         style={{
+                                          margin: "4px 0 0 0",
+                                          fontSize: "11px",
+                                          color: "#DC2626",
+                                          fontWeight: "700",
                                           display: "flex",
                                           alignItems: "center",
-                                          gap: "10px",
-                                          flex: 1,
+                                          gap: "4px",
+                                        }}
+                                      >
+                                        <FiAlertCircle
+                                          size={14}
+                                          color="#DC2626"
+                                        />{" "}
+                                        {emailVal.error}
+                                      </p>
+                                    )}
+
+                                    {/* Allow Email Discrepancy (Birth Certificate / Legal Name Change) Premium Toggle Card */}
+                                    {!isEmailNA && (
+                                      <div
+                                        onClick={() => {
+                                          if (!hasDiscrepancy) {
+                                            setConfirmDiscrepancyInput("");
+                                            setIsConfirmDiscrepancyModalOpen(
+                                              true,
+                                            );
+                                          } else {
+                                            handleMultipleFieldsChange({
+                                              allowEmailDiscrepancy: false,
+                                              allow_email_discrepancy: false,
+                                            });
+                                          }
+                                        }}
+                                        style={{
+                                          marginTop: "8px",
+                                          padding: "10px 14px",
+                                          borderRadius: "12px",
+                                          border: hasDiscrepancy
+                                            ? "1.5px solid #38BDF8"
+                                            : "1.5px solid #E2E8F0",
+                                          background: hasDiscrepancy
+                                            ? "linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%)"
+                                            : "#F8FAFC",
+                                          boxShadow: hasDiscrepancy
+                                            ? "0 4px 12px -2px rgba(14, 165, 233, 0.15)"
+                                            : "none",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "space-between",
+                                          gap: "12px",
+                                          cursor: "pointer",
+                                          transition:
+                                            "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+                                          userSelect: "none",
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          if (!hasDiscrepancy) {
+                                            e.currentTarget.style.borderColor =
+                                              "#CBD5E1";
+                                            e.currentTarget.style.background =
+                                              "#F1F5F9";
+                                          }
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          if (!hasDiscrepancy) {
+                                            e.currentTarget.style.borderColor =
+                                              "#E2E8F0";
+                                            e.currentTarget.style.background =
+                                              "#F8FAFC";
+                                          }
                                         }}
                                       >
                                         <div
                                           style={{
-                                            width: "32px",
-                                            height: "32px",
-                                            borderRadius: "9px",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: "10px",
+                                            flex: 1,
+                                          }}
+                                        >
+                                          <div
+                                            style={{
+                                              width: "32px",
+                                              height: "32px",
+                                              borderRadius: "9px",
+                                              background: hasDiscrepancy
+                                                ? "#0284C7"
+                                                : "#E2E8F0",
+                                              color: hasDiscrepancy
+                                                ? "#FFFFFF"
+                                                : "#64748B",
+                                              display: "flex",
+                                              alignItems: "center",
+                                              justifyContent: "center",
+                                              flexShrink: 0,
+                                              transition: "all 0.2s ease",
+                                            }}
+                                          >
+                                            <FiShield size={16} />
+                                          </div>
+                                          <div
+                                            style={{
+                                              display: "flex",
+                                              alignItems: "center",
+                                              gap: "6px",
+                                            }}
+                                          >
+                                            <span
+                                              style={{
+                                                fontSize: "12.5px",
+                                                fontWeight: 700,
+                                                color: hasDiscrepancy
+                                                  ? "#0369A1"
+                                                  : "#1E293B",
+                                              }}
+                                            >
+                                              Legal Name Discrepancy Override
+                                            </span>
+                                            {hasDiscrepancy && (
+                                              <span
+                                                style={{
+                                                  fontSize: "10px",
+                                                  fontWeight: 800,
+                                                  textTransform: "uppercase",
+                                                  letterSpacing: "0.5px",
+                                                  padding: "1px 6px",
+                                                  borderRadius: "6px",
+                                                  background: "#0284C7",
+                                                  color: "#FFFFFF",
+                                                }}
+                                              >
+                                                Active
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        {/* Modern iOS-Style Switch Pill */}
+                                        <div
+                                          style={{
+                                            width: "42px",
+                                            height: "24px",
+                                            borderRadius: "999px",
                                             background: hasDiscrepancy
                                               ? "#0284C7"
-                                              : "#E2E8F0",
-                                            color: hasDiscrepancy
-                                              ? "#FFFFFF"
-                                              : "#64748B",
+                                              : "#CBD5E1",
+                                            padding: "2px",
                                             display: "flex",
                                             alignItems: "center",
-                                            justifyContent: "center",
+                                            transition:
+                                              "background-color 0.25s ease",
                                             flexShrink: 0,
-                                            transition: "all 0.2s ease",
+                                            position: "relative",
                                           }}
                                         >
-                                          <FiShield size={16} />
+                                          <div
+                                            style={{
+                                              width: "20px",
+                                              height: "20px",
+                                              borderRadius: "50%",
+                                              background: "#FFFFFF",
+                                              boxShadow:
+                                                "0 2px 4px rgba(0, 0, 0, 0.2)",
+                                              transform: hasDiscrepancy
+                                                ? "translateX(18px)"
+                                                : "translateX(0px)",
+                                              transition:
+                                                "transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
+                                            }}
+                                          />
                                         </div>
+                                      </div>
+                                    )}
+
+                                    {/* No DepEd Email Toggle Card - Only shown for Non-Permanent Personnel */}
+                                    {!isPermanent && (
+                                      <div
+                                        onClick={() => {
+                                          if (!isEmailNA) {
+                                            handleMultipleFieldsChange({
+                                              depedEmail: "N/A",
+                                              deped_email: "N/A",
+                                              noDepedEmail: true,
+                                              no_deped_email: true,
+                                            });
+                                          } else {
+                                            handleMultipleFieldsChange({
+                                              depedEmail: "",
+                                              deped_email: "",
+                                              noDepedEmail: false,
+                                              no_deped_email: false,
+                                            });
+                                          }
+                                        }}
+                                        style={{
+                                          marginTop: "8px",
+                                          padding: "10px 14px",
+                                          borderRadius: "12px",
+                                          border: isEmailNA
+                                            ? "1.5px solid #10B981"
+                                            : "1.5px solid #E2E8F0",
+                                          background: isEmailNA
+                                            ? "linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%)"
+                                            : "#F8FAFC",
+                                          boxShadow: isEmailNA
+                                            ? "0 4px 12px -2px rgba(16, 185, 129, 0.15)"
+                                            : "none",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "space-between",
+                                          gap: "12px",
+                                          cursor: "pointer",
+                                          transition:
+                                            "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+                                          userSelect: "none",
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          if (!isEmailNA) {
+                                            e.currentTarget.style.borderColor =
+                                              "#CBD5E1";
+                                            e.currentTarget.style.background =
+                                              "#F1F5F9";
+                                          }
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          if (!isEmailNA) {
+                                            e.currentTarget.style.borderColor =
+                                              "#E2E8F0";
+                                            e.currentTarget.style.background =
+                                              "#F8FAFC";
+                                          }
+                                        }}
+                                      >
                                         <div
                                           style={{
                                             display: "flex",
                                             alignItems: "center",
-                                            gap: "6px",
+                                            gap: "10px",
+                                            flex: 1,
                                           }}
                                         >
-                                          <span
+                                          <div
                                             style={{
-                                              fontSize: "12.5px",
-                                              fontWeight: 700,
-                                              color: hasDiscrepancy
-                                                ? "#0369A1"
-                                                : "#1E293B",
+                                              width: "32px",
+                                              height: "32px",
+                                              borderRadius: "9px",
+                                              background: isEmailNA
+                                                ? "#059669"
+                                                : "#E2E8F0",
+                                              color: isEmailNA
+                                                ? "#FFFFFF"
+                                                : "#64748B",
+                                              display: "flex",
+                                              alignItems: "center",
+                                              justifyContent: "center",
+                                              flexShrink: 0,
+                                              transition: "all 0.2s ease",
                                             }}
                                           >
-                                            Legal Name Discrepancy Override
-                                          </span>
-                                          {hasDiscrepancy && (
+                                            <FiCheck size={16} />
+                                          </div>
+                                          <div
+                                            style={{
+                                              display: "flex",
+                                              alignItems: "center",
+                                              gap: "6px",
+                                            }}
+                                          >
                                             <span
                                               style={{
-                                                fontSize: "10px",
-                                                fontWeight: 800,
-                                                textTransform: "uppercase",
-                                                letterSpacing: "0.5px",
-                                                padding: "1px 6px",
-                                                borderRadius: "6px",
-                                                background: "#0284C7",
-                                                color: "#FFFFFF",
+                                                fontSize: "12.5px",
+                                                fontWeight: 700,
+                                                color: isEmailNA
+                                                  ? "#065F46"
+                                                  : "#1E293B",
                                               }}
                                             >
-                                              Active
+                                              No DepEd Email Issued (N/A)
                                             </span>
-                                          )}
+                                            {isEmailNA && (
+                                              <span
+                                                style={{
+                                                  fontSize: "10px",
+                                                  fontWeight: 800,
+                                                  textTransform: "uppercase",
+                                                  letterSpacing: "0.5px",
+                                                  padding: "1px 6px",
+                                                  borderRadius: "6px",
+                                                  background: "#059669",
+                                                  color: "#FFFFFF",
+                                                }}
+                                              >
+                                                N/A
+                                              </span>
+                                            )}
+                                          </div>
                                         </div>
-                                      </div>
 
-                                      {/* Modern iOS-Style Switch Pill */}
-                                      <div
-                                        style={{
-                                          width: "42px",
-                                          height: "24px",
-                                          borderRadius: "999px",
-                                          background: hasDiscrepancy
-                                            ? "#0284C7"
-                                            : "#CBD5E1",
-                                          padding: "2px",
-                                          display: "flex",
-                                          alignItems: "center",
-                                          transition:
-                                            "background-color 0.25s ease",
-                                          flexShrink: 0,
-                                          position: "relative",
-                                        }}
-                                      >
+                                        {/* Modern iOS-Style Switch Pill */}
                                         <div
                                           style={{
-                                            width: "20px",
-                                            height: "20px",
-                                            borderRadius: "50%",
-                                            background: "#FFFFFF",
-                                            boxShadow:
-                                              "0 2px 4px rgba(0, 0, 0, 0.2)",
-                                            transform: hasDiscrepancy
-                                              ? "translateX(18px)"
-                                              : "translateX(0px)",
-                                            transition:
-                                              "transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
-                                          }}
-                                        />
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* No DepEd Email Toggle Card - Only shown for Non-Permanent Personnel */}
-                                  {!isPermanent && (
-                                    <div
-                                      onClick={() => {
-                                        if (!isEmailNA) {
-                                          handleMultipleFieldsChange({
-                                            depedEmail: "N/A",
-                                            deped_email: "N/A",
-                                            noDepedEmail: true,
-                                            no_deped_email: true,
-                                          });
-                                        } else {
-                                          handleMultipleFieldsChange({
-                                            depedEmail: "",
-                                            deped_email: "",
-                                            noDepedEmail: false,
-                                            no_deped_email: false,
-                                          });
-                                        }
-                                      }}
-                                      style={{
-                                        marginTop: "8px",
-                                        padding: "10px 14px",
-                                        borderRadius: "12px",
-                                        border: isEmailNA
-                                          ? "1.5px solid #10B981"
-                                          : "1.5px solid #E2E8F0",
-                                        background: isEmailNA
-                                          ? "linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%)"
-                                          : "#F8FAFC",
-                                        boxShadow: isEmailNA
-                                          ? "0 4px 12px -2px rgba(16, 185, 129, 0.15)"
-                                          : "none",
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "space-between",
-                                        gap: "12px",
-                                        cursor: "pointer",
-                                        transition:
-                                          "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
-                                        userSelect: "none",
-                                      }}
-                                      onMouseEnter={(e) => {
-                                        if (!isEmailNA) {
-                                          e.currentTarget.style.borderColor =
-                                            "#CBD5E1";
-                                          e.currentTarget.style.background =
-                                            "#F1F5F9";
-                                        }
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        if (!isEmailNA) {
-                                          e.currentTarget.style.borderColor =
-                                            "#E2E8F0";
-                                          e.currentTarget.style.background =
-                                            "#F8FAFC";
-                                        }
-                                      }}
-                                    >
-                                      <div
-                                        style={{
-                                          display: "flex",
-                                          alignItems: "center",
-                                          gap: "10px",
-                                          flex: 1,
-                                        }}
-                                      >
-                                        <div
-                                          style={{
-                                            width: "32px",
-                                            height: "32px",
-                                            borderRadius: "9px",
+                                            width: "42px",
+                                            height: "24px",
+                                            borderRadius: "999px",
                                             background: isEmailNA
                                               ? "#059669"
-                                              : "#E2E8F0",
-                                            color: isEmailNA
-                                              ? "#FFFFFF"
-                                              : "#64748B",
+                                              : "#CBD5E1",
+                                            padding: "2px",
                                             display: "flex",
                                             alignItems: "center",
-                                            justifyContent: "center",
-                                            flexShrink: 0,
-                                            transition: "all 0.2s ease",
-                                          }}
-                                        >
-                                          <FiCheck size={16} />
-                                        </div>
-                                        <div
-                                          style={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: "6px",
-                                          }}
-                                        >
-                                          <span
-                                            style={{
-                                              fontSize: "12.5px",
-                                              fontWeight: 700,
-                                              color: isEmailNA
-                                                ? "#065F46"
-                                                : "#1E293B",
-                                            }}
-                                          >
-                                            No DepEd Email Issued (N/A)
-                                          </span>
-                                          {isEmailNA && (
-                                            <span
-                                              style={{
-                                                fontSize: "10px",
-                                                fontWeight: 800,
-                                                textTransform: "uppercase",
-                                                letterSpacing: "0.5px",
-                                                padding: "1px 6px",
-                                                borderRadius: "6px",
-                                                background: "#059669",
-                                                color: "#FFFFFF",
-                                              }}
-                                            >
-                                              N/A
-                                            </span>
-                                          )}
-                                        </div>
-                                      </div>
-
-                                      {/* Modern iOS-Style Switch Pill */}
-                                      <div
-                                        style={{
-                                          width: "42px",
-                                          height: "24px",
-                                          borderRadius: "999px",
-                                          background: isEmailNA
-                                            ? "#059669"
-                                            : "#CBD5E1",
-                                          padding: "2px",
-                                          display: "flex",
-                                          alignItems: "center",
-                                          transition:
-                                            "background-color 0.25s ease",
-                                          flexShrink: 0,
-                                          position: "relative",
-                                        }}
-                                      >
-                                        <div
-                                          style={{
-                                            width: "20px",
-                                            height: "20px",
-                                            borderRadius: "50%",
-                                            background: "#FFFFFF",
-                                            boxShadow:
-                                              "0 2px 4px rgba(0, 0, 0, 0.2)",
-                                            transform: isEmailNA
-                                              ? "translateX(18px)"
-                                              : "translateX(0px)",
                                             transition:
-                                              "transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
+                                              "background-color 0.25s ease",
+                                            flexShrink: 0,
+                                            position: "relative",
                                           }}
-                                        />
+                                        >
+                                          <div
+                                            style={{
+                                              width: "20px",
+                                              height: "20px",
+                                              borderRadius: "50%",
+                                              background: "#FFFFFF",
+                                              boxShadow:
+                                                "0 2px 4px rgba(0, 0, 0, 0.2)",
+                                              transform: isEmailNA
+                                                ? "translateX(18px)"
+                                                : "translateX(0px)",
+                                              transition:
+                                                "transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
+                                            }}
+                                          />
+                                        </div>
                                       </div>
-                                    </div>
-                                  )}
-                                </>
-                              );
-                            })()}
-                          </div>
+                                    )}
+                                  </>
+                                );
+                              })()}
+                            </div>
 
-                          <div className="profile-subsection">
-                            Deployment and Service Dates
-                          </div>
-                          <div style={{ gridColumn: "1 / -1" }}>
-                            <label>Status of Deployment</label>
-                            <SearchableDropdown
-                              options={[
-                                "OWN STATION",
-                                "CLUSTERED",
-                                "REASSIGNED",
-                                "BORROWED",
-                              ]}
-                              value={currentPerson.deploymentStatus || ""}
-                              onChange={(val) =>
-                                handleFieldChange("deploymentStatus", val)
-                              }
-                              placeholder="SELECT STATUS OF DEPLOYMENT..."
-                            />
-                          </div>
+                            <div className="profile-subsection">
+                              Deployment and Service Dates
+                            </div>
+                            <div style={{ gridColumn: "1 / -1" }}>
+                              <label>Status of Deployment</label>
+                              <SearchableDropdown
+                                options={[
+                                  "OWN STATION",
+                                  "CLUSTERED",
+                                  "REASSIGNED",
+                                  "BORROWED",
+                                ]}
+                                value={currentPerson.deploymentStatus || ""}
+                                onChange={(val) =>
+                                  handleFieldChange("deploymentStatus", val)
+                                }
+                                placeholder="SELECT STATUS OF DEPLOYMENT..."
+                              />
+                            </div>
 
-                          {[
-                            "Clustered",
-                            "Reassigned",
-                            "Borrowed",
-                            "CLUSTERED",
-                            "REASSIGNED",
-                            "BORROWED",
-                          ].includes(currentPerson.deploymentStatus) && (
-                            <div
-                              className="full"
-                              style={{
-                                gridColumn: "1 / -1",
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: "15px",
-                              }}
-                            >
-                              {(() => {
-                                const currentDistrictStr = String(
-                                  schoolInfo?.district || "",
-                                )
-                                  .trim()
-                                  .toLowerCase();
-                                const currentSchoolIdStr = String(
-                                  schoolInfo?.schoolId || "",
-                                ).trim();
+                            {[
+                              "Clustered",
+                              "Reassigned",
+                              "Borrowed",
+                              "CLUSTERED",
+                              "REASSIGNED",
+                              "BORROWED",
+                            ].includes(currentPerson.deploymentStatus) && (
+                              <div
+                                className="full"
+                                style={{
+                                  gridColumn: "1 / -1",
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: "15px",
+                                }}
+                              >
+                                {(() => {
+                                  const currentDistrictStr = String(
+                                    schoolInfo?.district || "",
+                                  )
+                                    .trim()
+                                    .toLowerCase();
+                                  const currentSchoolIdStr = String(
+                                    schoolInfo?.schoolId || "",
+                                  ).trim();
 
-                                const formatSchoolOption = (s) => {
-                                  if (typeof s === "string") return s;
-                                  const name =
-                                    s.schoolName ||
-                                    s.school_name ||
-                                    s.name ||
-                                    s.school ||
-                                    "SCHOOL";
-                                  const id =
-                                    s.schoolId ||
-                                    s.school_id ||
-                                    s.id ||
-                                    s.schoolid ||
-                                    "";
-                                  return id
-                                    ? `${String(name).toUpperCase()} (${id})`
-                                    : String(name).toUpperCase();
-                                };
-
-                                const getSchoolId = (s) =>
-                                  String(
-                                    s.schoolId ||
+                                  const formatSchoolOption = (s) => {
+                                    if (typeof s === "string") return s;
+                                    const name =
+                                      s.schoolName ||
+                                      s.school_name ||
+                                      s.name ||
+                                      s.school ||
+                                      "SCHOOL";
+                                    const id =
+                                      s.schoolId ||
                                       s.school_id ||
                                       s.id ||
                                       s.schoolid ||
-                                      "",
-                                  );
-                                const getSchoolDistrict = (s) =>
-                                  String(s.district || s.school_district || "")
-                                    .trim()
-                                    .toLowerCase();
+                                      "";
+                                    return id
+                                      ? `${String(name).toUpperCase()} (${id})`
+                                      : String(name).toUpperCase();
+                                  };
 
-                                const filteredDistrictSchools =
-                                  Array.isArray(districtSchools) &&
-                                  districtSchools.length > 0
-                                    ? districtSchools.filter(
-                                        (s) =>
-                                          getSchoolId(s) !== currentSchoolIdStr,
-                                      )
-                                    : DIVISION_SCHOOL_OPTIONS.filter(
-                                        (s) =>
-                                          getSchoolId(s) !== currentSchoolIdStr,
-                                      );
+                                  const getSchoolId = (s) =>
+                                    String(
+                                      s.schoolId ||
+                                        s.school_id ||
+                                        s.id ||
+                                        s.schoolid ||
+                                        "",
+                                    );
+                                  const getSchoolDistrict = (s) =>
+                                    String(
+                                      s.district || s.school_district || "",
+                                    )
+                                      .trim()
+                                      .toLowerCase();
 
-                                const schoolOptionsList =
-                                  filteredDistrictSchools
-                                    .map(formatSchoolOption)
-                                    .filter(Boolean);
+                                  const filteredDistrictSchools =
+                                    Array.isArray(districtSchools) &&
+                                    districtSchools.length > 0
+                                      ? districtSchools.filter(
+                                          (s) =>
+                                            getSchoolId(s) !==
+                                            currentSchoolIdStr,
+                                        )
+                                      : DIVISION_SCHOOL_OPTIONS.filter(
+                                          (s) =>
+                                            getSchoolId(s) !==
+                                            currentSchoolIdStr,
+                                        );
 
-                                const resolveSchoolMeta = (item) => {
-                                  if (!item) return null;
-                                  const str = String(item).trim();
-                                  const parenMatch = str.match(/\((\d{5,})\)/);
-                                  const idFromParen = parenMatch
-                                    ? parenMatch[1]
-                                    : null;
-                                  const cleanName = str
-                                    .split(" (")[0]
-                                    .trim()
-                                    .toUpperCase();
+                                  const schoolOptionsList =
+                                    filteredDistrictSchools
+                                      .map(formatSchoolOption)
+                                      .filter(Boolean);
 
-                                  const dsMatch = filteredDistrictSchools.find(
-                                    (s) => {
-                                      const sId = String(
-                                        s.schoolId ||
-                                          s.school_id ||
-                                          s.id ||
-                                          s.schoolid ||
-                                          "",
-                                      );
-                                      const sName = String(
-                                        s.schoolName ||
-                                          s.school_name ||
-                                          s.name ||
-                                          s.school ||
-                                          "",
-                                      )
-                                        .trim()
-                                        .toUpperCase();
-                                      return (
-                                        (idFromParen && sId === idFromParen) ||
-                                        sName === cleanName ||
-                                        sId === str
-                                      );
-                                    },
-                                  );
-                                  if (dsMatch) {
-                                    return {
-                                      schoolId: String(
-                                        dsMatch.schoolId ||
-                                          dsMatch.school_id ||
-                                          dsMatch.id ||
-                                          dsMatch.schoolid ||
-                                          "",
-                                      ),
-                                      name:
-                                        dsMatch.schoolName ||
-                                        dsMatch.school_name ||
-                                        dsMatch.name ||
-                                        cleanName,
-                                    };
-                                  }
+                                  const resolveSchoolMeta = (item) => {
+                                    if (!item) return null;
+                                    const str = String(item).trim();
+                                    const parenMatch =
+                                      str.match(/\((\d{5,})\)/);
+                                    const idFromParen = parenMatch
+                                      ? parenMatch[1]
+                                      : null;
+                                    const cleanName = str
+                                      .split(" (")[0]
+                                      .trim()
+                                      .toUpperCase();
 
-                                  const divMatch = DIVISION_SCHOOL_OPTIONS.find(
-                                    (s) => {
-                                      const sId = String(
-                                        s.schoolId || s.id || "",
-                                      );
-                                      const sName = String(s.name || "")
-                                        .trim()
-                                        .toUpperCase();
-                                      return (
-                                        (idFromParen && sId === idFromParen) ||
-                                        sName === cleanName ||
-                                        sId === str
-                                      );
-                                    },
-                                  );
-                                  if (divMatch) {
-                                    return {
-                                      schoolId: String(
-                                        divMatch.schoolId || divMatch.id || "",
-                                      ),
-                                      name: divMatch.name || cleanName,
-                                    };
-                                  }
+                                    const dsMatch =
+                                      filteredDistrictSchools.find((s) => {
+                                        const sId = String(
+                                          s.schoolId ||
+                                            s.school_id ||
+                                            s.id ||
+                                            s.schoolid ||
+                                            "",
+                                        );
+                                        const sName = String(
+                                          s.schoolName ||
+                                            s.school_name ||
+                                            s.name ||
+                                            s.school ||
+                                            "",
+                                        )
+                                          .trim()
+                                          .toUpperCase();
+                                        return (
+                                          (idFromParen &&
+                                            sId === idFromParen) ||
+                                          sName === cleanName ||
+                                          sId === str
+                                        );
+                                      });
+                                    if (dsMatch) {
+                                      return {
+                                        schoolId: String(
+                                          dsMatch.schoolId ||
+                                            dsMatch.school_id ||
+                                            dsMatch.id ||
+                                            dsMatch.schoolid ||
+                                            "",
+                                        ),
+                                        name:
+                                          dsMatch.schoolName ||
+                                          dsMatch.school_name ||
+                                          dsMatch.name ||
+                                          cleanName,
+                                      };
+                                    }
 
-                                  if (idFromParen)
-                                    return {
-                                      schoolId: idFromParen,
-                                      name: cleanName,
-                                    };
-                                  if (/^\d{5,}$/.test(str))
-                                    return { schoolId: str, name: str };
+                                    const divMatch =
+                                      DIVISION_SCHOOL_OPTIONS.find((s) => {
+                                        const sId = String(
+                                          s.schoolId || s.id || "",
+                                        );
+                                        const sName = String(s.name || "")
+                                          .trim()
+                                          .toUpperCase();
+                                        return (
+                                          (idFromParen &&
+                                            sId === idFromParen) ||
+                                          sName === cleanName ||
+                                          sId === str
+                                        );
+                                      });
+                                    if (divMatch) {
+                                      return {
+                                        schoolId: String(
+                                          divMatch.schoolId ||
+                                            divMatch.id ||
+                                            "",
+                                        ),
+                                        name: divMatch.name || cleanName,
+                                      };
+                                    }
 
-                                  return null;
-                                };
+                                    if (idFromParen)
+                                      return {
+                                        schoolId: idFromParen,
+                                        name: cleanName,
+                                      };
+                                    if (/^\d{5,}$/.test(str))
+                                      return { schoolId: str, name: str };
 
-                                return (
-                                  <>
-                                    {String(
-                                      currentPerson.deploymentStatus,
-                                    ).toUpperCase() === "REASSIGNED" && (
-                                      <div
-                                        style={{
-                                          padding: "16px",
-                                          background: "#F8FAFC",
-                                          border: "1.5px solid var(--line)",
-                                          borderRadius: "12px",
-                                          display: "flex",
-                                          flexDirection: "column",
-                                          gap: "12px",
-                                          marginTop: "10px",
-                                        }}
-                                      >
+                                    return null;
+                                  };
+
+                                  return (
+                                    <>
+                                      {String(
+                                        currentPerson.deploymentStatus,
+                                      ).toUpperCase() === "REASSIGNED" && (
+                                        <div
+                                          style={{
+                                            padding: "16px",
+                                            background: "#F8FAFC",
+                                            border: "1.5px solid var(--line)",
+                                            borderRadius: "12px",
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            gap: "12px",
+                                            marginTop: "10px",
+                                          }}
+                                        >
+                                          <div>
+                                            <label>
+                                              Reassigned Target School (Same
+                                              Division)
+                                            </label>
+                                            <SearchableDropdown
+                                              options={schoolOptionsList}
+                                              allowCustom={true}
+                                              value={(() => {
+                                                const activeSchool =
+                                                  (Array.isArray(
+                                                    currentPerson.assignedSchools,
+                                                  ) &&
+                                                    currentPerson
+                                                      .assignedSchools[0]) ||
+                                                  (typeof currentPerson.assignedSchools ===
+                                                  "string"
+                                                    ? currentPerson.assignedSchools
+                                                    : "");
+
+                                                if (!activeSchool) return "";
+
+                                                return (
+                                                  schoolOptionsList.find(
+                                                    (opt) =>
+                                                      opt
+                                                        .toUpperCase()
+                                                        .startsWith(
+                                                          activeSchool.toUpperCase(),
+                                                        ),
+                                                  ) || activeSchool
+                                                );
+                                              })()}
+                                              onChange={(val) => {
+                                                handleFieldChange(
+                                                  "assignedSchools",
+                                                  val ? [val] : [],
+                                                );
+                                              }}
+                                              placeholder="SELECT REASSIGNED TARGET SCHOOL..."
+                                            />
+                                            <p className="field-help">
+                                              Select the destination school in{" "}
+                                              {schoolInfo?.division ||
+                                                "the same division"}{" "}
+                                              where this personnel is reassigned
+                                              to teach.
+                                            </p>
+                                          </div>
+
+                                          {(() => {
+                                            const prnToShare =
+                                              currentPerson.prn ||
+                                              currentPerson.profilingCode ||
+                                              (currentPerson.id &&
+                                              String(
+                                                currentPerson.id,
+                                              ).startsWith("PRN")
+                                                ? currentPerson.id
+                                                : currentPerson.id
+                                                  ? "PRN-" +
+                                                    String(
+                                                      currentPerson.id,
+                                                    ).replace("PER-", "")
+                                                  : null);
+                                            const hasAssignedSchools =
+                                              (Array.isArray(
+                                                currentPerson.assignedSchools,
+                                              ) &&
+                                                currentPerson.assignedSchools
+                                                  .length > 0) ||
+                                              (typeof currentPerson.assignedSchools ===
+                                                "string" &&
+                                                currentPerson.assignedSchools.trim()
+                                                  .length > 0);
+                                            const canSend =
+                                              Boolean(prnToShare) &&
+                                              hasAssignedSchools;
+
+                                            return (
+                                              <>
+                                                <button
+                                                  type="button"
+                                                  className="btn btn-primary"
+                                                  style={{
+                                                    marginTop: "8px",
+                                                    width: "fit-content",
+                                                    display: "flex",
+                                                    alignItems: "center",
+                                                    gap: "6px",
+                                                  }}
+                                                  disabled={!canSend}
+                                                  onClick={async () => {
+                                                    if (!prnToShare) {
+                                                      await showAlert(
+                                                        "Missing PRN",
+                                                        "A valid PRN is required before sending a reassignment request. Please save this personnel profile first.",
+                                                      );
+                                                      return;
+                                                    }
+                                                    try {
+                                                      const { api } =
+                                                        await import("../services/api");
+                                                      const rawSchool =
+                                                        Array.isArray(
+                                                          currentPerson.assignedSchools,
+                                                        )
+                                                          ? currentPerson
+                                                              .assignedSchools[0]
+                                                          : currentPerson.assignedSchools;
+                                                      const meta =
+                                                        resolveSchoolMeta(
+                                                          rawSchool,
+                                                        );
+                                                      const rawStr = String(
+                                                        rawSchool || "",
+                                                      ).trim();
+                                                      const parenMatch =
+                                                        rawStr.match(
+                                                          /\((\d{5,})\)/,
+                                                        );
+                                                      const directDigits =
+                                                        rawStr.match(
+                                                          /\b(\d{5,})\b/,
+                                                        );
+                                                      const targetSchoolId =
+                                                        meta?.schoolId ||
+                                                        (parenMatch
+                                                          ? parenMatch[1]
+                                                          : directDigits
+                                                            ? directDigits[1]
+                                                            : rawStr
+                                                                .replace(
+                                                                  /^SCH-/i,
+                                                                  "",
+                                                                )
+                                                                .trim());
+
+                                                      if (!targetSchoolId) {
+                                                        await showAlert(
+                                                          "No Target School",
+                                                          "Please select a target destination school from the dropdown before sending the reassignment request.",
+                                                        );
+                                                        return;
+                                                      }
+
+                                                      const curSchoolId =
+                                                        String(
+                                                          schoolInfo?.schoolId ||
+                                                            "",
+                                                        )
+                                                          .replace(/^SCH-/i, "")
+                                                          .trim();
+                                                      await api.createRequest({
+                                                        requesterSchoolId:
+                                                          curSchoolId,
+                                                        targetSchoolId:
+                                                          targetSchoolId,
+                                                        requestType:
+                                                          "reassigned_teacher",
+                                                        personnelId: prnToShare,
+                                                        personnelName:
+                                                          `${currentPerson.firstName || ""} ${currentPerson.lastName || ""}`.trim(),
+                                                      });
+
+                                                      showToast(
+                                                        "Reassignment request sent successfully!",
+                                                        "success",
+                                                      );
+                                                      await showAlert(
+                                                        "Reassignment Request Sent",
+                                                        `Reassignment request for ${currentPerson.firstName || ""} ${currentPerson.lastName || ""} (${prnToShare}) has been sent to School ${targetSchoolId} successfully!\n\nOnce accepted by that school, the personnel's status in their roster will be BORROWED.`,
+                                                      );
+                                                    } catch (err) {
+                                                      await showAlert(
+                                                        "Reassignment Request Error",
+                                                        "Failed to send reassignment request: " +
+                                                          err.message,
+                                                      );
+                                                    }
+                                                  }}
+                                                >
+                                                  <FiLink
+                                                    size={13}
+                                                    style={{
+                                                      marginRight: "6px",
+                                                    }}
+                                                  />
+                                                  Send Reassignment Request
+                                                </button>
+                                                {!prnToShare && (
+                                                  <p
+                                                    className="field-help"
+                                                    style={{
+                                                      color: "var(--danger)",
+                                                    }}
+                                                  >
+                                                    Note: You must save this
+                                                    personnel profile first to
+                                                    generate a PRN before
+                                                    sending reassignment
+                                                    request.
+                                                  </p>
+                                                )}
+                                              </>
+                                            );
+                                          })()}
+                                        </div>
+                                      )}
+
+                                      {String(
+                                        currentPerson.deploymentStatus,
+                                      ).toUpperCase() === "BORROWED" && (
                                         <div>
                                           <label>
-                                            Reassigned Target School (Same
+                                            Origin / Mother Station (Same
                                             Division)
                                           </label>
                                           <SearchableDropdown
@@ -7501,2552 +7774,2384 @@ export default function PersonnelProfile() {
                                                 val ? [val] : [],
                                               );
                                             }}
-                                            placeholder="SELECT REASSIGNED TARGET SCHOOL..."
+                                            placeholder="SELECT ORIGIN STATION..."
                                           />
                                           <p className="field-help">
-                                            Select the destination school in{" "}
+                                            Mother station from which this
+                                            personnel is borrowed within{" "}
                                             {schoolInfo?.division ||
-                                              "the same division"}{" "}
-                                            where this personnel is reassigned
-                                            to teach.
+                                              "the same division"}
+                                            .
                                           </p>
                                         </div>
+                                      )}
 
-                                        {(() => {
-                                          const prnToShare =
-                                            currentPerson.prn ||
-                                            currentPerson.profilingCode ||
-                                            (currentPerson.id &&
-                                            String(currentPerson.id).startsWith(
-                                              "PRN",
-                                            )
-                                              ? currentPerson.id
-                                              : currentPerson.id
-                                                ? "PRN-" +
-                                                  String(
-                                                    currentPerson.id,
-                                                  ).replace("PER-", "")
-                                                : null);
-                                          const hasAssignedSchools =
-                                            (Array.isArray(
-                                              currentPerson.assignedSchools,
-                                            ) &&
-                                              currentPerson.assignedSchools
-                                                .length > 0) ||
-                                            (typeof currentPerson.assignedSchools ===
-                                              "string" &&
-                                              currentPerson.assignedSchools.trim()
-                                                .length > 0);
-                                          const canSend =
-                                            Boolean(prnToShare) &&
-                                            hasAssignedSchools;
-
-                                          return (
-                                            <>
-                                              <button
-                                                type="button"
-                                                className="btn btn-primary"
-                                                style={{
-                                                  marginTop: "8px",
-                                                  width: "fit-content",
-                                                  display: "flex",
-                                                  alignItems: "center",
-                                                  gap: "6px",
-                                                }}
-                                                disabled={!canSend}
-                                                onClick={async () => {
-                                                  if (!prnToShare) {
-                                                    await showAlert(
-                                                      "Missing PRN",
-                                                      "A valid PRN is required before sending a reassignment request. Please save this personnel profile first.",
-                                                    );
-                                                    return;
-                                                  }
-                                                  try {
-                                                    const { api } =
-                                                      await import("../services/api");
-                                                    const rawSchool =
-                                                      Array.isArray(
-                                                        currentPerson.assignedSchools,
-                                                      )
-                                                        ? currentPerson
-                                                            .assignedSchools[0]
-                                                        : currentPerson.assignedSchools;
-                                                    const meta =
-                                                      resolveSchoolMeta(
-                                                        rawSchool,
-                                                      );
-                                                    const rawStr = String(
-                                                      rawSchool || "",
-                                                    ).trim();
-                                                    const parenMatch =
-                                                      rawStr.match(
-                                                        /\((\d{5,})\)/,
-                                                      );
-                                                    const directDigits =
-                                                      rawStr.match(
-                                                        /\b(\d{5,})\b/,
-                                                      );
-                                                    const targetSchoolId =
-                                                      meta?.schoolId ||
-                                                      (parenMatch
-                                                        ? parenMatch[1]
-                                                        : directDigits
-                                                          ? directDigits[1]
-                                                          : rawStr
-                                                              .replace(
-                                                                /^SCH-/i,
-                                                                "",
-                                                              )
-                                                              .trim());
-
-                                                    if (!targetSchoolId) {
-                                                      await showAlert(
-                                                        "No Target School",
-                                                        "Please select a target destination school from the dropdown before sending the reassignment request.",
-                                                      );
-                                                      return;
-                                                    }
-
-                                                    const curSchoolId = String(
-                                                      schoolInfo?.schoolId ||
-                                                        "",
-                                                    )
-                                                      .replace(/^SCH-/i, "")
-                                                      .trim();
-                                                    await api.createRequest({
-                                                      requesterSchoolId:
-                                                        curSchoolId,
-                                                      targetSchoolId:
-                                                        targetSchoolId,
-                                                      requestType:
-                                                        "reassigned_teacher",
-                                                      personnelId: prnToShare,
-                                                      personnelName:
-                                                        `${currentPerson.firstName || ""} ${currentPerson.lastName || ""}`.trim(),
-                                                    });
-
-                                                    showToast(
-                                                      "Reassignment request sent successfully!",
-                                                      "success",
-                                                    );
-                                                    await showAlert(
-                                                      "Reassignment Request Sent",
-                                                      `Reassignment request for ${currentPerson.firstName || ""} ${currentPerson.lastName || ""} (${prnToShare}) has been sent to School ${targetSchoolId} successfully!\n\nOnce accepted by that school, the personnel's status in their roster will be BORROWED.`,
-                                                    );
-                                                  } catch (err) {
-                                                    await showAlert(
-                                                      "Reassignment Request Error",
-                                                      "Failed to send reassignment request: " +
-                                                        err.message,
-                                                    );
-                                                  }
-                                                }}
-                                              >
-                                                <FiLink
-                                                  size={13}
-                                                  style={{ marginRight: "6px" }}
-                                                />
-                                                Send Reassignment Request
-                                              </button>
-                                              {!prnToShare && (
-                                                <p
-                                                  className="field-help"
-                                                  style={{
-                                                    color: "var(--danger)",
-                                                  }}
-                                                >
-                                                  Note: You must save this
-                                                  personnel profile first to
-                                                  generate a PRN before sending
-                                                  reassignment request.
-                                                </p>
-                                              )}
-                                            </>
-                                          );
-                                        })()}
-                                      </div>
-                                    )}
-
-                                    {String(
-                                      currentPerson.deploymentStatus,
-                                    ).toUpperCase() === "BORROWED" && (
-                                      <div>
-                                        <label>
-                                          Origin / Mother Station (Same
-                                          Division)
-                                        </label>
-                                        <SearchableDropdown
-                                          options={schoolOptionsList}
-                                          allowCustom={true}
-                                          value={(() => {
-                                            const activeSchool =
-                                              (Array.isArray(
-                                                currentPerson.assignedSchools,
-                                              ) &&
-                                                currentPerson
-                                                  .assignedSchools[0]) ||
-                                              (typeof currentPerson.assignedSchools ===
-                                              "string"
-                                                ? currentPerson.assignedSchools
-                                                : "");
-
-                                            if (!activeSchool) return "";
-
-                                            return (
-                                              schoolOptionsList.find((opt) =>
-                                                opt
-                                                  .toUpperCase()
-                                                  .startsWith(
-                                                    activeSchool.toUpperCase(),
-                                                  ),
-                                              ) || activeSchool
-                                            );
-                                          })()}
-                                          onChange={(val) => {
-                                            handleFieldChange(
-                                              "assignedSchools",
-                                              val ? [val] : [],
-                                            );
-                                          }}
-                                          placeholder="SELECT ORIGIN STATION..."
-                                        />
-                                        <p className="field-help">
-                                          Mother station from which this
-                                          personnel is borrowed within{" "}
-                                          {schoolInfo?.division ||
-                                            "the same division"}
-                                          .
-                                        </p>
-                                      </div>
-                                    )}
-
-                                    {String(
-                                      currentPerson.deploymentStatus,
-                                    ).toUpperCase() === "CLUSTERED" && (
-                                      <div
-                                        style={{
-                                          padding: "16px",
-                                          background: "#F8FAFC",
-                                          border: "1.5px solid var(--line)",
-                                          borderRadius: "12px",
-                                          display: "flex",
-                                          flexDirection: "column",
-                                          gap: "12px",
-                                          marginTop: "10px",
-                                        }}
-                                      >
+                                      {String(
+                                        currentPerson.deploymentStatus,
+                                      ).toUpperCase() === "CLUSTERED" && (
                                         <div
                                           style={{
+                                            padding: "16px",
+                                            background: "#F8FAFC",
+                                            border: "1.5px solid var(--line)",
+                                            borderRadius: "12px",
                                             display: "flex",
-                                            justifyContent: "space-between",
-                                            alignItems: "center",
+                                            flexDirection: "column",
+                                            gap: "12px",
+                                            marginTop: "10px",
                                           }}
                                         >
-                                          <span
+                                          <div
                                             style={{
-                                              fontWeight: "bold",
-                                              color: "var(--navy)",
-                                              fontSize: "13px",
+                                              display: "flex",
+                                              justifyContent: "space-between",
+                                              alignItems: "center",
                                             }}
                                           >
-                                            Clustered School Assignments
-                                          </span>
-                                          <span
-                                            style={{
-                                              fontSize: "11px",
-                                              color: "#0369A1",
-                                              background: "#E0F2FE",
-                                              padding: "2px 8px",
-                                              borderRadius: "6px",
-                                              fontWeight: "bold",
-                                            }}
-                                          >
-                                            <FiMapPin
-                                              size={12}
-                                              style={{
-                                                marginRight: "4px",
-                                                verticalAlign: "middle",
-                                              }}
-                                            />
-                                            Division:{" "}
-                                            {schoolInfo?.division ||
-                                              "Same Division"}
-                                          </span>
-                                        </div>
-                                        <p
-                                          className="field-help"
-                                          style={{ marginTop: "-8px" }}
-                                        >
-                                          Select satellite schools in the same
-                                          division where this personnel is
-                                          deployed to teach.
-                                        </p>
-
-                                        <div
-                                          style={{
-                                            display: "flex",
-                                            flexWrap: "wrap",
-                                            gap: "8px",
-                                            marginBottom: "4px",
-                                          }}
-                                        >
-                                          {(Array.isArray(
-                                            currentPerson.assignedSchools,
-                                          )
-                                            ? currentPerson.assignedSchools
-                                            : []
-                                          ).map((school, index) => (
-                                            <div
-                                              key={index}
-                                              style={{
-                                                display: "flex",
-                                                alignItems: "center",
-                                                background: "var(--blue-50)",
-                                                border:
-                                                  "1.5px solid var(--line)",
-                                                borderRadius: "12px",
-                                                padding: "6px 12px",
-                                                gap: "8px",
-                                              }}
-                                            >
-                                              <span
-                                                style={{
-                                                  fontSize: "13px",
-                                                  color: "var(--navy)",
-                                                  fontWeight: "bold",
-                                                }}
-                                              >
-                                                {school.split(" (")[0]}
-                                              </span>
-                                              <button
-                                                type="button"
-                                                style={{
-                                                  background: "transparent",
-                                                  border: 0,
-                                                  color: "var(--blue)",
-                                                  cursor: "pointer",
-                                                  fontWeight: "bold",
-                                                  fontSize: "14px",
-                                                  padding: 0,
-                                                }}
-                                                onClick={() => {
-                                                  const currentList =
-                                                    Array.isArray(
-                                                      currentPerson.assignedSchools,
-                                                    )
-                                                      ? currentPerson.assignedSchools
-                                                      : [];
-                                                  const newList =
-                                                    currentList.filter(
-                                                      (_, idx) => idx !== index,
-                                                    );
-                                                  handleFieldChange(
-                                                    "assignedSchools",
-                                                    newList,
-                                                  );
-                                                }}
-                                              >
-                                                ✕
-                                              </button>
-                                            </div>
-                                          ))}
-                                          {(Array.isArray(
-                                            currentPerson.assignedSchools,
-                                          )
-                                            ? currentPerson.assignedSchools
-                                            : []
-                                          ).length === 0 && (
                                             <span
                                               style={{
+                                                fontWeight: "bold",
+                                                color: "var(--navy)",
                                                 fontSize: "13px",
-                                                color: "var(--muted)",
-                                                fontStyle: "italic",
                                               }}
                                             >
-                                              No clustered schools assigned yet.
+                                              Clustered School Assignments
                                             </span>
-                                          )}
-                                        </div>
+                                            <span
+                                              style={{
+                                                fontSize: "11px",
+                                                color: "#0369A1",
+                                                background: "#E0F2FE",
+                                                padding: "2px 8px",
+                                                borderRadius: "6px",
+                                                fontWeight: "bold",
+                                              }}
+                                            >
+                                              <FiMapPin
+                                                size={12}
+                                                style={{
+                                                  marginRight: "4px",
+                                                  verticalAlign: "middle",
+                                                }}
+                                              />
+                                              Division:{" "}
+                                              {schoolInfo?.division ||
+                                                "Same Division"}
+                                            </span>
+                                          </div>
+                                          <p
+                                            className="field-help"
+                                            style={{ marginTop: "-8px" }}
+                                          >
+                                            Select satellite schools in the same
+                                            division where this personnel is
+                                            deployed to teach.
+                                          </p>
 
-                                        <SearchableDropdown
-                                          options={schoolOptionsList}
-                                          allowCustom={true}
-                                          value=""
-                                          onChange={(val) => {
-                                            if (!val) return;
-                                            const currentList = Array.isArray(
+                                          <div
+                                            style={{
+                                              display: "flex",
+                                              flexWrap: "wrap",
+                                              gap: "8px",
+                                              marginBottom: "4px",
+                                            }}
+                                          >
+                                            {(Array.isArray(
                                               currentPerson.assignedSchools,
                                             )
                                               ? currentPerson.assignedSchools
-                                              : [];
-                                            if (!currentList.includes(val)) {
-                                              handleFieldChange(
-                                                "assignedSchools",
-                                                [...currentList, val],
-                                              );
-                                            }
-                                          }}
-                                          placeholder="+ ADD CLUSTERED SCHOOL (SAME DIVISION)..."
-                                        />
-
-                                        {(() => {
-                                          const prnToShare =
-                                            currentPerson.prn ||
-                                            currentPerson.profilingCode ||
-                                            (currentPerson.id &&
-                                            String(currentPerson.id).startsWith(
-                                              "PRN",
-                                            )
-                                              ? currentPerson.id
-                                              : currentPerson.id
-                                                ? "PRN-" +
-                                                  String(
-                                                    currentPerson.id,
-                                                  ).replace("PER-", "")
-                                                : null);
-                                          const hasAssignedSchools =
-                                            Array.isArray(
-                                              currentPerson.assignedSchools,
-                                            ) &&
-                                            currentPerson.assignedSchools
-                                              .length > 0;
-                                          const canShare =
-                                            Boolean(prnToShare) &&
-                                            hasAssignedSchools;
-
-                                          return (
-                                            <>
-                                              <button
-                                                type="button"
-                                                className="btn btn-primary"
+                                              : []
+                                            ).map((school, index) => (
+                                              <div
+                                                key={index}
                                                 style={{
-                                                  marginTop: "8px",
-                                                  width: "fit-content",
                                                   display: "flex",
                                                   alignItems: "center",
-                                                  gap: "6px",
+                                                  background: "var(--blue-50)",
+                                                  border:
+                                                    "1.5px solid var(--line)",
+                                                  borderRadius: "12px",
+                                                  padding: "6px 12px",
+                                                  gap: "8px",
                                                 }}
-                                                disabled={!canShare}
-                                                onClick={async () => {
-                                                  if (!prnToShare) {
-                                                    await showAlert(
-                                                      "Missing PRN",
-                                                      "A valid PRN is required before sharing. Please save this personnel profile first.",
+                                              >
+                                                <span
+                                                  style={{
+                                                    fontSize: "13px",
+                                                    color: "var(--navy)",
+                                                    fontWeight: "bold",
+                                                  }}
+                                                >
+                                                  {school.split(" (")[0]}
+                                                </span>
+                                                <button
+                                                  type="button"
+                                                  style={{
+                                                    background: "transparent",
+                                                    border: 0,
+                                                    color: "var(--blue)",
+                                                    cursor: "pointer",
+                                                    fontWeight: "bold",
+                                                    fontSize: "14px",
+                                                    padding: 0,
+                                                  }}
+                                                  onClick={() => {
+                                                    const currentList =
+                                                      Array.isArray(
+                                                        currentPerson.assignedSchools,
+                                                      )
+                                                        ? currentPerson.assignedSchools
+                                                        : [];
+                                                    const newList =
+                                                      currentList.filter(
+                                                        (_, idx) =>
+                                                          idx !== index,
+                                                      );
+                                                    handleFieldChange(
+                                                      "assignedSchools",
+                                                      newList,
                                                     );
-                                                    return;
-                                                  }
-                                                  try {
-                                                    const { api } =
-                                                      await import("../services/api");
-                                                    const targetSchoolIds = (
-                                                      currentPerson.assignedSchools ||
-                                                      []
-                                                    )
-                                                      .map((item) => {
-                                                        const meta =
-                                                          resolveSchoolMeta(
-                                                            item,
-                                                          );
-                                                        if (
-                                                          meta &&
-                                                          meta.schoolId
-                                                        )
-                                                          return meta.schoolId;
-                                                        const rawStr = String(
-                                                          item || "",
-                                                        ).trim();
-                                                        const parenMatch =
-                                                          rawStr.match(
-                                                            /\((\d{5,})\)/,
-                                                          );
-                                                        if (parenMatch)
-                                                          return parenMatch[1];
-                                                        const directDigits =
-                                                          rawStr.match(
-                                                            /\b(\d{5,})\b/,
-                                                          );
-                                                        if (directDigits)
-                                                          return directDigits[1];
-                                                        return rawStr
-                                                          .replace(/^SCH-/i, "")
-                                                          .trim();
-                                                      })
-                                                      .filter(Boolean);
+                                                  }}
+                                                >
+                                                  ✕
+                                                </button>
+                                              </div>
+                                            ))}
+                                            {(Array.isArray(
+                                              currentPerson.assignedSchools,
+                                            )
+                                              ? currentPerson.assignedSchools
+                                              : []
+                                            ).length === 0 && (
+                                              <span
+                                                style={{
+                                                  fontSize: "13px",
+                                                  color: "var(--muted)",
+                                                  fontStyle: "italic",
+                                                }}
+                                              >
+                                                No clustered schools assigned
+                                                yet.
+                                              </span>
+                                            )}
+                                          </div>
 
-                                                    if (
-                                                      targetSchoolIds.length ===
-                                                      0
-                                                    ) {
+                                          <SearchableDropdown
+                                            options={schoolOptionsList}
+                                            allowCustom={true}
+                                            value=""
+                                            onChange={(val) => {
+                                              if (!val) return;
+                                              const currentList = Array.isArray(
+                                                currentPerson.assignedSchools,
+                                              )
+                                                ? currentPerson.assignedSchools
+                                                : [];
+                                              if (!currentList.includes(val)) {
+                                                handleFieldChange(
+                                                  "assignedSchools",
+                                                  [...currentList, val],
+                                                );
+                                              }
+                                            }}
+                                            placeholder="+ ADD CLUSTERED SCHOOL (SAME DIVISION)..."
+                                          />
+
+                                          {(() => {
+                                            const prnToShare =
+                                              currentPerson.prn ||
+                                              currentPerson.profilingCode ||
+                                              (currentPerson.id &&
+                                              String(
+                                                currentPerson.id,
+                                              ).startsWith("PRN")
+                                                ? currentPerson.id
+                                                : currentPerson.id
+                                                  ? "PRN-" +
+                                                    String(
+                                                      currentPerson.id,
+                                                    ).replace("PER-", "")
+                                                  : null);
+                                            const hasAssignedSchools =
+                                              Array.isArray(
+                                                currentPerson.assignedSchools,
+                                              ) &&
+                                              currentPerson.assignedSchools
+                                                .length > 0;
+                                            const canShare =
+                                              Boolean(prnToShare) &&
+                                              hasAssignedSchools;
+
+                                            return (
+                                              <>
+                                                <button
+                                                  type="button"
+                                                  className="btn btn-primary"
+                                                  style={{
+                                                    marginTop: "8px",
+                                                    width: "fit-content",
+                                                    display: "flex",
+                                                    alignItems: "center",
+                                                    gap: "6px",
+                                                  }}
+                                                  disabled={!canShare}
+                                                  onClick={async () => {
+                                                    if (!prnToShare) {
                                                       await showAlert(
-                                                        "No Target Schools",
-                                                        "Please add at least one clustered school from the dropdown before sharing.",
+                                                        "Missing PRN",
+                                                        "A valid PRN is required before sharing. Please save this personnel profile first.",
                                                       );
                                                       return;
                                                     }
+                                                    try {
+                                                      const { api } =
+                                                        await import("../services/api");
+                                                      const targetSchoolIds = (
+                                                        currentPerson.assignedSchools ||
+                                                        []
+                                                      )
+                                                        .map((item) => {
+                                                          const meta =
+                                                            resolveSchoolMeta(
+                                                              item,
+                                                            );
+                                                          if (
+                                                            meta &&
+                                                            meta.schoolId
+                                                          )
+                                                            return meta.schoolId;
+                                                          const rawStr = String(
+                                                            item || "",
+                                                          ).trim();
+                                                          const parenMatch =
+                                                            rawStr.match(
+                                                              /\((\d{5,})\)/,
+                                                            );
+                                                          if (parenMatch)
+                                                            return parenMatch[1];
+                                                          const directDigits =
+                                                            rawStr.match(
+                                                              /\b(\d{5,})\b/,
+                                                            );
+                                                          if (directDigits)
+                                                            return directDigits[1];
+                                                          return rawStr
+                                                            .replace(
+                                                              /^SCH-/i,
+                                                              "",
+                                                            )
+                                                            .trim();
+                                                        })
+                                                        .filter(Boolean);
 
-                                                    const curSchoolId = String(
-                                                      schoolInfo?.schoolId ||
-                                                        "",
-                                                    )
-                                                      .replace(/^SCH-/i, "")
-                                                      .trim();
-                                                    for (const targetId of targetSchoolIds) {
-                                                      await api.createRequest({
-                                                        requesterSchoolId:
-                                                          curSchoolId,
-                                                        targetSchoolId:
-                                                          targetId,
-                                                        requestType:
-                                                          "clustered_teacher",
-                                                        personnelId: prnToShare,
-                                                        personnelName:
-                                                          `${currentPerson.firstName || ""} ${currentPerson.lastName || ""}`.trim(),
-                                                      });
+                                                      if (
+                                                        targetSchoolIds.length ===
+                                                        0
+                                                      ) {
+                                                        await showAlert(
+                                                          "No Target Schools",
+                                                          "Please add at least one clustered school from the dropdown before sharing.",
+                                                        );
+                                                        return;
+                                                      }
+
+                                                      const curSchoolId =
+                                                        String(
+                                                          schoolInfo?.schoolId ||
+                                                            "",
+                                                        )
+                                                          .replace(/^SCH-/i, "")
+                                                          .trim();
+                                                      for (const targetId of targetSchoolIds) {
+                                                        await api.createRequest(
+                                                          {
+                                                            requesterSchoolId:
+                                                              curSchoolId,
+                                                            targetSchoolId:
+                                                              targetId,
+                                                            requestType:
+                                                              "clustered_teacher",
+                                                            personnelId:
+                                                              prnToShare,
+                                                            personnelName:
+                                                              `${currentPerson.firstName || ""} ${currentPerson.lastName || ""}`.trim(),
+                                                          },
+                                                        );
+                                                      }
+
+                                                      showToast(
+                                                        "Clustered personnel request(s) sent successfully!",
+                                                        "success",
+                                                      );
+                                                      await showAlert(
+                                                        "Clustered Request(s) Sent",
+                                                        `Clustering request for ${currentPerson.firstName || ""} ${currentPerson.lastName || ""} (${prnToShare}) has been sent to the selected satellite school(s)!\n\nOnce accepted in their Request Center, the personnel will appear in their Roster as CLUSTERED.`,
+                                                      );
+                                                    } catch (err) {
+                                                      await showAlert(
+                                                        "Share Error",
+                                                        "Failed to share personnel: " +
+                                                          err.message,
+                                                      );
                                                     }
-
-                                                    showToast(
-                                                      "Clustered personnel request(s) sent successfully!",
-                                                      "success",
-                                                    );
-                                                    await showAlert(
-                                                      "Clustered Request(s) Sent",
-                                                      `Clustering request for ${currentPerson.firstName || ""} ${currentPerson.lastName || ""} (${prnToShare}) has been sent to the selected satellite school(s)!\n\nOnce accepted in their Request Center, the personnel will appear in their Roster as CLUSTERED.`,
-                                                    );
-                                                  } catch (err) {
-                                                    await showAlert(
-                                                      "Share Error",
-                                                      "Failed to share personnel: " +
-                                                        err.message,
-                                                    );
-                                                  }
-                                                }}
-                                              >
-                                                <FiLink
-                                                  size={13}
-                                                  style={{ marginRight: "6px" }}
-                                                />
-                                                Share to Clustered Schools
-                                              </button>
-                                              {!prnToShare && (
-                                                <p
-                                                  className="field-help"
-                                                  style={{
-                                                    color: "var(--danger)",
                                                   }}
                                                 >
-                                                  Note: You must save this
-                                                  personnel profile first to
-                                                  generate a PRN before sharing.
-                                                </p>
-                                              )}
-                                            </>
+                                                  <FiLink
+                                                    size={13}
+                                                    style={{
+                                                      marginRight: "6px",
+                                                    }}
+                                                  />
+                                                  Share to Clustered Schools
+                                                </button>
+                                                {!prnToShare && (
+                                                  <p
+                                                    className="field-help"
+                                                    style={{
+                                                      color: "var(--danger)",
+                                                    }}
+                                                  >
+                                                    Note: You must save this
+                                                    personnel profile first to
+                                                    generate a PRN before
+                                                    sharing.
+                                                  </p>
+                                                )}
+                                              </>
+                                            );
+                                          })()}
+                                        </div>
+                                      )}
+                                    </>
+                                  );
+                                })()}
+                              </div>
+                            )}
+                            <div>
+                              <label>Date of First Day of Service</label>
+                              <DatePickerDropdowns
+                                value={currentPerson.firstServiceDate || ""}
+                                onChange={(val) =>
+                                  handleFieldChange("firstServiceDate", val)
+                                }
+                                maxDate={new Date()}
+                              />
+                            </div>
+                            <div>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                }}
+                              >
+                                <label style={{ margin: 0 }}>
+                                  Date of Last Promotion
+                                </label>
+                                <label
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "6px",
+                                    fontSize: "12px",
+                                    cursor: "pointer",
+                                    margin: 0,
+                                    fontWeight: "normal",
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    style={{
+                                      width: "auto",
+                                      minHeight: "auto",
+                                      margin: 0,
+                                    }}
+                                    checked={
+                                      currentPerson.lastPromotionDate ===
+                                        "N/A" ||
+                                      currentPerson.last_promotion_date ===
+                                        "N/A"
+                                    }
+                                    onChange={(e) =>
+                                      handleFieldChange(
+                                        "lastPromotionDate",
+                                        e.target.checked ? "N/A" : "",
+                                      )
+                                    }
+                                  />
+                                  N/A
+                                </label>
+                              </div>
+                              <DatePickerDropdowns
+                                value={
+                                  currentPerson.lastPromotionDate === "N/A" ||
+                                  currentPerson.last_promotion_date === "N/A"
+                                    ? ""
+                                    : currentPerson.lastPromotionDate ||
+                                      currentPerson.last_promotion_date ||
+                                      ""
+                                }
+                                onChange={(val) =>
+                                  handleFieldChange("lastPromotionDate", val)
+                                }
+                                maxDate={new Date()}
+                                minDate={
+                                  currentPerson.firstServiceDate
+                                    ? new Date(
+                                        currentPerson.firstServiceDate +
+                                          "T00:00:00",
+                                      )
+                                    : undefined
+                                }
+                                disabled={
+                                  currentPerson.lastPromotionDate === "N/A" ||
+                                  currentPerson.last_promotion_date === "N/A"
+                                }
+                              />
+                            </div>
+                            <div>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                }}
+                              >
+                                <label style={{ margin: 0 }}>
+                                  Date of First Day in Current Station
+                                </label>
+                                <label
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "6px",
+                                    fontSize: "12px",
+                                    cursor: "pointer",
+                                    margin: 0,
+                                    fontWeight: "normal",
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    style={{
+                                      width: "auto",
+                                      minHeight: "auto",
+                                      margin: 0,
+                                    }}
+                                    checked={
+                                      currentPerson.newStationDate === "N/A" ||
+                                      currentPerson.new_station_date === "N/A"
+                                    }
+                                    onChange={(e) =>
+                                      handleFieldChange(
+                                        "newStationDate",
+                                        e.target.checked ? "N/A" : "",
+                                      )
+                                    }
+                                  />
+                                  N/A
+                                </label>
+                              </div>
+                              <DatePickerDropdowns
+                                value={
+                                  currentPerson.newStationDate === "N/A" ||
+                                  currentPerson.new_station_date === "N/A"
+                                    ? ""
+                                    : currentPerson.newStationDate ||
+                                      currentPerson.new_station_date ||
+                                      ""
+                                }
+                                onChange={(val) =>
+                                  handleFieldChange("newStationDate", val)
+                                }
+                                maxDate={new Date()}
+                                minDate={
+                                  currentPerson.firstServiceDate
+                                    ? new Date(
+                                        currentPerson.firstServiceDate +
+                                          "T00:00:00",
+                                      )
+                                    : undefined
+                                }
+                                disabled={
+                                  currentPerson.newStationDate === "N/A" ||
+                                  currentPerson.new_station_date === "N/A"
+                                }
+                              />
+                            </div>
+                            <div>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                }}
+                              >
+                                <label style={{ margin: 0 }}>
+                                  Date of Last Lateral Movement
+                                </label>
+                                <label
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "6px",
+                                    fontSize: "12px",
+                                    cursor: "pointer",
+                                    margin: 0,
+                                    fontWeight: "normal",
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    style={{
+                                      width: "auto",
+                                      minHeight: "auto",
+                                      margin: 0,
+                                    }}
+                                    checked={
+                                      currentPerson.lastLateralMovementDate ===
+                                        "N/A" ||
+                                      currentPerson.last_lateral_movement_date ===
+                                        "N/A"
+                                    }
+                                    onChange={(e) =>
+                                      handleFieldChange(
+                                        "lastLateralMovementDate",
+                                        e.target.checked ? "N/A" : "",
+                                      )
+                                    }
+                                  />
+                                  N/A
+                                </label>
+                              </div>
+                              <DatePickerDropdowns
+                                value={
+                                  currentPerson.lastLateralMovementDate ===
+                                    "N/A" ||
+                                  currentPerson.last_lateral_movement_date ===
+                                    "N/A"
+                                    ? ""
+                                    : currentPerson.lastLateralMovementDate ||
+                                      currentPerson.last_lateral_movement_date ||
+                                      ""
+                                }
+                                onChange={(val) =>
+                                  handleFieldChange(
+                                    "lastLateralMovementDate",
+                                    val,
+                                  )
+                                }
+                                maxDate={new Date()}
+                                minDate={
+                                  currentPerson.firstServiceDate
+                                    ? new Date(
+                                        currentPerson.firstServiceDate +
+                                          "T00:00:00",
+                                      )
+                                    : undefined
+                                }
+                                disabled={
+                                  currentPerson.lastLateralMovementDate ===
+                                    "N/A" ||
+                                  currentPerson.last_lateral_movement_date ===
+                                    "N/A"
+                                }
+                              />
+                            </div>
+
+                            <div
+                              style={{
+                                gridColumn: "1 / -1",
+                                marginTop: "10px",
+                              }}
+                            >
+                              {(() => {
+                                const computed = computeStepIncrement(
+                                  currentPerson.firstServiceDate,
+                                  currentPerson.lastPromotionDate,
+                                );
+                                const isConfirmed = Boolean(
+                                  currentPerson.stepIncrementConfirmed,
+                                );
+                                const currentStep =
+                                  currentPerson.stepIncrement ||
+                                  computed.step ||
+                                  1;
+
+                                return (
+                                  <>
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        alignItems: "center",
+                                        marginBottom: "4px",
+                                      }}
+                                    >
+                                      <label style={{ margin: 0 }}>
+                                        Salary Step Increment *
+                                      </label>
+                                      {isConfirmed ? (
+                                        <span
+                                          style={{
+                                            fontSize: "11px",
+                                            color: "#16A34A",
+                                            fontWeight: 800,
+                                            background: "#DCFCE7",
+                                            padding: "2px 8px",
+                                            borderRadius: "4px",
+                                          }}
+                                        >
+                                          ✓ Confirmed: Step {currentStep}
+                                        </span>
+                                      ) : (
+                                        <span
+                                          style={{
+                                            fontSize: "11px",
+                                            color: "#0369A1",
+                                            fontWeight: 800,
+                                            background: "#E0F2FE",
+                                            padding: "2px 8px",
+                                            borderRadius: "4px",
+                                          }}
+                                        >
+                                          ✨ Suggested: Step {computed.step}{" "}
+                                          (Click to confirm)
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        gap: "0",
+                                        border: "1.5px solid var(--line)",
+                                        borderRadius: "12px",
+                                        overflow: "hidden",
+                                        marginTop: "4px",
+                                      }}
+                                    >
+                                      {[1, 2, 3, 4, 5, 6, 7, 8].map(
+                                        (step, idx) => {
+                                          const isStepConfirmed =
+                                            isConfirmed && currentStep === step;
+                                          const isStepSuggested =
+                                            !isConfirmed &&
+                                            computed.step === step;
+
+                                          let bg = "white";
+                                          let color = "var(--navy)";
+                                          let borderLeft =
+                                            idx > 0
+                                              ? "1.5px solid var(--line)"
+                                              : "none";
+
+                                          if (isStepConfirmed) {
+                                            bg = "var(--blue, #0284c7)";
+                                            color = "white";
+                                          } else if (isStepSuggested) {
+                                            bg = "#E0F2FE";
+                                            color = "#0369A1";
+                                          }
+
+                                          return (
+                                            <button
+                                              key={step}
+                                              type="button"
+                                              onClick={() =>
+                                                handleMultipleFieldsChange({
+                                                  stepIncrement: step,
+                                                  stepIncrementConfirmed: true,
+                                                })
+                                              }
+                                              style={{
+                                                flex: 1,
+                                                padding: "10px 6px",
+                                                border: "none",
+                                                borderLeft,
+                                                background: bg,
+                                                color,
+                                                fontWeight: isStepConfirmed
+                                                  ? "800"
+                                                  : isStepSuggested
+                                                    ? "800"
+                                                    : "600",
+                                                fontSize: "13px",
+                                                cursor: "pointer",
+                                                transition: "all 0.15s ease",
+                                                lineHeight: 1.3,
+                                                display: "flex",
+                                                flexDirection: "column",
+                                                alignItems: "center",
+                                                gap: "2px",
+                                              }}
+                                              onMouseEnter={(e) => {
+                                                if (
+                                                  !isStepConfirmed &&
+                                                  !isStepSuggested
+                                                )
+                                                  e.currentTarget.style.background =
+                                                    "#f0f9ff";
+                                              }}
+                                              onMouseLeave={(e) => {
+                                                if (
+                                                  !isStepConfirmed &&
+                                                  !isStepSuggested
+                                                )
+                                                  e.currentTarget.style.background =
+                                                    "white";
+                                              }}
+                                              title={
+                                                isStepSuggested
+                                                  ? `Click to confirm Step ${step}`
+                                                  : `Select Step ${step}`
+                                              }
+                                            >
+                                              <span
+                                                style={{
+                                                  fontSize: "15px",
+                                                  fontWeight: "800",
+                                                }}
+                                              >
+                                                {step}
+                                              </span>
+                                              <span
+                                                style={{
+                                                  fontSize: "9px",
+                                                  opacity: isStepConfirmed
+                                                    ? 0.85
+                                                    : 0.6,
+                                                  fontWeight: "700",
+                                                  letterSpacing: "0.03em",
+                                                }}
+                                              >
+                                                STEP
+                                              </span>
+                                            </button>
                                           );
-                                        })()}
-                                      </div>
+                                        },
+                                      )}
+                                    </div>
+                                    {!isConfirmed ? (
+                                      <p
+                                        className="field-help"
+                                        style={{
+                                          color: "#0369A1",
+                                          fontWeight: 600,
+                                        }}
+                                      >
+                                        ✨ <strong>Step {computed.step}</strong>{" "}
+                                        suggested —{" "}
+                                        <em>
+                                          Click Step {computed.step} or your
+                                          actual step above to confirm.
+                                        </em>
+                                      </p>
+                                    ) : (
+                                      <p
+                                        className="field-help"
+                                        style={{
+                                          color: "#16A34A",
+                                          fontWeight: 600,
+                                        }}
+                                      >
+                                        ✓ <strong>Step {currentStep}</strong>{" "}
+                                        confirmed by personnel.
+                                      </p>
                                     )}
                                   </>
                                 );
                               })()}
                             </div>
-                          )}
-                          <div>
-                            <label>Date of First Day of Service</label>
-                            <DatePickerDropdowns
-                              value={currentPerson.firstServiceDate || ""}
-                              onChange={(val) =>
-                                handleFieldChange("firstServiceDate", val)
-                              }
-                              maxDate={new Date()}
-                            />
-                          </div>
-                          <div>
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                              }}
-                            >
-                              <label style={{ margin: 0 }}>
-                                Date of Last Promotion
-                              </label>
-                              <label
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: "6px",
-                                  fontSize: "12px",
-                                  cursor: "pointer",
-                                  margin: 0,
-                                  fontWeight: "normal",
-                                }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  style={{
-                                    width: "auto",
-                                    minHeight: "auto",
-                                    margin: 0,
-                                  }}
-                                  checked={
-                                    currentPerson.lastPromotionDate === "N/A" ||
-                                    currentPerson.last_promotion_date === "N/A"
-                                  }
-                                  onChange={(e) =>
-                                    handleFieldChange(
-                                      "lastPromotionDate",
-                                      e.target.checked ? "N/A" : "",
-                                    )
-                                  }
-                                />
-                                N/A
-                              </label>
+                          </>
+                        )}
+
+                        {activeTab === "education" && (
+                          <>
+                            <div className="profile-subsection">
+                              Educational Attainment
                             </div>
-                            <DatePickerDropdowns
-                              value={
-                                currentPerson.lastPromotionDate === "N/A" ||
-                                currentPerson.last_promotion_date === "N/A"
-                                  ? ""
-                                  : currentPerson.lastPromotionDate ||
-                                    currentPerson.last_promotion_date ||
-                                    ""
-                              }
-                              onChange={(val) =>
-                                handleFieldChange("lastPromotionDate", val)
-                              }
-                              maxDate={new Date()}
-                              minDate={
-                                currentPerson.firstServiceDate
-                                  ? new Date(
-                                      currentPerson.firstServiceDate +
-                                        "T00:00:00",
-                                    )
-                                  : undefined
-                              }
-                              disabled={
-                                currentPerson.lastPromotionDate === "N/A" ||
-                                currentPerson.last_promotion_date === "N/A"
-                              }
-                            />
-                          </div>
-                          <div>
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                              }}
-                            >
-                              <label style={{ margin: 0 }}>
-                                Date of First Day in Current Station
-                              </label>
-                              <label
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: "6px",
-                                  fontSize: "12px",
-                                  cursor: "pointer",
-                                  margin: 0,
-                                  fontWeight: "normal",
-                                }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  style={{
-                                    width: "auto",
-                                    minHeight: "auto",
-                                    margin: 0,
-                                  }}
-                                  checked={
-                                    currentPerson.newStationDate === "N/A" ||
-                                    currentPerson.new_station_date === "N/A"
-                                  }
-                                  onChange={(e) =>
-                                    handleFieldChange(
-                                      "newStationDate",
-                                      e.target.checked ? "N/A" : "",
-                                    )
-                                  }
-                                />
-                                N/A
-                              </label>
-                            </div>
-                            <DatePickerDropdowns
-                              value={
-                                currentPerson.newStationDate === "N/A" ||
-                                currentPerson.new_station_date === "N/A"
-                                  ? ""
-                                  : currentPerson.newStationDate ||
-                                    currentPerson.new_station_date ||
-                                    ""
-                              }
-                              onChange={(val) =>
-                                handleFieldChange("newStationDate", val)
-                              }
-                              maxDate={new Date()}
-                              minDate={
-                                currentPerson.firstServiceDate
-                                  ? new Date(
-                                      currentPerson.firstServiceDate +
-                                        "T00:00:00",
-                                    )
-                                  : undefined
-                              }
-                              disabled={
-                                currentPerson.newStationDate === "N/A" ||
-                                currentPerson.new_station_date === "N/A"
-                              }
-                            />
-                          </div>
-                          <div>
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                              }}
-                            >
-                              <label style={{ margin: 0 }}>
-                                Date of Last Lateral Movement
-                              </label>
-                              <label
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: "6px",
-                                  fontSize: "12px",
-                                  cursor: "pointer",
-                                  margin: 0,
-                                  fontWeight: "normal",
-                                }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  style={{
-                                    width: "auto",
-                                    minHeight: "auto",
-                                    margin: 0,
-                                  }}
-                                  checked={
-                                    currentPerson.lastLateralMovementDate ===
-                                      "N/A" ||
-                                    currentPerson.last_lateral_movement_date ===
-                                      "N/A"
-                                  }
-                                  onChange={(e) =>
-                                    handleFieldChange(
-                                      "lastLateralMovementDate",
-                                      e.target.checked ? "N/A" : "",
-                                    )
-                                  }
-                                />
-                                N/A
-                              </label>
-                            </div>
-                            <DatePickerDropdowns
-                              value={
-                                currentPerson.lastLateralMovementDate ===
-                                  "N/A" ||
-                                currentPerson.last_lateral_movement_date ===
-                                  "N/A"
-                                  ? ""
-                                  : currentPerson.lastLateralMovementDate ||
-                                    currentPerson.last_lateral_movement_date ||
-                                    ""
-                              }
-                              onChange={(val) =>
-                                handleFieldChange(
-                                  "lastLateralMovementDate",
-                                  val,
-                                )
-                              }
-                              maxDate={new Date()}
-                              minDate={
-                                currentPerson.firstServiceDate
-                                  ? new Date(
-                                      currentPerson.firstServiceDate +
-                                        "T00:00:00",
-                                    )
-                                  : undefined
-                              }
-                              disabled={
-                                currentPerson.lastLateralMovementDate ===
-                                  "N/A" ||
-                                currentPerson.last_lateral_movement_date ===
-                                  "N/A"
-                              }
-                            />
-                          </div>
-
-                          <div
-                            style={{ gridColumn: "1 / -1", marginTop: "10px" }}
-                          >
-                            {(() => {
-                              const computed = computeStepIncrement(
-                                currentPerson.firstServiceDate,
-                                currentPerson.lastPromotionDate,
-                              );
-                              const isConfirmed = Boolean(
-                                currentPerson.stepIncrementConfirmed,
-                              );
-                              const currentStep =
-                                currentPerson.stepIncrement ||
-                                computed.step ||
-                                1;
-
-                              return (
-                                <>
-                                  <div
-                                    style={{
-                                      display: "flex",
-                                      justifyContent: "space-between",
-                                      alignItems: "center",
-                                      marginBottom: "4px",
-                                    }}
-                                  >
-                                    <label style={{ margin: 0 }}>
-                                      Salary Step Increment *
-                                    </label>
-                                    {isConfirmed ? (
-                                      <span
-                                        style={{
-                                          fontSize: "11px",
-                                          color: "#16A34A",
-                                          fontWeight: 800,
-                                          background: "#DCFCE7",
-                                          padding: "2px 8px",
-                                          borderRadius: "4px",
-                                        }}
-                                      >
-                                        ✓ Confirmed: Step {currentStep}
-                                      </span>
-                                    ) : (
-                                      <span
-                                        style={{
-                                          fontSize: "11px",
-                                          color: "#0369A1",
-                                          fontWeight: 800,
-                                          background: "#E0F2FE",
-                                          padding: "2px 8px",
-                                          borderRadius: "4px",
-                                        }}
-                                      >
-                                        ✨ Suggested: Step {computed.step}{" "}
-                                        (Click to confirm)
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  <div
-                                    style={{
-                                      display: "flex",
-                                      gap: "0",
-                                      border: "1.5px solid var(--line)",
-                                      borderRadius: "12px",
-                                      overflow: "hidden",
-                                      marginTop: "4px",
-                                    }}
-                                  >
-                                    {[1, 2, 3, 4, 5, 6, 7, 8].map(
-                                      (step, idx) => {
-                                        const isStepConfirmed =
-                                          isConfirmed && currentStep === step;
-                                        const isStepSuggested =
-                                          !isConfirmed &&
-                                          computed.step === step;
-
-                                        let bg = "white";
-                                        let color = "var(--navy)";
-                                        let borderLeft =
-                                          idx > 0
-                                            ? "1.5px solid var(--line)"
-                                            : "none";
-
-                                        if (isStepConfirmed) {
-                                          bg = "var(--blue, #0284c7)";
-                                          color = "white";
-                                        } else if (isStepSuggested) {
-                                          bg = "#E0F2FE";
-                                          color = "#0369A1";
-                                        }
-
-                                        return (
-                                          <button
-                                            key={step}
-                                            type="button"
-                                            onClick={() =>
-                                              handleMultipleFieldsChange({
-                                                stepIncrement: step,
-                                                stepIncrementConfirmed: true,
-                                              })
-                                            }
-                                            style={{
-                                              flex: 1,
-                                              padding: "10px 6px",
-                                              border: "none",
-                                              borderLeft,
-                                              background: bg,
-                                              color,
-                                              fontWeight: isStepConfirmed
-                                                ? "800"
-                                                : isStepSuggested
-                                                  ? "800"
-                                                  : "600",
-                                              fontSize: "13px",
-                                              cursor: "pointer",
-                                              transition: "all 0.15s ease",
-                                              lineHeight: 1.3,
-                                              display: "flex",
-                                              flexDirection: "column",
-                                              alignItems: "center",
-                                              gap: "2px",
-                                            }}
-                                            onMouseEnter={(e) => {
-                                              if (
-                                                !isStepConfirmed &&
-                                                !isStepSuggested
-                                              )
-                                                e.currentTarget.style.background =
-                                                  "#f0f9ff";
-                                            }}
-                                            onMouseLeave={(e) => {
-                                              if (
-                                                !isStepConfirmed &&
-                                                !isStepSuggested
-                                              )
-                                                e.currentTarget.style.background =
-                                                  "white";
-                                            }}
-                                            title={
-                                              isStepSuggested
-                                                ? `Click to confirm Step ${step}`
-                                                : `Select Step ${step}`
-                                            }
-                                          >
-                                            <span
-                                              style={{
-                                                fontSize: "15px",
-                                                fontWeight: "800",
-                                              }}
-                                            >
-                                              {step}
-                                            </span>
-                                            <span
-                                              style={{
-                                                fontSize: "9px",
-                                                opacity: isStepConfirmed
-                                                  ? 0.85
-                                                  : 0.6,
-                                                fontWeight: "700",
-                                                letterSpacing: "0.03em",
-                                              }}
-                                            >
-                                              STEP
-                                            </span>
-                                          </button>
-                                        );
-                                      },
-                                    )}
-                                  </div>
-                                  {!isConfirmed ? (
-                                    <p
-                                      className="field-help"
-                                      style={{
-                                        color: "#0369A1",
-                                        fontWeight: 600,
-                                      }}
-                                    >
-                                      ✨ <strong>Step {computed.step}</strong>{" "}
-                                      suggested —{" "}
-                                      <em>
-                                        Click Step {computed.step} or your
-                                        actual step above to confirm.
-                                      </em>
-                                    </p>
-                                  ) : (
-                                    <p
-                                      className="field-help"
-                                      style={{
-                                        color: "#16A34A",
-                                        fontWeight: 600,
-                                      }}
-                                    >
-                                      ✓ <strong>Step {currentStep}</strong>{" "}
-                                      confirmed by personnel.
-                                    </p>
-                                  )}
-                                </>
-                              );
-                            })()}
-                          </div>
-                        </>
-                      )}
-
-                      {activeTab === "education" && (
-                        <>
-                          <div className="profile-subsection">
-                            Educational Attainment
-                          </div>
-                          <div style={{ gridColumn: "1 / -1" }}>
-                            <label>
-                              Highest Educational Attainment{" "}
-                              <span style={{ color: "#EF4444" }}>*</span>
-                            </label>
-                            {(() => {
-                              const isTeachingOrRelated =
-                                [
-                                  "teaching",
-                                  "teaching-related",
-                                  "TEACHING",
-                                  "TEACHING-RELATED",
-                                ].includes(currentPerson.type) ||
-                                ["TEACHING", "TEACHING-RELATED"].includes(
-                                  currentPerson.positionCategory,
-                                );
-                              const options = isTeachingOrRelated
-                                ? HIGHEST_EDUCATIONAL_ATTAINMENT_TEACHING_OPTIONS
-                                : HIGHEST_EDUCATIONAL_ATTAINMENT_NON_TEACHING_OPTIONS;
-
-                              return (
-                                <SearchableDropdown
-                                  options={options}
-                                  value={
-                                    currentPerson.highestEducationalAttainment ||
-                                    (() => {
-                                      if (
-                                        currentPerson.postGraduateDegree &&
-                                        !["NONE", "N/A", ""].includes(
-                                          currentPerson.postGraduateDegree,
-                                        )
-                                      ) {
-                                        return String(
-                                          currentPerson.postGraduateDegree,
-                                        )
-                                          .toUpperCase()
-                                          .includes("DOCTOR")
-                                          ? "DOCTORATE DEGREE (GRADUATED)"
-                                          : "MASTER'S DEGREE (GRADUATED)";
-                                      }
-                                      const deg = String(
-                                        currentPerson.collegeDegree || "",
-                                      ).toUpperCase();
-                                      if (deg.includes("ELEMENTARY"))
-                                        return "ELEMENTARY GRADUATE";
-                                      if (deg.includes("HIGH SCHOOL"))
-                                        return "HIGH SCHOOL GRADUATE";
-                                      if (
-                                        deg.includes("SENIOR HIGH") ||
-                                        deg.includes("SHS")
-                                      )
-                                        return "SENIOR HIGH SCHOOL GRADUATE";
-                                      if (
-                                        deg.includes("VOCATIONAL") ||
-                                        deg.includes("TECH-VOC")
-                                      )
-                                        return "VOCATIONAL / TECH-VOC COURSE";
-                                      if (deg.includes("COLLEGE UNDER"))
-                                        return "COLLEGE UNDERGRADUATE";
-                                      if (
-                                        deg &&
-                                        deg !== "NONE" &&
-                                        deg !== "N/A"
-                                      )
-                                        return "COLLEGE GRADUATE / BACCALAUREATE";
-                                      return isTeachingOrRelated
-                                        ? "COLLEGE GRADUATE / BACCALAUREATE"
-                                        : "N/A";
-                                    })()
-                                  }
-                                  onChange={(val) => {
-                                    const updates = {
-                                      highestEducationalAttainment: val,
-                                    };
-                                    const isElemOrHSOrNA = [
-                                      "ELEMENTARY GRADUATE",
-                                      "HIGH SCHOOL GRADUATE",
-                                      "N/A",
-                                    ].includes(val);
-                                    const isSeniorHS =
-                                      val === "SENIOR HIGH SCHOOL GRADUATE";
-                                    const isVocational =
-                                      val === "VOCATIONAL / TECH-VOC COURSE";
-                                    const isCollegeOnly = [
-                                      "COLLEGE GRADUATE / BACCALAUREATE",
-                                      "COLLEGE UNDERGRADUATE",
-                                    ].includes(val);
-
-                                    if (isElemOrHSOrNA) {
-                                      updates.shsTrack = "";
-                                      updates.vocationalCourse = "";
-                                      updates.vocationalLevel = "";
-                                      updates.collegeDegree = "";
-                                      updates.major = "";
-                                      updates.minor = "";
-                                      updates.postGraduateDegree = "";
-                                      updates.postGraduateDiscipline = "";
-                                    } else if (isSeniorHS) {
-                                      updates.vocationalCourse = "";
-                                      updates.vocationalLevel = "";
-                                      updates.collegeDegree = "";
-                                      updates.major = "";
-                                      updates.minor = "";
-                                      updates.postGraduateDegree = "";
-                                      updates.postGraduateDiscipline = "";
-                                    } else if (isVocational) {
-                                      updates.shsTrack = "";
-                                      updates.collegeDegree = "";
-                                      updates.major = "";
-                                      updates.minor = "";
-                                      updates.postGraduateDegree = "";
-                                      updates.postGraduateDiscipline = "";
-                                    } else if (isCollegeOnly) {
-                                      updates.shsTrack = "";
-                                      updates.vocationalCourse = "";
-                                      updates.vocationalLevel = "";
-                                      updates.postGraduateDegree = "";
-                                      updates.postGraduateDiscipline = "";
-                                    } else if (
-                                      val === "MASTER'S DEGREE (GRADUATED)" ||
-                                      val === "MASTER'S DEGREE (WITH UNITS)"
-                                    ) {
-                                      updates.shsTrack = "";
-                                      updates.vocationalCourse = "";
-                                      updates.vocationalLevel = "";
-                                      updates.postGraduateDegree =
-                                        "MASTERS DEGREE";
-                                    } else if (
-                                      val === "DOCTORATE DEGREE (GRADUATED)" ||
-                                      val === "DOCTORATE DEGREE (WITH UNITS)"
-                                    ) {
-                                      updates.shsTrack = "";
-                                      updates.vocationalCourse = "";
-                                      updates.vocationalLevel = "";
-                                      updates.postGraduateDegree =
-                                        "DOCTORATE DEGREE";
-                                    } else {
-                                      updates.shsTrack = "";
-                                      updates.vocationalCourse = "";
-                                      updates.vocationalLevel = "";
-                                    }
-                                    handleMultipleFieldsChange(updates);
-                                  }}
-                                  placeholder="SELECT HIGHEST EDUCATIONAL ATTAINMENT..."
-                                  required
-                                />
-                              );
-                            })()}
-                          </div>
-
-                          {/* SHS Track if Senior High School */}
-                          {currentPerson.highestEducationalAttainment ===
-                            "SENIOR HIGH SCHOOL GRADUATE" && (
                             <div style={{ gridColumn: "1 / -1" }}>
                               <label>
-                                Senior High School Track{" "}
+                                Highest Educational Attainment{" "}
                                 <span style={{ color: "#EF4444" }}>*</span>
                               </label>
-                              <SearchableDropdown
-                                options={SHS_TRACK_OPTIONS}
-                                value={currentPerson.shsTrack || ""}
-                                onChange={(val) =>
-                                  handleFieldChange("shsTrack", val)
-                                }
-                                placeholder="SELECT SHS TRACK..."
-                                required
-                              />
+                              {(() => {
+                                const isTeachingOrRelated =
+                                  [
+                                    "teaching",
+                                    "teaching-related",
+                                    "TEACHING",
+                                    "TEACHING-RELATED",
+                                  ].includes(currentPerson.type) ||
+                                  ["TEACHING", "TEACHING-RELATED"].includes(
+                                    currentPerson.positionCategory,
+                                  );
+                                const options = isTeachingOrRelated
+                                  ? HIGHEST_EDUCATIONAL_ATTAINMENT_TEACHING_OPTIONS
+                                  : HIGHEST_EDUCATIONAL_ATTAINMENT_NON_TEACHING_OPTIONS;
+
+                                return (
+                                  <SearchableDropdown
+                                    options={options}
+                                    value={
+                                      currentPerson.highestEducationalAttainment ||
+                                      (() => {
+                                        if (
+                                          currentPerson.postGraduateDegree &&
+                                          !["NONE", "N/A", ""].includes(
+                                            currentPerson.postGraduateDegree,
+                                          )
+                                        ) {
+                                          return String(
+                                            currentPerson.postGraduateDegree,
+                                          )
+                                            .toUpperCase()
+                                            .includes("DOCTOR")
+                                            ? "DOCTORATE DEGREE (GRADUATED)"
+                                            : "MASTER'S DEGREE (GRADUATED)";
+                                        }
+                                        const deg = String(
+                                          currentPerson.collegeDegree || "",
+                                        ).toUpperCase();
+                                        if (deg.includes("ELEMENTARY"))
+                                          return "ELEMENTARY GRADUATE";
+                                        if (deg.includes("HIGH SCHOOL"))
+                                          return "HIGH SCHOOL GRADUATE";
+                                        if (
+                                          deg.includes("SENIOR HIGH") ||
+                                          deg.includes("SHS")
+                                        )
+                                          return "SENIOR HIGH SCHOOL GRADUATE";
+                                        if (
+                                          deg.includes("VOCATIONAL") ||
+                                          deg.includes("TECH-VOC")
+                                        )
+                                          return "VOCATIONAL / TECH-VOC COURSE";
+                                        if (deg.includes("COLLEGE UNDER"))
+                                          return "COLLEGE UNDERGRADUATE";
+                                        if (
+                                          deg &&
+                                          deg !== "NONE" &&
+                                          deg !== "N/A"
+                                        )
+                                          return "COLLEGE GRADUATE / BACCALAUREATE";
+                                        return isTeachingOrRelated
+                                          ? "COLLEGE GRADUATE / BACCALAUREATE"
+                                          : "N/A";
+                                      })()
+                                    }
+                                    onChange={(val) => {
+                                      const updates = {
+                                        highestEducationalAttainment: val,
+                                      };
+                                      const isElemOrHSOrNA = [
+                                        "ELEMENTARY GRADUATE",
+                                        "HIGH SCHOOL GRADUATE",
+                                        "N/A",
+                                      ].includes(val);
+                                      const isSeniorHS =
+                                        val === "SENIOR HIGH SCHOOL GRADUATE";
+                                      const isVocational =
+                                        val === "VOCATIONAL / TECH-VOC COURSE";
+                                      const isCollegeOnly = [
+                                        "COLLEGE GRADUATE / BACCALAUREATE",
+                                        "COLLEGE UNDERGRADUATE",
+                                      ].includes(val);
+
+                                      if (isElemOrHSOrNA) {
+                                        updates.shsTrack = "";
+                                        updates.vocationalCourse = "";
+                                        updates.vocationalLevel = "";
+                                        updates.collegeDegree = "";
+                                        updates.major = "";
+                                        updates.minor = "";
+                                        updates.postGraduateDegree = "";
+                                        updates.postGraduateDiscipline = "";
+                                      } else if (isSeniorHS) {
+                                        updates.vocationalCourse = "";
+                                        updates.vocationalLevel = "";
+                                        updates.collegeDegree = "";
+                                        updates.major = "";
+                                        updates.minor = "";
+                                        updates.postGraduateDegree = "";
+                                        updates.postGraduateDiscipline = "";
+                                      } else if (isVocational) {
+                                        updates.shsTrack = "";
+                                        updates.collegeDegree = "";
+                                        updates.major = "";
+                                        updates.minor = "";
+                                        updates.postGraduateDegree = "";
+                                        updates.postGraduateDiscipline = "";
+                                      } else if (isCollegeOnly) {
+                                        updates.shsTrack = "";
+                                        updates.vocationalCourse = "";
+                                        updates.vocationalLevel = "";
+                                        updates.postGraduateDegree = "";
+                                        updates.postGraduateDiscipline = "";
+                                      } else if (
+                                        val === "MASTER'S DEGREE (GRADUATED)" ||
+                                        val === "MASTER'S DEGREE (WITH UNITS)"
+                                      ) {
+                                        updates.shsTrack = "";
+                                        updates.vocationalCourse = "";
+                                        updates.vocationalLevel = "";
+                                        updates.postGraduateDegree =
+                                          "MASTERS DEGREE";
+                                      } else if (
+                                        val ===
+                                          "DOCTORATE DEGREE (GRADUATED)" ||
+                                        val === "DOCTORATE DEGREE (WITH UNITS)"
+                                      ) {
+                                        updates.shsTrack = "";
+                                        updates.vocationalCourse = "";
+                                        updates.vocationalLevel = "";
+                                        updates.postGraduateDegree =
+                                          "DOCTORATE DEGREE";
+                                      } else {
+                                        updates.shsTrack = "";
+                                        updates.vocationalCourse = "";
+                                        updates.vocationalLevel = "";
+                                      }
+                                      handleMultipleFieldsChange(updates);
+                                    }}
+                                    placeholder="SELECT HIGHEST EDUCATIONAL ATTAINMENT..."
+                                    required
+                                  />
+                                );
+                              })()}
                             </div>
-                          )}
 
-                          {/* Vocational / Tech-Voc Course & NC Level */}
-                          {currentPerson.highestEducationalAttainment ===
-                            "VOCATIONAL / TECH-VOC COURSE" && (
-                            <>
-                              <div>
+                            {/* SHS Track if Senior High School */}
+                            {currentPerson.highestEducationalAttainment ===
+                              "SENIOR HIGH SCHOOL GRADUATE" && (
+                              <div style={{ gridColumn: "1 / -1" }}>
                                 <label>
-                                  Vocational / TESDA Course{" "}
+                                  Senior High School Track{" "}
                                   <span style={{ color: "#EF4444" }}>*</span>
                                 </label>
                                 <SearchableDropdown
-                                  options={
-                                    TESDA_COURSES ||
-                                    Object.keys(TESDA_COURSE_TO_LEVELS_MAP)
-                                  }
-                                  value={currentPerson.vocationalCourse || ""}
-                                  onChange={(val) => {
-                                    const availableLevels =
-                                      TESDA_COURSE_TO_LEVELS_MAP[val] || [];
-                                    const nextLevel =
-                                      availableLevels.length === 1
-                                        ? availableLevels[0]
-                                        : availableLevels.includes(
-                                              currentPerson.vocationalLevel,
-                                            )
-                                          ? currentPerson.vocationalLevel
-                                          : "";
-                                    handleMultipleFieldsChange({
-                                      vocationalCourse: val,
-                                      vocationalLevel: nextLevel,
-                                    });
-                                  }}
-                                  placeholder="SELECT TESDA / VOCATIONAL COURSE..."
-                                  required
-                                />
-                              </div>
-
-                              <div>
-                                <label>
-                                  NC Level / Qualification Level{" "}
-                                  <span style={{ color: "#EF4444" }}>*</span>
-                                </label>
-                                <SearchableDropdown
-                                  options={
-                                    currentPerson.vocationalCourse &&
-                                    TESDA_COURSE_TO_LEVELS_MAP[
-                                      currentPerson.vocationalCourse
-                                    ]
-                                      ? TESDA_COURSE_TO_LEVELS_MAP[
-                                          currentPerson.vocationalCourse
-                                        ]
-                                      : TESDA_NC_LEVEL_OPTIONS
-                                  }
-                                  value={currentPerson.vocationalLevel || ""}
+                                  options={SHS_TRACK_OPTIONS}
+                                  value={currentPerson.shsTrack || ""}
                                   onChange={(val) =>
-                                    handleFieldChange("vocationalLevel", val)
+                                    handleFieldChange("shsTrack", val)
                                   }
-                                  placeholder={
-                                    currentPerson.vocationalCourse
-                                      ? "SELECT NC LEVEL..."
-                                      : "Select Vocational Course first..."
-                                  }
+                                  placeholder="SELECT SHS TRACK..."
                                   required
                                 />
                               </div>
-                            </>
-                          )}
+                            )}
 
-                          {/* College Degree(s) Section if College, Master's, or Doctorate */}
-                          {([
-                            "COLLEGE GRADUATE / BACCALAUREATE",
-                            "COLLEGE UNDERGRADUATE",
-                            "MASTER'S DEGREE",
-                            "DOCTORATE DEGREE",
-                            "MASTER'S DEGREE (WITH UNITS)",
-                            "MASTER'S DEGREE (GRADUATED)",
-                            "DOCTORATE DEGREE (WITH UNITS)",
-                            "DOCTORATE DEGREE (GRADUATED)",
-                          ].includes(
-                            currentPerson.highestEducationalAttainment ||
-                              (currentPerson.collegeDegree
-                                ? "COLLEGE GRADUATE / BACCALAUREATE"
-                                : ""),
-                          ) ||
-                            String(
-                              currentPerson.highestEducationalAttainment || "",
-                            ).includes("MASTER") ||
-                            String(
-                              currentPerson.highestEducationalAttainment || "",
-                            ).includes("DOCTOR")) &&
-                            (() => {
-                              const collegeList =
-                                getEffectiveCollegeDegrees(currentPerson);
-                              const effectiveList =
-                                collegeList.length > 0
-                                  ? collegeList
-                                  : [
+                            {/* Vocational / Tech-Voc Course & NC Level */}
+                            {currentPerson.highestEducationalAttainment ===
+                              "VOCATIONAL / TECH-VOC COURSE" && (
+                              <>
+                                <div>
+                                  <label>
+                                    Vocational / TESDA Course{" "}
+                                    <span style={{ color: "#EF4444" }}>*</span>
+                                  </label>
+                                  <SearchableDropdown
+                                    options={
+                                      TESDA_COURSES ||
+                                      Object.keys(TESDA_COURSE_TO_LEVELS_MAP)
+                                    }
+                                    value={currentPerson.vocationalCourse || ""}
+                                    onChange={(val) => {
+                                      const availableLevels =
+                                        TESDA_COURSE_TO_LEVELS_MAP[val] || [];
+                                      const nextLevel =
+                                        availableLevels.length === 1
+                                          ? availableLevels[0]
+                                          : availableLevels.includes(
+                                                currentPerson.vocationalLevel,
+                                              )
+                                            ? currentPerson.vocationalLevel
+                                            : "";
+                                      handleMultipleFieldsChange({
+                                        vocationalCourse: val,
+                                        vocationalLevel: nextLevel,
+                                      });
+                                    }}
+                                    placeholder="SELECT TESDA / VOCATIONAL COURSE..."
+                                    required
+                                  />
+                                </div>
+
+                                <div>
+                                  <label>
+                                    NC Level / Qualification Level{" "}
+                                    <span style={{ color: "#EF4444" }}>*</span>
+                                  </label>
+                                  <SearchableDropdown
+                                    options={
+                                      currentPerson.vocationalCourse &&
+                                      TESDA_COURSE_TO_LEVELS_MAP[
+                                        currentPerson.vocationalCourse
+                                      ]
+                                        ? TESDA_COURSE_TO_LEVELS_MAP[
+                                            currentPerson.vocationalCourse
+                                          ]
+                                        : TESDA_NC_LEVEL_OPTIONS
+                                    }
+                                    value={currentPerson.vocationalLevel || ""}
+                                    onChange={(val) =>
+                                      handleFieldChange("vocationalLevel", val)
+                                    }
+                                    placeholder={
+                                      currentPerson.vocationalCourse
+                                        ? "SELECT NC LEVEL..."
+                                        : "Select Vocational Course first..."
+                                    }
+                                    required
+                                  />
+                                </div>
+                              </>
+                            )}
+
+                            {/* College Degree(s) Section if College, Master's, or Doctorate */}
+                            {([
+                              "COLLEGE GRADUATE / BACCALAUREATE",
+                              "COLLEGE UNDERGRADUATE",
+                              "MASTER'S DEGREE",
+                              "DOCTORATE DEGREE",
+                              "MASTER'S DEGREE (WITH UNITS)",
+                              "MASTER'S DEGREE (GRADUATED)",
+                              "DOCTORATE DEGREE (WITH UNITS)",
+                              "DOCTORATE DEGREE (GRADUATED)",
+                            ].includes(
+                              currentPerson.highestEducationalAttainment ||
+                                (currentPerson.collegeDegree
+                                  ? "COLLEGE GRADUATE / BACCALAUREATE"
+                                  : ""),
+                            ) ||
+                              String(
+                                currentPerson.highestEducationalAttainment ||
+                                  "",
+                              ).includes("MASTER") ||
+                              String(
+                                currentPerson.highestEducationalAttainment ||
+                                  "",
+                              ).includes("DOCTOR")) &&
+                              (() => {
+                                const collegeList =
+                                  getEffectiveCollegeDegrees(currentPerson);
+                                const effectiveList =
+                                  collegeList.length > 0
+                                    ? collegeList
+                                    : [
+                                        {
+                                          collegeDegree: "",
+                                          major: "",
+                                          minor: "",
+                                        },
+                                      ];
+
+                                const updateCollegeList = (newList) => {
+                                  const primary = newList[0] || {
+                                    collegeDegree: "",
+                                    major: "",
+                                    minor: "",
+                                  };
+                                  const degreeRows = newList.map((d, idx) => ({
+                                    clientKey: `baccalaureate-${idx}`,
+                                    level: "BACCALAUREATE",
+                                    collegeDegree: d.collegeDegree || "",
+                                    major: d.major || "",
+                                    minor: d.minor || "",
+                                  }));
+                                  handleMultipleFieldsChange({
+                                    collegeDegrees: newList,
+                                    collegeDegree: primary.collegeDegree || "",
+                                    major: primary.major || "",
+                                    minor: primary.minor || "",
+                                    degreeRows: degreeRows,
+                                  });
+                                };
+
+                                const handleRowChange = (
+                                  index,
+                                  field,
+                                  value,
+                                ) => {
+                                  const nextList = effectiveList.map(
+                                    (row, i) => {
+                                      if (i !== index) return row;
+                                      const updatedRow = {
+                                        ...row,
+                                        [field]: value,
+                                      };
+                                      if (field === "collegeDegree") {
+                                        const d = (value || "").toUpperCase();
+                                        const isEdu =
+                                          value &&
+                                          value !== "NONE" &&
+                                          value !== "N/A" &&
+                                          (d.includes("EDUCATION") ||
+                                            d.includes("SPECIAL ED") ||
+                                            d.includes("KINDERGARTEN") ||
+                                            d.includes("EARLY CHILDHOOD"));
+                                        if (!isEdu) {
+                                          updatedRow.major = "";
+                                          updatedRow.minor = "";
+                                        }
+                                      }
+                                      return updatedRow;
+                                    },
+                                  );
+                                  updateCollegeList(nextList);
+                                };
+
+                                const handleAddDegree = () => {
+                                  updateCollegeList([
+                                    ...effectiveList,
+                                    { collegeDegree: "", major: "", minor: "" },
+                                  ]);
+                                };
+
+                                const handleRemoveDegree = (index) => {
+                                  if (effectiveList.length <= 1) {
+                                    updateCollegeList([
                                       {
                                         collegeDegree: "",
                                         major: "",
                                         minor: "",
                                       },
-                                    ];
-
-                              const updateCollegeList = (newList) => {
-                                const primary = newList[0] || {
-                                  collegeDegree: "",
-                                  major: "",
-                                  minor: "",
-                                };
-                                const degreeRows = newList.map((d, idx) => ({
-                                  clientKey: `baccalaureate-${idx}`,
-                                  level: "BACCALAUREATE",
-                                  collegeDegree: d.collegeDegree || "",
-                                  major: d.major || "",
-                                  minor: d.minor || "",
-                                }));
-                                handleMultipleFieldsChange({
-                                  collegeDegrees: newList,
-                                  collegeDegree: primary.collegeDegree || "",
-                                  major: primary.major || "",
-                                  minor: primary.minor || "",
-                                  degreeRows: degreeRows,
-                                });
-                              };
-
-                              const handleRowChange = (index, field, value) => {
-                                const nextList = effectiveList.map((row, i) => {
-                                  if (i !== index) return row;
-                                  const updatedRow = { ...row, [field]: value };
-                                  if (field === "collegeDegree") {
-                                    const d = (value || "").toUpperCase();
-                                    const isEdu =
-                                      value &&
-                                      value !== "NONE" &&
-                                      value !== "N/A" &&
-                                      (d.includes("EDUCATION") ||
-                                        d.includes("SPECIAL ED") ||
-                                        d.includes("KINDERGARTEN") ||
-                                        d.includes("EARLY CHILDHOOD"));
-                                    if (!isEdu) {
-                                      updatedRow.major = "";
-                                      updatedRow.minor = "";
-                                    }
+                                    ]);
+                                  } else {
+                                    const nextList = effectiveList.filter(
+                                      (_, i) => i !== index,
+                                    );
+                                    updateCollegeList(nextList);
                                   }
-                                  return updatedRow;
-                                });
-                                updateCollegeList(nextList);
-                              };
+                                };
 
-                              const handleAddDegree = () => {
-                                updateCollegeList([
-                                  ...effectiveList,
-                                  { collegeDegree: "", major: "", minor: "" },
-                                ]);
-                              };
-
-                              const handleRemoveDegree = (index) => {
-                                if (effectiveList.length <= 1) {
-                                  updateCollegeList([
-                                    { collegeDegree: "", major: "", minor: "" },
-                                  ]);
-                                } else {
-                                  const nextList = effectiveList.filter(
-                                    (_, i) => i !== index,
-                                  );
-                                  updateCollegeList(nextList);
-                                }
-                              };
-
-                              return (
-                                <div
-                                  style={{
-                                    gridColumn: "1 / -1",
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    gap: "14px",
-                                  }}
-                                >
+                                return (
                                   <div
                                     style={{
+                                      gridColumn: "1 / -1",
                                       display: "flex",
-                                      justifyContent: "space-between",
-                                      alignItems: "center",
+                                      flexDirection: "column",
+                                      gap: "14px",
                                     }}
                                   >
-                                    <label
+                                    <div
                                       style={{
-                                        fontSize: "13px",
-                                        fontWeight: "700",
-                                        color: "var(--navy, #0F172A)",
-                                        margin: 0,
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        alignItems: "center",
                                       }}
                                     >
-                                      College / Baccalaureate Degree(s){" "}
-                                      <span style={{ color: "#EF4444" }}>
-                                        *
-                                      </span>
-                                    </label>
-                                    {effectiveList.length > 0 && (
-                                      <span
+                                      <label
                                         style={{
-                                          fontSize: "11px",
-                                          fontWeight: "600",
-                                          color: "var(--blue, #0284C7)",
-                                          background: "var(--blue-50, #EFF6FF)",
-                                          padding: "2px 8px",
-                                          borderRadius: "8px",
+                                          fontSize: "13px",
+                                          fontWeight: "700",
+                                          color: "var(--navy, #0F172A)",
+                                          margin: 0,
                                         }}
                                       >
-                                        {effectiveList.length}{" "}
-                                        {effectiveList.length === 1
-                                          ? "Degree"
-                                          : "Degrees"}
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  {effectiveList.map((degRow, index) => {
-                                    const d = (
-                                      degRow.collegeDegree || ""
-                                    ).toUpperCase();
-                                    const isEdu =
-                                      degRow.collegeDegree &&
-                                      degRow.collegeDegree !== "NONE" &&
-                                      degRow.collegeDegree !== "N/A" &&
-                                      (d.includes("EDUCATION") ||
-                                        d.includes("SPECIAL ED") ||
-                                        d.includes("KINDERGARTEN") ||
-                                        d.includes("EARLY CHILDHOOD"));
-
-                                    return (
-                                      <div
-                                        key={index}
-                                        style={{
-                                          background: "#F8FAFC",
-                                          border: "1.5px solid #E2E8F0",
-                                          borderRadius: "12px",
-                                          padding: "14px",
-                                          display: "flex",
-                                          flexDirection: "column",
-                                          gap: "12px",
-                                        }}
-                                      >
-                                        <div
+                                        College / Baccalaureate Degree(s){" "}
+                                        <span style={{ color: "#EF4444" }}>
+                                          *
+                                        </span>
+                                      </label>
+                                      {effectiveList.length > 0 && (
+                                        <span
                                           style={{
-                                            display: "flex",
-                                            justifyContent: "space-between",
-                                            alignItems: "center",
+                                            fontSize: "11px",
+                                            fontWeight: "600",
+                                            color: "var(--blue, #0284C7)",
+                                            background:
+                                              "var(--blue-50, #EFF6FF)",
+                                            padding: "2px 8px",
+                                            borderRadius: "8px",
                                           }}
                                         >
-                                          <span
-                                            style={{
-                                              fontSize: "12px",
-                                              fontWeight: "700",
-                                              color: "#475569",
-                                              letterSpacing: "0.03em",
-                                            }}
-                                          >
-                                            {index === 0
-                                              ? "PRIMARY BACCALAUREATE / COLLEGE DEGREE"
-                                              : `ADDITIONAL COLLEGE DEGREE #${index + 1}`}
-                                          </span>
-                                          {effectiveList.length > 1 && (
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                handleRemoveDegree(index)
-                                              }
-                                              style={{
-                                                display: "flex",
-                                                alignItems: "center",
-                                                gap: "4px",
-                                                background: "#FEE2E2",
-                                                border: "1px solid #FCA5A5",
-                                                color: "#DC2626",
-                                                borderRadius: "6px",
-                                                padding: "3px 8px",
-                                                fontSize: "11px",
-                                                fontWeight: "600",
-                                                cursor: "pointer",
-                                              }}
-                                              title="Remove this degree"
-                                            >
-                                              <FiTrash2 size={12} /> Remove
-                                            </button>
-                                          )}
-                                        </div>
+                                          {effectiveList.length}{" "}
+                                          {effectiveList.length === 1
+                                            ? "Degree"
+                                            : "Degrees"}
+                                        </span>
+                                      )}
+                                    </div>
 
+                                    {effectiveList.map((degRow, index) => {
+                                      const d = (
+                                        degRow.collegeDegree || ""
+                                      ).toUpperCase();
+                                      const isEdu =
+                                        degRow.collegeDegree &&
+                                        degRow.collegeDegree !== "NONE" &&
+                                        degRow.collegeDegree !== "N/A" &&
+                                        (d.includes("EDUCATION") ||
+                                          d.includes("SPECIAL ED") ||
+                                          d.includes("KINDERGARTEN") ||
+                                          d.includes("EARLY CHILDHOOD"));
+
+                                      return (
                                         <div
+                                          key={index}
                                           style={{
-                                            display: "grid",
-                                            gridTemplateColumns: isEdu
-                                              ? "repeat(auto-fit, minmax(240px, 1fr))"
-                                              : "1fr",
+                                            background: "#F8FAFC",
+                                            border: "1.5px solid #E2E8F0",
+                                            borderRadius: "12px",
+                                            padding: "14px",
+                                            display: "flex",
+                                            flexDirection: "column",
                                             gap: "12px",
                                           }}
                                         >
-                                          <div>
-                                            <label
+                                          <div
+                                            style={{
+                                              display: "flex",
+                                              justifyContent: "space-between",
+                                              alignItems: "center",
+                                            }}
+                                          >
+                                            <span
                                               style={{
                                                 fontSize: "12px",
-                                                fontWeight: "600",
-                                                color: "#334155",
+                                                fontWeight: "700",
+                                                color: "#475569",
+                                                letterSpacing: "0.03em",
                                               }}
                                             >
-                                              Degree Title{" "}
-                                              <span
-                                                style={{ color: "#EF4444" }}
+                                              {index === 0
+                                                ? "PRIMARY BACCALAUREATE / COLLEGE DEGREE"
+                                                : `ADDITIONAL COLLEGE DEGREE #${index + 1}`}
+                                            </span>
+                                            {effectiveList.length > 1 && (
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  handleRemoveDegree(index)
+                                                }
+                                                style={{
+                                                  display: "flex",
+                                                  alignItems: "center",
+                                                  gap: "4px",
+                                                  background: "#FEE2E2",
+                                                  border: "1px solid #FCA5A5",
+                                                  color: "#DC2626",
+                                                  borderRadius: "6px",
+                                                  padding: "3px 8px",
+                                                  fontSize: "11px",
+                                                  fontWeight: "600",
+                                                  cursor: "pointer",
+                                                }}
+                                                title="Remove this degree"
                                               >
-                                                *
-                                              </span>
-                                            </label>
-                                            <SearchableDropdown
-                                              options={COLLEGE_DEGREE_OPTIONS}
-                                              value={degRow.collegeDegree || ""}
-                                              onChange={(val) =>
-                                                handleRowChange(
-                                                  index,
-                                                  "collegeDegree",
-                                                  val,
-                                                )
-                                              }
-                                              placeholder="Select college degree..."
-                                              required
-                                            />
+                                                <FiTrash2 size={12} /> Remove
+                                              </button>
+                                            )}
                                           </div>
 
-                                          {isEdu && (
-                                            <>
-                                              <div>
-                                                <label
-                                                  style={{
-                                                    fontSize: "12px",
-                                                    fontWeight: "600",
-                                                    color: "#334155",
-                                                  }}
+                                          <div
+                                            style={{
+                                              display: "grid",
+                                              gridTemplateColumns: isEdu
+                                                ? "repeat(auto-fit, minmax(240px, 1fr))"
+                                                : "1fr",
+                                              gap: "12px",
+                                            }}
+                                          >
+                                            <div>
+                                              <label
+                                                style={{
+                                                  fontSize: "12px",
+                                                  fontWeight: "600",
+                                                  color: "#334155",
+                                                }}
+                                              >
+                                                Degree Title{" "}
+                                                <span
+                                                  style={{ color: "#EF4444" }}
                                                 >
-                                                  Major in Education{" "}
-                                                  <span
-                                                    style={{ color: "#EF4444" }}
-                                                  >
-                                                    *
-                                                  </span>
-                                                </label>
-                                                <SearchableDropdown
-                                                  options={MAJOR_OPTIONS}
-                                                  value={degRow.major || ""}
-                                                  onChange={(val) =>
-                                                    handleRowChange(
-                                                      index,
-                                                      "major",
-                                                      val,
-                                                    )
-                                                  }
-                                                  placeholder="Select major..."
-                                                  required
-                                                />
-                                              </div>
-                                              <div>
-                                                <label
-                                                  style={{
-                                                    fontSize: "12px",
-                                                    fontWeight: "600",
-                                                    color: "#334155",
-                                                  }}
-                                                >
-                                                  Minor{" "}
-                                                  <span
+                                                  *
+                                                </span>
+                                              </label>
+                                              <SearchableDropdown
+                                                options={COLLEGE_DEGREE_OPTIONS}
+                                                value={
+                                                  degRow.collegeDegree || ""
+                                                }
+                                                onChange={(val) =>
+                                                  handleRowChange(
+                                                    index,
+                                                    "collegeDegree",
+                                                    val,
+                                                  )
+                                                }
+                                                placeholder="Select college degree..."
+                                                required
+                                              />
+                                            </div>
+
+                                            {isEdu && (
+                                              <>
+                                                <div>
+                                                  <label
                                                     style={{
-                                                      fontSize: "11px",
-                                                      color:
-                                                        "var(--muted, #64748B)",
-                                                      fontWeight: "normal",
+                                                      fontSize: "12px",
+                                                      fontWeight: "600",
+                                                      color: "#334155",
                                                     }}
                                                   >
-                                                    (Optional)
-                                                  </span>
-                                                </label>
-                                                <SearchableDropdown
-                                                  options={MINOR_OPTIONS}
-                                                  value={degRow.minor || ""}
-                                                  onChange={(val) =>
-                                                    handleRowChange(
-                                                      index,
-                                                      "minor",
-                                                      val,
-                                                    )
-                                                  }
-                                                  placeholder="Select minor subject (optional)..."
-                                                />
-                                              </div>
-                                            </>
-                                          )}
+                                                    Major in Education{" "}
+                                                    <span
+                                                      style={{
+                                                        color: "#EF4444",
+                                                      }}
+                                                    >
+                                                      *
+                                                    </span>
+                                                  </label>
+                                                  <SearchableDropdown
+                                                    options={MAJOR_OPTIONS}
+                                                    value={degRow.major || ""}
+                                                    onChange={(val) =>
+                                                      handleRowChange(
+                                                        index,
+                                                        "major",
+                                                        val,
+                                                      )
+                                                    }
+                                                    placeholder="Select major..."
+                                                    required
+                                                  />
+                                                </div>
+                                                <div>
+                                                  <label
+                                                    style={{
+                                                      fontSize: "12px",
+                                                      fontWeight: "600",
+                                                      color: "#334155",
+                                                    }}
+                                                  >
+                                                    Minor{" "}
+                                                    <span
+                                                      style={{
+                                                        fontSize: "11px",
+                                                        color:
+                                                          "var(--muted, #64748B)",
+                                                        fontWeight: "normal",
+                                                      }}
+                                                    >
+                                                      (Optional)
+                                                    </span>
+                                                  </label>
+                                                  <SearchableDropdown
+                                                    options={MINOR_OPTIONS}
+                                                    value={degRow.minor || ""}
+                                                    onChange={(val) =>
+                                                      handleRowChange(
+                                                        index,
+                                                        "minor",
+                                                        val,
+                                                      )
+                                                    }
+                                                    placeholder="Select minor subject (optional)..."
+                                                  />
+                                                </div>
+                                              </>
+                                            )}
+                                          </div>
                                         </div>
-                                      </div>
-                                    );
-                                  })}
+                                      );
+                                    })}
 
-                                  <div>
-                                    <button
-                                      type="button"
-                                      onClick={handleAddDegree}
-                                      style={{
-                                        display: "inline-flex",
-                                        alignItems: "center",
-                                        gap: "6px",
-                                        background: "#F0F9FF",
-                                        border: "1.5px dashed #0284C7",
-                                        color: "#0284C7",
-                                        padding: "8px 14px",
-                                        borderRadius: "8px",
-                                        fontSize: "12px",
-                                        fontWeight: "600",
-                                        cursor: "pointer",
-                                      }}
-                                    >
-                                      <FiPlus size={14} /> + Add Another
-                                      Baccalaureate / College Degree
-                                    </button>
+                                    <div>
+                                      <button
+                                        type="button"
+                                        onClick={handleAddDegree}
+                                        style={{
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: "6px",
+                                          background: "#F0F9FF",
+                                          border: "1.5px dashed #0284C7",
+                                          color: "#0284C7",
+                                          padding: "8px 14px",
+                                          borderRadius: "8px",
+                                          fontSize: "12px",
+                                          fontWeight: "600",
+                                          cursor: "pointer",
+                                        }}
+                                      >
+                                        <FiPlus size={14} /> + Add Another
+                                        Baccalaureate / College Degree
+                                      </button>
+                                    </div>
                                   </div>
-                                </div>
+                                );
+                              })()}
+
+                            {/* Modular Master's and Doctorate Studies Section with Status Selector */}
+                            {(() => {
+                              const attainment = String(
+                                currentPerson.highestEducationalAttainment ||
+                                  "",
+                              ).toUpperCase();
+                              const postGrads =
+                                getEffectivePostGradDisciplines(currentPerson);
+                              const mastersWithUnits =
+                                postGrads.mastersWithUnits;
+                              const mastersGraduated =
+                                postGrads.mastersGraduated;
+                              const doctorateWithUnits =
+                                postGrads.doctorateWithUnits;
+                              const doctorateGraduated =
+                                postGrads.doctorateGraduated;
+
+                              const showMasters =
+                                attainment.includes("MASTER") ||
+                                attainment.includes("DOCTOR") ||
+                                mastersWithUnits.length > 0 ||
+                                mastersGraduated.length > 0;
+
+                              const showDoctorate =
+                                attainment.includes("DOCTOR") ||
+                                doctorateWithUnits.length > 0 ||
+                                doctorateGraduated.length > 0;
+
+                              if (!showMasters && !showDoctorate) return null;
+
+                              const updateDisciplines = ({
+                                nextMastersWithUnits = mastersWithUnits,
+                                nextMastersGraduated = mastersGraduated,
+                                nextDoctorateWithUnits = doctorateWithUnits,
+                                nextDoctorateGraduated = doctorateGraduated,
+                              }) => {
+                                const allMasters = [
+                                  ...new Set([
+                                    ...nextMastersWithUnits,
+                                    ...nextMastersGraduated,
+                                  ]),
+                                ];
+                                const allDoctorate = [
+                                  ...new Set([
+                                    ...nextDoctorateWithUnits,
+                                    ...nextDoctorateGraduated,
+                                  ]),
+                                ];
+                                const jsonStr = JSON.stringify({
+                                  mastersWithUnits: nextMastersWithUnits,
+                                  mastersGraduated: nextMastersGraduated,
+                                  doctorateWithUnits: nextDoctorateWithUnits,
+                                  doctorateGraduated: nextDoctorateGraduated,
+                                  masters: allMasters,
+                                  doctorate: allDoctorate,
+                                });
+                                handleMultipleFieldsChange({
+                                  mastersWithUnitsDisciplines:
+                                    nextMastersWithUnits,
+                                  mastersGraduatedDisciplines:
+                                    nextMastersGraduated,
+                                  doctorateWithUnitsDisciplines:
+                                    nextDoctorateWithUnits,
+                                  doctorateGraduatedDisciplines:
+                                    nextDoctorateGraduated,
+                                  mastersDisciplines: allMasters,
+                                  doctorateDisciplines: allDoctorate,
+                                  mastersDiscipline: allMasters.join(", "),
+                                  doctorateDiscipline: allDoctorate.join(", "),
+                                  postGraduateDiscipline: jsonStr,
+                                  post_graduate_discipline: jsonStr,
+                                });
+                              };
+
+                              const defaultMastersStatus =
+                                attainment === "MASTER'S DEGREE (WITH UNITS)"
+                                  ? "WITH UNITS"
+                                  : "GRADUATED";
+                              const defaultDoctorateStatus =
+                                attainment === "DOCTORATE DEGREE (WITH UNITS)"
+                                  ? "WITH UNITS"
+                                  : "GRADUATED";
+
+                              return (
+                                <>
+                                  {showMasters && (
+                                    <PostGradDisciplineSection
+                                      title="Master's Degree Discipline(s)"
+                                      levelLabel="Master's"
+                                      isRequired={attainment.includes("MASTER")}
+                                      graduatedList={mastersGraduated}
+                                      withUnitsList={mastersWithUnits}
+                                      defaultStatus={defaultMastersStatus}
+                                      onAdd={(disc, status) => {
+                                        if (status === "WITH UNITS") {
+                                          if (
+                                            !mastersWithUnits.includes(disc)
+                                          ) {
+                                            updateDisciplines({
+                                              nextMastersWithUnits: [
+                                                ...mastersWithUnits,
+                                                disc,
+                                              ],
+                                            });
+                                          }
+                                        } else {
+                                          if (
+                                            !mastersGraduated.includes(disc)
+                                          ) {
+                                            updateDisciplines({
+                                              nextMastersGraduated: [
+                                                ...mastersGraduated,
+                                                disc,
+                                              ],
+                                            });
+                                          }
+                                        }
+                                      }}
+                                      onRemove={(disc, status) => {
+                                        if (status === "WITH UNITS") {
+                                          updateDisciplines({
+                                            nextMastersWithUnits:
+                                              mastersWithUnits.filter(
+                                                (d) => d !== disc,
+                                              ),
+                                          });
+                                        } else {
+                                          updateDisciplines({
+                                            nextMastersGraduated:
+                                              mastersGraduated.filter(
+                                                (d) => d !== disc,
+                                              ),
+                                          });
+                                        }
+                                      }}
+                                    />
+                                  )}
+
+                                  {showDoctorate && (
+                                    <PostGradDisciplineSection
+                                      title="Doctorate Degree Discipline(s)"
+                                      levelLabel="Doctorate"
+                                      isRequired={attainment.includes("DOCTOR")}
+                                      graduatedList={doctorateGraduated}
+                                      withUnitsList={doctorateWithUnits}
+                                      defaultStatus={defaultDoctorateStatus}
+                                      onAdd={(disc, status) => {
+                                        if (status === "WITH UNITS") {
+                                          if (
+                                            !doctorateWithUnits.includes(disc)
+                                          ) {
+                                            updateDisciplines({
+                                              nextDoctorateWithUnits: [
+                                                ...doctorateWithUnits,
+                                                disc,
+                                              ],
+                                            });
+                                          }
+                                        } else {
+                                          if (
+                                            !doctorateGraduated.includes(disc)
+                                          ) {
+                                            updateDisciplines({
+                                              nextDoctorateGraduated: [
+                                                ...doctorateGraduated,
+                                                disc,
+                                              ],
+                                            });
+                                          }
+                                        }
+                                      }}
+                                      onRemove={(disc, status) => {
+                                        if (status === "WITH UNITS") {
+                                          updateDisciplines({
+                                            nextDoctorateWithUnits:
+                                              doctorateWithUnits.filter(
+                                                (d) => d !== disc,
+                                              ),
+                                          });
+                                        } else {
+                                          updateDisciplines({
+                                            nextDoctorateGraduated:
+                                              doctorateGraduated.filter(
+                                                (d) => d !== disc,
+                                              ),
+                                          });
+                                        }
+                                      }}
+                                    />
+                                  )}
+                                </>
                               );
                             })()}
 
-                          {/* Modular Master's and Doctorate Studies Section with Status Selector */}
-                          {(() => {
-                            const attainment = String(
-                              currentPerson.highestEducationalAttainment || "",
-                            ).toUpperCase();
-                            const postGrads =
-                              getEffectivePostGradDisciplines(currentPerson);
-                            const mastersWithUnits = postGrads.mastersWithUnits;
-                            const mastersGraduated = postGrads.mastersGraduated;
-                            const doctorateWithUnits =
-                              postGrads.doctorateWithUnits;
-                            const doctorateGraduated =
-                              postGrads.doctorateGraduated;
-
-                            const showMasters =
-                              attainment.includes("MASTER") ||
-                              attainment.includes("DOCTOR") ||
-                              mastersWithUnits.length > 0 ||
-                              mastersGraduated.length > 0;
-
-                            const showDoctorate =
-                              attainment.includes("DOCTOR") ||
-                              doctorateWithUnits.length > 0 ||
-                              doctorateGraduated.length > 0;
-
-                            if (!showMasters && !showDoctorate) return null;
-
-                            const updateDisciplines = ({
-                              nextMastersWithUnits = mastersWithUnits,
-                              nextMastersGraduated = mastersGraduated,
-                              nextDoctorateWithUnits = doctorateWithUnits,
-                              nextDoctorateGraduated = doctorateGraduated,
-                            }) => {
-                              const allMasters = [
-                                ...new Set([
-                                  ...nextMastersWithUnits,
-                                  ...nextMastersGraduated,
-                                ]),
-                              ];
-                              const allDoctorate = [
-                                ...new Set([
-                                  ...nextDoctorateWithUnits,
-                                  ...nextDoctorateGraduated,
-                                ]),
-                              ];
-                              const jsonStr = JSON.stringify({
-                                mastersWithUnits: nextMastersWithUnits,
-                                mastersGraduated: nextMastersGraduated,
-                                doctorateWithUnits: nextDoctorateWithUnits,
-                                doctorateGraduated: nextDoctorateGraduated,
-                                masters: allMasters,
-                                doctorate: allDoctorate,
-                              });
-                              handleMultipleFieldsChange({
-                                mastersWithUnitsDisciplines:
-                                  nextMastersWithUnits,
-                                mastersGraduatedDisciplines:
-                                  nextMastersGraduated,
-                                doctorateWithUnitsDisciplines:
-                                  nextDoctorateWithUnits,
-                                doctorateGraduatedDisciplines:
-                                  nextDoctorateGraduated,
-                                mastersDisciplines: allMasters,
-                                doctorateDisciplines: allDoctorate,
-                                mastersDiscipline: allMasters.join(", "),
-                                doctorateDiscipline: allDoctorate.join(", "),
-                                postGraduateDiscipline: jsonStr,
-                                post_graduate_discipline: jsonStr,
-                              });
-                            };
-
-                            const defaultMastersStatus =
-                              attainment === "MASTER'S DEGREE (WITH UNITS)"
-                                ? "WITH UNITS"
-                                : "GRADUATED";
-                            const defaultDoctorateStatus =
-                              attainment === "DOCTORATE DEGREE (WITH UNITS)"
-                                ? "WITH UNITS"
-                                : "GRADUATED";
-
-                            return (
-                              <>
-                                {showMasters && (
-                                  <PostGradDisciplineSection
-                                    title="Master's Degree Discipline(s)"
-                                    levelLabel="Master's"
-                                    isRequired={attainment.includes("MASTER")}
-                                    graduatedList={mastersGraduated}
-                                    withUnitsList={mastersWithUnits}
-                                    defaultStatus={defaultMastersStatus}
-                                    onAdd={(disc, status) => {
-                                      if (status === "WITH UNITS") {
-                                        if (!mastersWithUnits.includes(disc)) {
-                                          updateDisciplines({
-                                            nextMastersWithUnits: [
-                                              ...mastersWithUnits,
-                                              disc,
-                                            ],
-                                          });
-                                        }
-                                      } else {
-                                        if (!mastersGraduated.includes(disc)) {
-                                          updateDisciplines({
-                                            nextMastersGraduated: [
-                                              ...mastersGraduated,
-                                              disc,
-                                            ],
-                                          });
-                                        }
-                                      }
-                                    }}
-                                    onRemove={(disc, status) => {
-                                      if (status === "WITH UNITS") {
-                                        updateDisciplines({
-                                          nextMastersWithUnits:
-                                            mastersWithUnits.filter(
-                                              (d) => d !== disc,
-                                            ),
-                                        });
-                                      } else {
-                                        updateDisciplines({
-                                          nextMastersGraduated:
-                                            mastersGraduated.filter(
-                                              (d) => d !== disc,
-                                            ),
-                                        });
-                                      }
-                                    }}
-                                  />
-                                )}
-
-                                {showDoctorate && (
-                                  <PostGradDisciplineSection
-                                    title="Doctorate Degree Discipline(s)"
-                                    levelLabel="Doctorate"
-                                    isRequired={attainment.includes("DOCTOR")}
-                                    graduatedList={doctorateGraduated}
-                                    withUnitsList={doctorateWithUnits}
-                                    defaultStatus={defaultDoctorateStatus}
-                                    onAdd={(disc, status) => {
-                                      if (status === "WITH UNITS") {
-                                        if (
-                                          !doctorateWithUnits.includes(disc)
-                                        ) {
-                                          updateDisciplines({
-                                            nextDoctorateWithUnits: [
-                                              ...doctorateWithUnits,
-                                              disc,
-                                            ],
-                                          });
-                                        }
-                                      } else {
-                                        if (
-                                          !doctorateGraduated.includes(disc)
-                                        ) {
-                                          updateDisciplines({
-                                            nextDoctorateGraduated: [
-                                              ...doctorateGraduated,
-                                              disc,
-                                            ],
-                                          });
-                                        }
-                                      }
-                                    }}
-                                    onRemove={(disc, status) => {
-                                      if (status === "WITH UNITS") {
-                                        updateDisciplines({
-                                          nextDoctorateWithUnits:
-                                            doctorateWithUnits.filter(
-                                              (d) => d !== disc,
-                                            ),
-                                        });
-                                      } else {
-                                        updateDisciplines({
-                                          nextDoctorateGraduated:
-                                            doctorateGraduated.filter(
-                                              (d) => d !== disc,
-                                            ),
-                                        });
-                                      }
-                                    }}
-                                  />
-                                )}
-                              </>
-                            );
-                          })()}
-
-                          <div className="profile-subsection">
-                            Civil Service and Professional Eligibilities
-                          </div>
-                          <div
-                            style={{ gridColumn: "1 / -1", marginTop: "10px" }}
-                          >
-                            <label>Eligibilities</label>
-
-                            {/* List of currently selected eligibilities */}
-                            <div
-                              style={{
-                                display: "flex",
-                                flexWrap: "wrap",
-                                gap: "8px",
-                                marginBottom: "10px",
-                              }}
-                            >
-                              {(Array.isArray(currentPerson.eligibility)
-                                ? currentPerson.eligibility
-                                : String(currentPerson.eligibility || "")
-                                    .split(",")
-                                    .map((s) => s.trim())
-                                    .filter(Boolean)
-                              ).map((el, index) => (
-                                <div
-                                  key={index}
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    background: "var(--blue-50)",
-                                    border: "1.5px solid var(--line)",
-                                    borderRadius: "12px",
-                                    padding: "6px 12px",
-                                    gap: "8px",
-                                  }}
-                                >
-                                  <span
-                                    style={{
-                                      fontSize: "13px",
-                                      color: "var(--navy)",
-                                      fontWeight: "bold",
-                                    }}
-                                  >
-                                    {el}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    style={{
-                                      background: "transparent",
-                                      border: 0,
-                                      color: "var(--blue)",
-                                      cursor: "pointer",
-                                      fontWeight: "bold",
-                                      fontSize: "14px",
-                                      padding: 0,
-                                    }}
-                                    onClick={() => {
-                                      const currentList = Array.isArray(
-                                        currentPerson.eligibility,
-                                      )
-                                        ? currentPerson.eligibility
-                                        : String(
-                                            currentPerson.eligibility || "",
-                                          )
-                                            .split(",")
-                                            .map((s) => s.trim())
-                                            .filter(Boolean);
-                                      const newList = currentList.filter(
-                                        (_, idx) => idx !== index,
-                                      );
-                                      handleFieldChange(
-                                        "eligibility",
-                                        newList.join(", "),
-                                      );
-                                    }}
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                              ))}
+                            <div className="profile-subsection">
+                              Civil Service and Professional Eligibilities
                             </div>
-
-                            {/* Dropdown to add a new eligibility */}
                             <div
                               style={{
-                                display: "flex",
-                                gap: "10px",
-                                alignItems: "center",
+                                gridColumn: "1 / -1",
+                                marginTop: "10px",
                               }}
                             >
-                              <select
-                                value=""
-                                onChange={async (e) => {
-                                  const selectedVal = e.target.value;
-                                  if (!selectedVal) return;
+                              <label>Eligibilities</label>
 
-                                  const currentList = Array.isArray(
-                                    currentPerson.eligibility,
-                                  )
-                                    ? currentPerson.eligibility
-                                    : String(currentPerson.eligibility || "")
-                                        .split(",")
-                                        .map((s) => s.trim())
-                                        .filter(Boolean);
-
-                                  const isDup =
-                                    currentList.includes(selectedVal) ||
-                                    currentList.some(
-                                      (el) =>
-                                        el.startsWith(selectedVal) &&
-                                        selectedVal.startsWith("RA 1080"),
-                                    );
-                                  if (isDup) {
-                                    await showAlert(
-                                      "Duplicate Entry",
-                                      "This eligibility category has already been added.",
-                                    );
-                                    return;
-                                  }
-
-                                  if (
-                                    selectedVal ===
-                                    "RA 1080 (OTHERS, PLEASE SPECIFY)"
-                                  ) {
-                                    setRa1080InputText("");
-                                    setShowRa1080Modal(true);
-                                  } else {
-                                    handleFieldChange(
-                                      "eligibility",
-                                      [...currentList, selectedVal].join(", "),
-                                    );
-                                  }
-                                }}
-                                className={
-                                  !currentPerson.eligibility
-                                    ? "empty-field"
-                                    : ""
-                                }
+                              {/* List of currently selected eligibilities */}
+                              <div
                                 style={{
-                                  maxWidth: "400px",
-                                  background:
-                                    (Array.isArray(currentPerson.eligibility)
-                                      ? currentPerson.eligibility.length
-                                      : String(currentPerson.eligibility || "")
-                                          .split(",")
-                                          .filter(Boolean).length) > 0
-                                      ? "#f0f9ff"
-                                      : "white",
-                                  borderColor:
-                                    (Array.isArray(currentPerson.eligibility)
-                                      ? currentPerson.eligibility.length
-                                      : String(currentPerson.eligibility || "")
-                                          .split(",")
-                                          .filter(Boolean).length) > 0
-                                      ? "#0284c7"
-                                      : "var(--line)",
-                                  color:
-                                    (Array.isArray(currentPerson.eligibility)
-                                      ? currentPerson.eligibility.length
-                                      : String(currentPerson.eligibility || "")
-                                          .split(",")
-                                          .filter(Boolean).length) > 0
-                                      ? "#0369a1"
-                                      : "var(--text)",
-                                  fontWeight:
-                                    (Array.isArray(currentPerson.eligibility)
-                                      ? currentPerson.eligibility.length
-                                      : String(currentPerson.eligibility || "")
-                                          .split(",")
-                                          .filter(Boolean).length) > 0
-                                      ? "600"
-                                      : "normal",
+                                  display: "flex",
+                                  flexWrap: "wrap",
+                                  gap: "8px",
+                                  marginBottom: "10px",
                                 }}
                               >
-                                <option value="">
-                                  {(Array.isArray(currentPerson.eligibility)
-                                    ? currentPerson.eligibility.length
-                                    : String(currentPerson.eligibility || "")
-                                        .split(",")
-                                        .filter(Boolean).length) > 0
-                                    ? `+ Add another eligibility (${
-                                        Array.isArray(currentPerson.eligibility)
-                                          ? currentPerson.eligibility.length
+                                {(Array.isArray(currentPerson.eligibility)
+                                  ? currentPerson.eligibility
+                                  : String(currentPerson.eligibility || "")
+                                      .split(",")
+                                      .map((s) => s.trim())
+                                      .filter(Boolean)
+                                ).map((el, index) => (
+                                  <div
+                                    key={index}
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      background: "var(--blue-50)",
+                                      border: "1.5px solid var(--line)",
+                                      borderRadius: "12px",
+                                      padding: "6px 12px",
+                                      gap: "8px",
+                                    }}
+                                  >
+                                    <span
+                                      style={{
+                                        fontSize: "13px",
+                                        color: "var(--navy)",
+                                        fontWeight: "bold",
+                                      }}
+                                    >
+                                      {el}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      style={{
+                                        background: "transparent",
+                                        border: 0,
+                                        color: "var(--blue)",
+                                        cursor: "pointer",
+                                        fontWeight: "bold",
+                                        fontSize: "14px",
+                                        padding: 0,
+                                      }}
+                                      onClick={() => {
+                                        const currentList = Array.isArray(
+                                          currentPerson.eligibility,
+                                        )
+                                          ? currentPerson.eligibility
                                           : String(
                                               currentPerson.eligibility || "",
                                             )
                                               .split(",")
-                                              .filter(Boolean).length
-                                      } added)...`
-                                    : "+ Add Eligibility..."}
-                                </option>
-                                <option value="LICENSURE EXAMINATION FOR TEACHERS">
-                                  LICENSURE EXAMINATION FOR TEACHERS
-                                </option>
-                                <option value="PROFESSIONAL BOARD EXAMINATION FOR TEACHERS (PBET)">
-                                  PROFESSIONAL BOARD EXAMINATION FOR TEACHERS
-                                  (PBET)
-                                </option>
-                                <option value="PROVISIONAL TEACHERS">
-                                  PROVISIONAL TEACHERS
-                                </option>
-                                <option value="PROVISIONAL TEACHERS - DOST SCHOLAR GRADUATES">
-                                  PROVISIONAL TEACHERS - DOST SCHOLAR GRADUATES
-                                </option>
-                                <option value="REGISTERED GUIDANCE COUNSELOR">
-                                  REGISTERED GUIDANCE COUNSELOR
-                                </option>
-                                <option value="REGISTERED LIBRARIAN">
-                                  REGISTERED LIBRARIAN
-                                </option>
-                                <option value="REGISTERED NURSE">
-                                  REGISTERED NURSE
-                                </option>
-                                {(currentPerson.type === "non-teaching" ||
-                                  currentPerson.type ===
-                                    "teaching-related") && (
-                                  <>
-                                    <option value="CS - 1ST LEVEL (SUB-PROFESSIONAL)">
-                                      CS - 1ST LEVEL (SUB-PROFESSIONAL)
-                                    </option>
-                                    <option value="CS - 2ND LEVEL (PROFESSIONAL)">
-                                      CS - 2ND LEVEL (PROFESSIONAL)
-                                    </option>
-                                  </>
-                                )}
-                                <option value="RA 1080 (OTHERS, PLEASE SPECIFY)">
-                                  RA 1080 (OTHERS, PLEASE SPECIFY)
-                                </option>
-                                {currentPerson.type === "non-teaching" && (
-                                  <option value="N/A">N/A</option>
-                                )}
-                              </select>
-                            </div>
+                                              .map((s) => s.trim())
+                                              .filter(Boolean);
+                                        const newList = currentList.filter(
+                                          (_, idx) => idx !== index,
+                                        );
+                                        handleFieldChange(
+                                          "eligibility",
+                                          newList.join(", "),
+                                        );
+                                      }}
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
 
-                            {/* PRC Specialization (Conditional on LET / PBET eligibility) */}
-                            {(() => {
-                              const elStr = (
-                                Array.isArray(currentPerson.eligibility)
-                                  ? currentPerson.eligibility.join(",")
-                                  : String(currentPerson.eligibility || "")
-                              ).toUpperCase();
-                              const isLetPbet =
-                                elStr.includes(
-                                  "LICENSURE EXAMINATION FOR TEACHERS",
-                                ) ||
-                                elStr.includes(
-                                  "PROFESSIONAL BOARD EXAMINATION FOR TEACHERS",
-                                ) ||
-                                elStr.includes("LET") ||
-                                elStr.includes("PBET");
-                              if (!isLetPbet) return null;
-                              return (
-                                <div
-                                  id="field-prcSpecialization"
-                                  data-field="prcSpecialization"
-                                  style={{ marginTop: "16px" }}
-                                >
-                                  <label>PRC Specialization</label>
-                                  <SearchableDropdown
-                                    options={PRC_SPECIALIZATION_OPTIONS}
-                                    value={
-                                      currentPerson.prcSpecialization || ""
-                                    }
-                                    onChange={(val) =>
-                                      handleFieldChange(
-                                        "prcSpecialization",
-                                        val,
-                                      )
-                                    }
-                                    placeholder="Select specialization..."
-                                  />
-                                </div>
-                              );
-                            })()}
-                          </div>
-                        </>
-                      )}
-
-                      {activeTab === "development" && (
-                        <>
-                          <div className="profile-subsection">
-                            Standard Training Credentials
-                          </div>
-
-                          {/* NEAP SECTION */}
-                          <div
-                            className="credential-group"
-                            style={{
-                              gridColumn: "1 / -1",
-                              marginBottom: "20px",
-                            }}
-                          >
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                marginBottom: "10px",
-                              }}
-                            >
-                              <label style={{ margin: 0 }}>
-                                NEAP Trainings
-                              </label>
-                              <button
-                                className="btn secondary"
-                                style={{ minHeight: "34px" }}
-                                type="button"
-                                onClick={() =>
-                                  addTrainingRow("neapTrainingRows")
-                                }
+                              {/* Dropdown to add a new eligibility */}
+                              <div
+                                style={{
+                                  display: "flex",
+                                  gap: "10px",
+                                  alignItems: "center",
+                                }}
                               >
-                                + Add NEAP Training
-                              </button>
+                                <select
+                                  value=""
+                                  onChange={async (e) => {
+                                    const selectedVal = e.target.value;
+                                    if (!selectedVal) return;
+
+                                    const currentList = Array.isArray(
+                                      currentPerson.eligibility,
+                                    )
+                                      ? currentPerson.eligibility
+                                      : String(currentPerson.eligibility || "")
+                                          .split(",")
+                                          .map((s) => s.trim())
+                                          .filter(Boolean);
+
+                                    const isDup =
+                                      currentList.includes(selectedVal) ||
+                                      currentList.some(
+                                        (el) =>
+                                          el.startsWith(selectedVal) &&
+                                          selectedVal.startsWith("RA 1080"),
+                                      );
+                                    if (isDup) {
+                                      await showAlert(
+                                        "Duplicate Entry",
+                                        "This eligibility category has already been added.",
+                                      );
+                                      return;
+                                    }
+
+                                    if (
+                                      selectedVal ===
+                                      "RA 1080 (OTHERS, PLEASE SPECIFY)"
+                                    ) {
+                                      setRa1080InputText("");
+                                      setShowRa1080Modal(true);
+                                    } else {
+                                      handleFieldChange(
+                                        "eligibility",
+                                        [...currentList, selectedVal].join(
+                                          ", ",
+                                        ),
+                                      );
+                                    }
+                                  }}
+                                  className={
+                                    !currentPerson.eligibility
+                                      ? "empty-field"
+                                      : ""
+                                  }
+                                  style={{
+                                    maxWidth: "400px",
+                                    background:
+                                      (Array.isArray(currentPerson.eligibility)
+                                        ? currentPerson.eligibility.length
+                                        : String(
+                                            currentPerson.eligibility || "",
+                                          )
+                                            .split(",")
+                                            .filter(Boolean).length) > 0
+                                        ? "#f0f9ff"
+                                        : "white",
+                                    borderColor:
+                                      (Array.isArray(currentPerson.eligibility)
+                                        ? currentPerson.eligibility.length
+                                        : String(
+                                            currentPerson.eligibility || "",
+                                          )
+                                            .split(",")
+                                            .filter(Boolean).length) > 0
+                                        ? "#0284c7"
+                                        : "var(--line)",
+                                    color:
+                                      (Array.isArray(currentPerson.eligibility)
+                                        ? currentPerson.eligibility.length
+                                        : String(
+                                            currentPerson.eligibility || "",
+                                          )
+                                            .split(",")
+                                            .filter(Boolean).length) > 0
+                                        ? "#0369a1"
+                                        : "var(--text)",
+                                    fontWeight:
+                                      (Array.isArray(currentPerson.eligibility)
+                                        ? currentPerson.eligibility.length
+                                        : String(
+                                            currentPerson.eligibility || "",
+                                          )
+                                            .split(",")
+                                            .filter(Boolean).length) > 0
+                                        ? "600"
+                                        : "normal",
+                                  }}
+                                >
+                                  <option value="">
+                                    {(Array.isArray(currentPerson.eligibility)
+                                      ? currentPerson.eligibility.length
+                                      : String(currentPerson.eligibility || "")
+                                          .split(",")
+                                          .filter(Boolean).length) > 0
+                                      ? `+ Add another eligibility (${
+                                          Array.isArray(
+                                            currentPerson.eligibility,
+                                          )
+                                            ? currentPerson.eligibility.length
+                                            : String(
+                                                currentPerson.eligibility || "",
+                                              )
+                                                .split(",")
+                                                .filter(Boolean).length
+                                        } added)...`
+                                      : "+ Add Eligibility..."}
+                                  </option>
+                                  <option value="LICENSURE EXAMINATION FOR TEACHERS">
+                                    LICENSURE EXAMINATION FOR TEACHERS
+                                  </option>
+                                  <option value="PROFESSIONAL BOARD EXAMINATION FOR TEACHERS (PBET)">
+                                    PROFESSIONAL BOARD EXAMINATION FOR TEACHERS
+                                    (PBET)
+                                  </option>
+                                  <option value="PROVISIONAL TEACHERS">
+                                    PROVISIONAL TEACHERS
+                                  </option>
+                                  <option value="PROVISIONAL TEACHERS - DOST SCHOLAR GRADUATES">
+                                    PROVISIONAL TEACHERS - DOST SCHOLAR
+                                    GRADUATES
+                                  </option>
+                                  <option value="REGISTERED GUIDANCE COUNSELOR">
+                                    REGISTERED GUIDANCE COUNSELOR
+                                  </option>
+                                  <option value="REGISTERED LIBRARIAN">
+                                    REGISTERED LIBRARIAN
+                                  </option>
+                                  <option value="REGISTERED NURSE">
+                                    REGISTERED NURSE
+                                  </option>
+                                  {(currentPerson.type === "non-teaching" ||
+                                    currentPerson.type ===
+                                      "teaching-related") && (
+                                    <>
+                                      <option value="CS - 1ST LEVEL (SUB-PROFESSIONAL)">
+                                        CS - 1ST LEVEL (SUB-PROFESSIONAL)
+                                      </option>
+                                      <option value="CS - 2ND LEVEL (PROFESSIONAL)">
+                                        CS - 2ND LEVEL (PROFESSIONAL)
+                                      </option>
+                                    </>
+                                  )}
+                                  <option value="RA 1080 (OTHERS, PLEASE SPECIFY)">
+                                    RA 1080 (OTHERS, PLEASE SPECIFY)
+                                  </option>
+                                  {currentPerson.type === "non-teaching" && (
+                                    <option value="N/A">N/A</option>
+                                  )}
+                                </select>
+                              </div>
+
+                              {/* PRC Specialization (Conditional on LET / PBET eligibility) */}
+                              {(() => {
+                                const elStr = (
+                                  Array.isArray(currentPerson.eligibility)
+                                    ? currentPerson.eligibility.join(",")
+                                    : String(currentPerson.eligibility || "")
+                                ).toUpperCase();
+                                const isLetPbet =
+                                  elStr.includes(
+                                    "LICENSURE EXAMINATION FOR TEACHERS",
+                                  ) ||
+                                  elStr.includes(
+                                    "PROFESSIONAL BOARD EXAMINATION FOR TEACHERS",
+                                  ) ||
+                                  elStr.includes("LET") ||
+                                  elStr.includes("PBET");
+                                if (!isLetPbet) return null;
+                                return (
+                                  <div
+                                    id="field-prcSpecialization"
+                                    data-field="prcSpecialization"
+                                    style={{ marginTop: "16px" }}
+                                  >
+                                    <label>PRC Specialization</label>
+                                    <SearchableDropdown
+                                      options={PRC_SPECIALIZATION_OPTIONS}
+                                      value={
+                                        currentPerson.prcSpecialization || ""
+                                      }
+                                      onChange={(val) =>
+                                        handleFieldChange(
+                                          "prcSpecialization",
+                                          val,
+                                        )
+                                      }
+                                      placeholder="Select specialization..."
+                                    />
+                                  </div>
+                                );
+                              })()}
                             </div>
+                          </>
+                        )}
+
+                        {activeTab === "development" && (
+                          <>
+                            <div className="profile-subsection">
+                              Standard Training Credentials
+                            </div>
+
+                            {/* NEAP SECTION */}
                             <div
+                              className="credential-group"
                               style={{
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: "10px",
+                                gridColumn: "1 / -1",
+                                marginBottom: "20px",
                               }}
                             >
-                              {(currentPerson.neapTrainingRows || []).map(
-                                (tr, index) => (
-                                  <div
-                                    key={tr.clientKey || tr.id || index}
-                                    className="multi-task-row"
-                                    style={{
-                                      display: "grid",
-                                      gridTemplateColumns:
-                                        "1.2fr 1fr 1fr 80px 80px 40px",
-                                      gap: "8px",
-                                      padding: "10px",
-                                      background: "#fff",
-                                      border: "1.5px solid var(--line)",
-                                      borderRadius: "12px",
-                                    }}
-                                  >
-                                    <div>
-                                      <label>NEAP Training</label>
-                                      <SearchableDropdown
-                                        options={[
-                                          "OTHER (SPECIFY CUSTOM...)",
-                                          ...NEAP_TRAINING_OPTIONS,
-                                        ]}
-                                        value={tr.title || ""}
-                                        onChange={(val) =>
-                                          handleTrainingChange(
-                                            "neapTrainingRows",
-                                            index,
-                                            "title",
-                                            val,
-                                          )
-                                        }
-                                        placeholder="SELECT NEAP TRAINING OR TYPE CUSTOM..."
-                                        allowCustom={true}
-                                      />
-                                      {(tr.title ===
-                                        "OTHER (SPECIFY CUSTOM...)" ||
-                                        (tr.title &&
-                                          !NEAP_TRAINING_OPTIONS.includes(
-                                            tr.title,
-                                          ))) && (
-                                        <input
-                                          type="text"
-                                          placeholder="Type custom NEAP training title *"
-                                          value={
-                                            tr.title ===
-                                            "OTHER (SPECIFY CUSTOM...)"
-                                              ? ""
-                                              : tr.title
-                                          }
-                                          onChange={(e) =>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  marginBottom: "10px",
+                                }}
+                              >
+                                <label style={{ margin: 0 }}>
+                                  NEAP Trainings
+                                </label>
+                                <button
+                                  className="btn secondary"
+                                  style={{ minHeight: "34px" }}
+                                  type="button"
+                                  onClick={() =>
+                                    addTrainingRow("neapTrainingRows")
+                                  }
+                                >
+                                  + Add NEAP Training
+                                </button>
+                              </div>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: "10px",
+                                }}
+                              >
+                                {(currentPerson.neapTrainingRows || []).map(
+                                  (tr, index) => (
+                                    <div
+                                      key={tr.clientKey || tr.id || index}
+                                      className="multi-task-row"
+                                      style={{
+                                        display: "grid",
+                                        gridTemplateColumns:
+                                          "1.2fr 1fr 1fr 80px 80px 40px",
+                                        gap: "8px",
+                                        padding: "10px",
+                                        background: "#fff",
+                                        border: "1.5px solid var(--line)",
+                                        borderRadius: "12px",
+                                      }}
+                                    >
+                                      <div>
+                                        <label>NEAP Training</label>
+                                        <SearchableDropdown
+                                          options={[
+                                            "OTHER (SPECIFY CUSTOM...)",
+                                            ...NEAP_TRAINING_OPTIONS,
+                                          ]}
+                                          value={tr.title || ""}
+                                          onChange={(val) =>
                                             handleTrainingChange(
                                               "neapTrainingRows",
                                               index,
                                               "title",
-                                              e.target.value.toUpperCase(),
+                                              val,
                                             )
                                           }
-                                          style={{
-                                            marginTop: "6px",
-                                            fontSize: "13px",
-                                            background: "#FFFBEB",
-                                            borderColor: "#F59E0B",
-                                          }}
-                                          required
+                                          placeholder="SELECT NEAP TRAINING OR TYPE CUSTOM..."
+                                          allowCustom={true}
                                         />
-                                      )}
-                                    </div>
-                                    <div>
-                                      <label>Start Date</label>
-                                      <DatePickerDropdowns
-                                        value={tr.startDate || ""}
-                                        onChange={(val) =>
-                                          handleTrainingChange(
-                                            "neapTrainingRows",
-                                            index,
-                                            "startDate",
-                                            val,
-                                          )
-                                        }
-                                        minDate={
-                                          new Date("2020-01-01T00:00:00")
-                                        }
-                                        maxDate={new Date()}
-                                        placement="bottom"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label>End Date</label>
-                                      <DatePickerDropdowns
-                                        value={tr.endDate || ""}
-                                        onChange={(val) =>
-                                          handleTrainingChange(
-                                            "neapTrainingRows",
-                                            index,
-                                            "endDate",
-                                            val,
-                                          )
-                                        }
-                                        maxDate={new Date()}
-                                        minDate={
-                                          tr.startDate
-                                            ? new Date(
-                                                tr.startDate.substring(0, 10) +
-                                                  "T00:00:00",
+                                        {(tr.title ===
+                                          "OTHER (SPECIFY CUSTOM...)" ||
+                                          (tr.title &&
+                                            !NEAP_TRAINING_OPTIONS.includes(
+                                              tr.title,
+                                            ))) && (
+                                          <input
+                                            type="text"
+                                            placeholder="Type custom NEAP training title *"
+                                            value={
+                                              tr.title ===
+                                              "OTHER (SPECIFY CUSTOM...)"
+                                                ? ""
+                                                : tr.title
+                                            }
+                                            onChange={(e) =>
+                                              handleTrainingChange(
+                                                "neapTrainingRows",
+                                                index,
+                                                "title",
+                                                e.target.value.toUpperCase(),
                                               )
-                                            : new Date("2020-01-01T00:00:00")
-                                        }
-                                        placement="bottom"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label>No. of Days</label>
-                                      <input
-                                        value={tr.days || 0}
-                                        disabled
-                                        style={{ background: "#f1f5f9" }}
-                                      />
-                                    </div>
-                                    <div>
-                                      <label>
-                                        Total Hours{" "}
-                                        <span style={{ color: "#EF4444" }}>
-                                          *
-                                        </span>
-                                      </label>
-                                      <input
-                                        type="number"
-                                        min="1"
-                                        placeholder="Hours *"
-                                        required
-                                        value={tr.totalHours || ""}
-                                        onChange={(e) =>
-                                          handleTrainingChange(
+                                            }
+                                            style={{
+                                              marginTop: "6px",
+                                              fontSize: "13px",
+                                              background: "#FFFBEB",
+                                              borderColor: "#F59E0B",
+                                            }}
+                                            required
+                                          />
+                                        )}
+                                      </div>
+                                      <div>
+                                        <label>Start Date</label>
+                                        <DatePickerDropdowns
+                                          value={tr.startDate || ""}
+                                          onChange={(val) =>
+                                            handleTrainingChange(
+                                              "neapTrainingRows",
+                                              index,
+                                              "startDate",
+                                              val,
+                                            )
+                                          }
+                                          minDate={
+                                            new Date("2020-01-01T00:00:00")
+                                          }
+                                          maxDate={new Date()}
+                                          placement="bottom"
+                                        />
+                                      </div>
+                                      <div>
+                                        <label>End Date</label>
+                                        <DatePickerDropdowns
+                                          value={tr.endDate || ""}
+                                          onChange={(val) =>
+                                            handleTrainingChange(
+                                              "neapTrainingRows",
+                                              index,
+                                              "endDate",
+                                              val,
+                                            )
+                                          }
+                                          maxDate={new Date()}
+                                          minDate={
+                                            tr.startDate
+                                              ? new Date(
+                                                  tr.startDate.substring(
+                                                    0,
+                                                    10,
+                                                  ) + "T00:00:00",
+                                                )
+                                              : new Date("2020-01-01T00:00:00")
+                                          }
+                                          placement="bottom"
+                                        />
+                                      </div>
+                                      <div>
+                                        <label>No. of Days</label>
+                                        <input
+                                          value={tr.days || 0}
+                                          disabled
+                                          style={{ background: "#f1f5f9" }}
+                                        />
+                                      </div>
+                                      <div>
+                                        <label>
+                                          Total Hours{" "}
+                                          <span style={{ color: "#EF4444" }}>
+                                            *
+                                          </span>
+                                        </label>
+                                        <input
+                                          type="number"
+                                          min="1"
+                                          placeholder="Hours *"
+                                          required
+                                          value={tr.totalHours || ""}
+                                          onChange={(e) =>
+                                            handleTrainingChange(
+                                              "neapTrainingRows",
+                                              index,
+                                              "totalHours",
+                                              e.target.value
+                                                ? Number(e.target.value)
+                                                : "",
+                                            )
+                                          }
+                                        />
+                                      </div>
+                                      <button
+                                        className="btn danger"
+                                        style={{
+                                          minHeight: "36px",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "center",
+                                        }}
+                                        type="button"
+                                        onClick={() =>
+                                          removeTrainingRow(
                                             "neapTrainingRows",
                                             index,
-                                            "totalHours",
-                                            e.target.value
-                                              ? Number(e.target.value)
-                                              : "",
                                           )
                                         }
-                                      />
+                                        title="Remove"
+                                      >
+                                        <FiTrash2 size={14} />
+                                      </button>
                                     </div>
-                                    <button
-                                      className="btn danger"
-                                      style={{
-                                        minHeight: "36px",
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                      }}
-                                      type="button"
-                                      onClick={() =>
-                                        removeTrainingRow(
-                                          "neapTrainingRows",
-                                          index,
-                                        )
-                                      }
-                                      title="Remove"
-                                    >
-                                      <FiTrash2 size={14} />
-                                    </button>
-                                  </div>
-                                ),
-                              )}
-                              {(currentPerson.neapTrainingRows || []).length ===
-                                0 && (
-                                <div
-                                  style={{
-                                    padding: "15px",
-                                    background: "#F0F9FF",
-                                    color: "var(--blue)",
-                                    border: "1.5px solid var(--line)",
-                                    borderRadius: "12px",
-                                    fontSize: "13px",
-                                    textAlign: "center",
-                                  }}
-                                >
-                                  No NEAP trainings added yet. Click “Add NEAP
-                                  Training” to encode credentials, inclusive
-                                  dates (2020 – present), and hours.
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* TESDA / CERTIFICATION SECTION */}
-                          <div
-                            className="credential-group"
-                            style={{
-                              gridColumn: "1 / -1",
-                              marginBottom: "20px",
-                            }}
-                          >
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                marginBottom: "10px",
-                              }}
-                            >
-                              <label style={{ margin: 0 }}>
-                                TESDA NC / Certifications
-                              </label>
-                              <button
-                                className="btn secondary"
-                                style={{ minHeight: "34px" }}
-                                type="button"
-                                onClick={() =>
-                                  addTrainingRow("certificationRows")
-                                }
-                              >
-                                + Add TESDA / Certification
-                              </button>
-                            </div>
-                            <div
-                              style={{
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: "10px",
-                              }}
-                            >
-                              {(currentPerson.certificationRows || []).map(
-                                (tr, index) => (
+                                  ),
+                                )}
+                                {(currentPerson.neapTrainingRows || [])
+                                  .length === 0 && (
                                   <div
-                                    key={tr.clientKey || tr.id || index}
-                                    className="multi-task-row"
                                     style={{
-                                      display: "grid",
-                                      gridTemplateColumns:
-                                        "1.2fr 1fr 1fr 80px 80px 40px",
-                                      gap: "8px",
-                                      padding: "10px",
-                                      background: "#fff",
+                                      padding: "15px",
+                                      background: "#F0F9FF",
+                                      color: "var(--blue)",
                                       border: "1.5px solid var(--line)",
                                       borderRadius: "12px",
+                                      fontSize: "13px",
+                                      textAlign: "center",
                                     }}
                                   >
-                                    <div>
-                                      <label>TESDA / Certification</label>
-                                      <SearchableDropdown
-                                        options={TESDA_CERTIFICATION_OPTIONS}
-                                        value={tr.title || ""}
-                                        onChange={(val) =>
-                                          handleTrainingChange(
-                                            "certificationRows",
-                                            index,
-                                            "title",
-                                            val,
-                                          )
-                                        }
-                                        placeholder="SELECT TESDA NC / CERTIFICATION..."
-                                      />
-                                    </div>
-                                    <div>
-                                      <label>Start Date</label>
-                                      <DatePickerDropdowns
-                                        value={tr.startDate || ""}
-                                        onChange={(val) =>
-                                          handleTrainingChange(
-                                            "certificationRows",
-                                            index,
-                                            "startDate",
-                                            val,
-                                          )
-                                        }
-                                        minDate={
-                                          new Date("2020-01-01T00:00:00")
-                                        }
-                                        maxDate={new Date()}
-                                        placement="bottom"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label>End Date</label>
-                                      <DatePickerDropdowns
-                                        value={tr.endDate || ""}
-                                        onChange={(val) =>
-                                          handleTrainingChange(
-                                            "certificationRows",
-                                            index,
-                                            "endDate",
-                                            val,
-                                          )
-                                        }
-                                        maxDate={new Date()}
-                                        minDate={
-                                          tr.startDate
-                                            ? new Date(
-                                                tr.startDate.substring(0, 10) +
-                                                  "T00:00:00",
-                                              )
-                                            : new Date("2020-01-01T00:00:00")
-                                        }
-                                        placement="bottom"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label>No. of Days</label>
-                                      <input
-                                        value={tr.days || 0}
-                                        disabled
-                                        style={{ background: "#f1f5f9" }}
-                                      />
-                                    </div>
-                                    <div>
-                                      <label>
-                                        Total Hours{" "}
-                                        <span style={{ color: "#EF4444" }}>
-                                          *
-                                        </span>
-                                      </label>
-                                      <input
-                                        type="number"
-                                        min="1"
-                                        placeholder="Hours *"
-                                        required
-                                        value={tr.totalHours || ""}
-                                        onChange={(e) =>
-                                          handleTrainingChange(
-                                            "certificationRows",
-                                            index,
-                                            "totalHours",
-                                            e.target.value
-                                              ? Number(e.target.value)
-                                              : "",
-                                          )
-                                        }
-                                      />
-                                    </div>
-                                    <button
-                                      className="btn danger"
-                                      style={{
-                                        minHeight: "36px",
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                      }}
-                                      type="button"
-                                      onClick={() =>
-                                        removeTrainingRow(
-                                          "certificationRows",
-                                          index,
-                                        )
-                                      }
-                                      title="Remove"
-                                    >
-                                      <FiTrash2 size={14} />
-                                    </button>
+                                    No NEAP trainings added yet. Click “Add NEAP
+                                    Training” to encode credentials, inclusive
+                                    dates (2020 – present), and hours.
                                   </div>
-                                ),
-                              )}
-                              {(currentPerson.certificationRows || [])
-                                .length === 0 && (
-                                <div
-                                  style={{
-                                    padding: "15px",
-                                    background: "#F0F9FF",
-                                    color: "var(--blue)",
-                                    border: "1.5px solid var(--line)",
-                                    borderRadius: "12px",
-                                    fontSize: "13px",
-                                    textAlign: "center",
-                                  }}
-                                >
-                                  No TESDA NC / certification records added yet.
-                                  Click “Add TESDA / Certification” to encode
-                                  credentials, inclusive dates (2020 – present),
-                                  and hours.
-                                </div>
-                              )}
+                                )}
+                              </div>
                             </div>
-                          </div>
 
-                          {/* OTHER TRAININGS SECTION */}
-                          <div
-                            className="credential-group"
-                            style={{ gridColumn: "1 / -1" }}
-                          >
+                            {/* TESDA / CERTIFICATION SECTION */}
                             <div
+                              className="credential-group"
                               style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                marginBottom: "10px",
+                                gridColumn: "1 / -1",
+                                marginBottom: "20px",
                               }}
                             >
-                              <label style={{ margin: 0 }}>
-                                Other Trainings
-                              </label>
-                              <button
-                                className="btn secondary"
-                                style={{ minHeight: "34px" }}
-                                type="button"
-                                onClick={() =>
-                                  addTrainingRow("otherTrainingRows")
-                                }
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  marginBottom: "10px",
+                                }}
                               >
-                                + Add training
-                              </button>
-                            </div>
-                            <div
-                              style={{
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: "10px",
-                              }}
-                            >
-                              {(currentPerson.otherTrainingRows || []).map(
-                                (tr, index) => (
+                                <label style={{ margin: 0 }}>
+                                  TESDA NC / Certifications
+                                </label>
+                                <button
+                                  className="btn secondary"
+                                  style={{ minHeight: "34px" }}
+                                  type="button"
+                                  onClick={() =>
+                                    addTrainingRow("certificationRows")
+                                  }
+                                >
+                                  + Add TESDA / Certification
+                                </button>
+                              </div>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: "10px",
+                                }}
+                              >
+                                {(currentPerson.certificationRows || []).map(
+                                  (tr, index) => (
+                                    <div
+                                      key={tr.clientKey || tr.id || index}
+                                      className="multi-task-row"
+                                      style={{
+                                        display: "grid",
+                                        gridTemplateColumns:
+                                          "1.2fr 1fr 1fr 80px 80px 40px",
+                                        gap: "8px",
+                                        padding: "10px",
+                                        background: "#fff",
+                                        border: "1.5px solid var(--line)",
+                                        borderRadius: "12px",
+                                      }}
+                                    >
+                                      <div>
+                                        <label>TESDA / Certification</label>
+                                        <SearchableDropdown
+                                          options={TESDA_CERTIFICATION_OPTIONS}
+                                          value={tr.title || ""}
+                                          onChange={(val) =>
+                                            handleTrainingChange(
+                                              "certificationRows",
+                                              index,
+                                              "title",
+                                              val,
+                                            )
+                                          }
+                                          placeholder="SELECT TESDA NC / CERTIFICATION..."
+                                        />
+                                      </div>
+                                      <div>
+                                        <label>Start Date</label>
+                                        <DatePickerDropdowns
+                                          value={tr.startDate || ""}
+                                          onChange={(val) =>
+                                            handleTrainingChange(
+                                              "certificationRows",
+                                              index,
+                                              "startDate",
+                                              val,
+                                            )
+                                          }
+                                          minDate={
+                                            new Date("2020-01-01T00:00:00")
+                                          }
+                                          maxDate={new Date()}
+                                          placement="bottom"
+                                        />
+                                      </div>
+                                      <div>
+                                        <label>End Date</label>
+                                        <DatePickerDropdowns
+                                          value={tr.endDate || ""}
+                                          onChange={(val) =>
+                                            handleTrainingChange(
+                                              "certificationRows",
+                                              index,
+                                              "endDate",
+                                              val,
+                                            )
+                                          }
+                                          maxDate={new Date()}
+                                          minDate={
+                                            tr.startDate
+                                              ? new Date(
+                                                  tr.startDate.substring(
+                                                    0,
+                                                    10,
+                                                  ) + "T00:00:00",
+                                                )
+                                              : new Date("2020-01-01T00:00:00")
+                                          }
+                                          placement="bottom"
+                                        />
+                                      </div>
+                                      <div>
+                                        <label>No. of Days</label>
+                                        <input
+                                          value={tr.days || 0}
+                                          disabled
+                                          style={{ background: "#f1f5f9" }}
+                                        />
+                                      </div>
+                                      <div>
+                                        <label>
+                                          Total Hours{" "}
+                                          <span style={{ color: "#EF4444" }}>
+                                            *
+                                          </span>
+                                        </label>
+                                        <input
+                                          type="number"
+                                          min="1"
+                                          placeholder="Hours *"
+                                          required
+                                          value={tr.totalHours || ""}
+                                          onChange={(e) =>
+                                            handleTrainingChange(
+                                              "certificationRows",
+                                              index,
+                                              "totalHours",
+                                              e.target.value
+                                                ? Number(e.target.value)
+                                                : "",
+                                            )
+                                          }
+                                        />
+                                      </div>
+                                      <button
+                                        className="btn danger"
+                                        style={{
+                                          minHeight: "36px",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "center",
+                                        }}
+                                        type="button"
+                                        onClick={() =>
+                                          removeTrainingRow(
+                                            "certificationRows",
+                                            index,
+                                          )
+                                        }
+                                        title="Remove"
+                                      >
+                                        <FiTrash2 size={14} />
+                                      </button>
+                                    </div>
+                                  ),
+                                )}
+                                {(currentPerson.certificationRows || [])
+                                  .length === 0 && (
                                   <div
-                                    key={tr.clientKey || tr.id || index}
-                                    className="multi-task-row"
                                     style={{
-                                      display: "grid",
-                                      gridTemplateColumns:
-                                        "1.2fr 1fr 1fr 80px 80px 40px",
-                                      gap: "8px",
-                                      padding: "10px",
-                                      background: "#fff",
+                                      padding: "15px",
+                                      background: "#F0F9FF",
+                                      color: "var(--blue)",
                                       border: "1.5px solid var(--line)",
                                       borderRadius: "12px",
+                                      fontSize: "13px",
+                                      textAlign: "center",
                                     }}
                                   >
-                                    <div>
-                                      <label>Training Title</label>
-                                      <SearchableDropdown
-                                        options={[
-                                          "OTHER (SPECIFY CUSTOM...)",
-                                          "SCHOOL-BASED INSET",
-                                          "DIVISION TRAINING WORKSHOP",
-                                          "REGIONAL MASS TRAINING",
-                                          "LEARNING ACTION CELL",
-                                          "RESEARCH CAPABILITY BUILDING",
-                                          "DRRM TRAINING",
-                                          "CHILD PROTECTION TRAINING",
-                                          "MENTAL HEALTH AND PSYCHOSOCIAL SUPPORT",
-                                        ]}
-                                        value={tr.title || ""}
-                                        onChange={(val) =>
-                                          handleTrainingChange(
-                                            "otherTrainingRows",
-                                            index,
-                                            "title",
-                                            val,
-                                          )
-                                        }
-                                        placeholder="SELECT OTHER TRAINING OR TYPE CUSTOM..."
-                                        allowCustom={true}
-                                      />
-                                      {(tr.title ===
-                                        "OTHER (SPECIFY CUSTOM...)" ||
-                                        (tr.title &&
-                                          ![
+                                    No TESDA NC / certification records added
+                                    yet. Click “Add TESDA / Certification” to
+                                    encode credentials, inclusive dates (2020 –
+                                    present), and hours.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* OTHER TRAININGS SECTION */}
+                            <div
+                              className="credential-group"
+                              style={{ gridColumn: "1 / -1" }}
+                            >
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  marginBottom: "10px",
+                                }}
+                              >
+                                <label style={{ margin: 0 }}>
+                                  Other Trainings
+                                </label>
+                                <button
+                                  className="btn secondary"
+                                  style={{ minHeight: "34px" }}
+                                  type="button"
+                                  onClick={() =>
+                                    addTrainingRow("otherTrainingRows")
+                                  }
+                                >
+                                  + Add training
+                                </button>
+                              </div>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: "10px",
+                                }}
+                              >
+                                {(currentPerson.otherTrainingRows || []).map(
+                                  (tr, index) => (
+                                    <div
+                                      key={tr.clientKey || tr.id || index}
+                                      className="multi-task-row"
+                                      style={{
+                                        display: "grid",
+                                        gridTemplateColumns:
+                                          "1.2fr 1fr 1fr 80px 80px 40px",
+                                        gap: "8px",
+                                        padding: "10px",
+                                        background: "#fff",
+                                        border: "1.5px solid var(--line)",
+                                        borderRadius: "12px",
+                                      }}
+                                    >
+                                      <div>
+                                        <label>Training Title</label>
+                                        <SearchableDropdown
+                                          options={[
+                                            "OTHER (SPECIFY CUSTOM...)",
                                             "SCHOOL-BASED INSET",
                                             "DIVISION TRAINING WORKSHOP",
                                             "REGIONAL MASS TRAINING",
@@ -10055,390 +10160,601 @@ export default function PersonnelProfile() {
                                             "DRRM TRAINING",
                                             "CHILD PROTECTION TRAINING",
                                             "MENTAL HEALTH AND PSYCHOSOCIAL SUPPORT",
-                                          ].includes(tr.title))) && (
-                                        <input
-                                          type="text"
-                                          placeholder="Type custom training title *"
-                                          value={
-                                            tr.title ===
-                                            "OTHER (SPECIFY CUSTOM...)"
-                                              ? ""
-                                              : tr.title
-                                          }
-                                          onChange={(e) =>
+                                          ]}
+                                          value={tr.title || ""}
+                                          onChange={(val) =>
                                             handleTrainingChange(
                                               "otherTrainingRows",
                                               index,
                                               "title",
-                                              e.target.value.toUpperCase(),
+                                              val,
                                             )
                                           }
-                                          style={{
-                                            marginTop: "6px",
-                                            fontSize: "13px",
-                                            background: "#FFFBEB",
-                                            borderColor: "#F59E0B",
-                                          }}
-                                          required
+                                          placeholder="SELECT OTHER TRAINING OR TYPE CUSTOM..."
+                                          allowCustom={true}
                                         />
-                                      )}
-                                    </div>
-                                    <div>
-                                      <label>Start Date</label>
-                                      <DatePickerDropdowns
-                                        value={tr.startDate || ""}
-                                        onChange={(val) =>
-                                          handleTrainingChange(
-                                            "otherTrainingRows",
-                                            index,
-                                            "startDate",
-                                            val,
-                                          )
-                                        }
-                                        minDate={
-                                          new Date("2020-01-01T00:00:00")
-                                        }
-                                        maxDate={new Date()}
-                                        placement="bottom"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label>End Date</label>
-                                      <DatePickerDropdowns
-                                        value={tr.endDate || ""}
-                                        onChange={(val) =>
-                                          handleTrainingChange(
-                                            "otherTrainingRows",
-                                            index,
-                                            "endDate",
-                                            val,
-                                          )
-                                        }
-                                        maxDate={new Date()}
-                                        minDate={
-                                          tr.startDate
-                                            ? new Date(
-                                                tr.startDate.substring(0, 10) +
-                                                  "T00:00:00",
+                                        {(tr.title ===
+                                          "OTHER (SPECIFY CUSTOM...)" ||
+                                          (tr.title &&
+                                            ![
+                                              "SCHOOL-BASED INSET",
+                                              "DIVISION TRAINING WORKSHOP",
+                                              "REGIONAL MASS TRAINING",
+                                              "LEARNING ACTION CELL",
+                                              "RESEARCH CAPABILITY BUILDING",
+                                              "DRRM TRAINING",
+                                              "CHILD PROTECTION TRAINING",
+                                              "MENTAL HEALTH AND PSYCHOSOCIAL SUPPORT",
+                                            ].includes(tr.title))) && (
+                                          <input
+                                            type="text"
+                                            placeholder="Type custom training title *"
+                                            value={
+                                              tr.title ===
+                                              "OTHER (SPECIFY CUSTOM...)"
+                                                ? ""
+                                                : tr.title
+                                            }
+                                            onChange={(e) =>
+                                              handleTrainingChange(
+                                                "otherTrainingRows",
+                                                index,
+                                                "title",
+                                                e.target.value.toUpperCase(),
                                               )
-                                            : new Date("2020-01-01T00:00:00")
-                                        }
-                                        placement="bottom"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label>No. of Days</label>
-                                      <input
-                                        value={tr.days || 0}
-                                        disabled
-                                        style={{ background: "#f1f5f9" }}
-                                      />
-                                    </div>
-                                    <div>
-                                      <label>
-                                        Total Hours{" "}
-                                        <span style={{ color: "#EF4444" }}>
-                                          *
-                                        </span>
-                                      </label>
-                                      <input
-                                        type="number"
-                                        min="1"
-                                        placeholder="Hours *"
-                                        required
-                                        value={tr.totalHours || ""}
-                                        onChange={(e) =>
-                                          handleTrainingChange(
+                                            }
+                                            style={{
+                                              marginTop: "6px",
+                                              fontSize: "13px",
+                                              background: "#FFFBEB",
+                                              borderColor: "#F59E0B",
+                                            }}
+                                            required
+                                          />
+                                        )}
+                                      </div>
+                                      <div>
+                                        <label>Start Date</label>
+                                        <DatePickerDropdowns
+                                          value={tr.startDate || ""}
+                                          onChange={(val) =>
+                                            handleTrainingChange(
+                                              "otherTrainingRows",
+                                              index,
+                                              "startDate",
+                                              val,
+                                            )
+                                          }
+                                          minDate={
+                                            new Date("2020-01-01T00:00:00")
+                                          }
+                                          maxDate={new Date()}
+                                          placement="bottom"
+                                        />
+                                      </div>
+                                      <div>
+                                        <label>End Date</label>
+                                        <DatePickerDropdowns
+                                          value={tr.endDate || ""}
+                                          onChange={(val) =>
+                                            handleTrainingChange(
+                                              "otherTrainingRows",
+                                              index,
+                                              "endDate",
+                                              val,
+                                            )
+                                          }
+                                          maxDate={new Date()}
+                                          minDate={
+                                            tr.startDate
+                                              ? new Date(
+                                                  tr.startDate.substring(
+                                                    0,
+                                                    10,
+                                                  ) + "T00:00:00",
+                                                )
+                                              : new Date("2020-01-01T00:00:00")
+                                          }
+                                          placement="bottom"
+                                        />
+                                      </div>
+                                      <div>
+                                        <label>No. of Days</label>
+                                        <input
+                                          value={tr.days || 0}
+                                          disabled
+                                          style={{ background: "#f1f5f9" }}
+                                        />
+                                      </div>
+                                      <div>
+                                        <label>
+                                          Total Hours{" "}
+                                          <span style={{ color: "#EF4444" }}>
+                                            *
+                                          </span>
+                                        </label>
+                                        <input
+                                          type="number"
+                                          min="1"
+                                          placeholder="Hours *"
+                                          required
+                                          value={tr.totalHours || ""}
+                                          onChange={(e) =>
+                                            handleTrainingChange(
+                                              "otherTrainingRows",
+                                              index,
+                                              "totalHours",
+                                              e.target.value
+                                                ? Number(e.target.value)
+                                                : "",
+                                            )
+                                          }
+                                        />
+                                      </div>
+                                      <button
+                                        className="btn danger"
+                                        style={{
+                                          minHeight: "36px",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "center",
+                                        }}
+                                        type="button"
+                                        onClick={() =>
+                                          removeTrainingRow(
                                             "otherTrainingRows",
                                             index,
-                                            "totalHours",
-                                            e.target.value
-                                              ? Number(e.target.value)
-                                              : "",
                                           )
                                         }
-                                      />
+                                        title="Remove"
+                                      >
+                                        <FiTrash2 size={14} />
+                                      </button>
                                     </div>
-                                    <button
-                                      className="btn danger"
-                                      style={{
-                                        minHeight: "36px",
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                      }}
-                                      type="button"
-                                      onClick={() =>
-                                        removeTrainingRow(
-                                          "otherTrainingRows",
-                                          index,
-                                        )
-                                      }
-                                      title="Remove"
-                                    >
-                                      <FiTrash2 size={14} />
-                                    </button>
-                                  </div>
-                                ),
-                              )}
-                              {(currentPerson.otherTrainingRows || [])
-                                .length === 0 && (
-                                <div
-                                  style={{
-                                    padding: "15px",
-                                    background: "#F0F9FF",
-                                    color: "var(--blue)",
-                                    border: "1.5px solid var(--line)",
-                                    borderRadius: "12px",
-                                    fontSize: "13px",
-                                    textAlign: "center",
-                                  }}
-                                >
-                                  No other trainings added yet. Click “Add
-                                  training” to encode inclusive dates and hours.
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </>
-                      )}
-
-                      {activeTab === "teaching" &&
-                        currentPerson.type !== "non-teaching" && (
-                          <>
-                            <div className="profile-subsection">
-                              Teaching Assignment
-                            </div>
-
-                            {(() => {
-                              const isPersonSchoolHead =
-                                currentPerson.isSchoolHead === true ||
-                                currentPerson.is_school_head === true ||
-                                String(
-                                  currentPerson.position ||
-                                    currentPerson.plantilla_position ||
-                                    "",
-                                )
-                                  .toUpperCase()
-                                  .includes("PRINCIPAL") ||
-                                String(currentPerson.designation || "")
-                                  .toUpperCase()
-                                  .includes("PRINCIPAL") ||
-                                String(currentPerson.designation || "")
-                                  .toUpperCase()
-                                  .includes("SCHOOL HEAD") ||
-                                String(currentPerson.designation || "")
-                                  .toUpperCase()
-                                  .includes("HEAD TEACHER (ADMIN)");
-
-                              const isRelatedTeaching =
-                                isPersonSchoolHead ||
-                                currentPerson.type === "teaching-related" ||
-                                currentPerson.type === "related-teaching" ||
-                                currentPerson.type === "related" ||
-                                String(
-                                  currentPerson.positionCategory ||
-                                    currentPerson.position_category ||
-                                    "",
-                                ).toUpperCase() === "RELATED TEACHING";
-
-                              const hasAssignedGrades =
-                                Array.isArray(
-                                  currentPerson.assignedGradeLevels,
-                                ) &&
-                                currentPerson.assignedGradeLevels.length > 0;
-                              const hasNoTeaching =
-                                !hasAssignedGrades &&
-                                (currentPerson.hasNoTeachingLoad === true ||
-                                  currentPerson.has_no_teaching_load === true ||
-                                  isPersonSchoolHead ||
-                                  isRelatedTeaching);
-
-                              if (!isRelatedTeaching) return null;
-
-                              const titleText = isPersonSchoolHead
-                                ? "School Head Workload Designation"
-                                : "Related Teaching Workload Designation";
-
-                              const subtitleText = hasNoTeaching
-                                ? isPersonSchoolHead
-                                  ? "✓ Designated with 0 teaching loads (Purely administrative and supervisory functions)."
-                                  : "✓ Designated with 0 teaching loads (Purely administrative, supervisory, or non-classroom functions)."
-                                : "Currently has grade level(s) assigned. Click button to set 0 teaching load.";
-
-                              return (
-                                <div
-                                  style={{
-                                    gridColumn: "1 / -1",
-                                    background: hasNoTeaching
-                                      ? "#F0FDF4"
-                                      : "#F8FAFC",
-                                    border: `1.5px solid ${hasNoTeaching ? "#86EFAC" : "var(--line)"}`,
-                                    borderRadius: "12px",
-                                    padding: "14px 18px",
-                                    marginTop: "10px",
-                                    marginBottom: "14px",
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    alignItems: "center",
-                                    flexWrap: "wrap",
-                                    gap: "12px",
-                                  }}
-                                >
+                                  ),
+                                )}
+                                {(currentPerson.otherTrainingRows || [])
+                                  .length === 0 && (
                                   <div
                                     style={{
+                                      padding: "15px",
+                                      background: "#F0F9FF",
+                                      color: "var(--blue)",
+                                      border: "1.5px solid var(--line)",
+                                      borderRadius: "12px",
+                                      fontSize: "13px",
+                                      textAlign: "center",
+                                    }}
+                                  >
+                                    No other trainings added yet. Click “Add
+                                    training” to encode inclusive dates and
+                                    hours.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </>
+                        )}
+
+                        {activeTab === "teaching" &&
+                          currentPerson.type !== "non-teaching" && (
+                            <>
+                              <div className="profile-subsection">
+                                Teaching Assignment
+                              </div>
+
+                              {(() => {
+                                const isPersonSchoolHead =
+                                  currentPerson.isSchoolHead === true ||
+                                  currentPerson.is_school_head === true ||
+                                  String(
+                                    currentPerson.position ||
+                                      currentPerson.plantilla_position ||
+                                      "",
+                                  )
+                                    .toUpperCase()
+                                    .includes("PRINCIPAL") ||
+                                  String(currentPerson.designation || "")
+                                    .toUpperCase()
+                                    .includes("PRINCIPAL") ||
+                                  String(currentPerson.designation || "")
+                                    .toUpperCase()
+                                    .includes("SCHOOL HEAD") ||
+                                  String(currentPerson.designation || "")
+                                    .toUpperCase()
+                                    .includes("HEAD TEACHER (ADMIN)");
+
+                                const isRelatedTeaching =
+                                  isPersonSchoolHead ||
+                                  currentPerson.type === "teaching-related" ||
+                                  currentPerson.type === "related-teaching" ||
+                                  currentPerson.type === "related" ||
+                                  String(
+                                    currentPerson.positionCategory ||
+                                      currentPerson.position_category ||
+                                      "",
+                                  ).toUpperCase() === "RELATED TEACHING";
+
+                                const hasAssignedGrades =
+                                  Array.isArray(
+                                    currentPerson.assignedGradeLevels,
+                                  ) &&
+                                  currentPerson.assignedGradeLevels.length > 0;
+                                const hasNoTeaching =
+                                  !hasAssignedGrades &&
+                                  (currentPerson.hasNoTeachingLoad === true ||
+                                    currentPerson.has_no_teaching_load ===
+                                      true ||
+                                    isPersonSchoolHead ||
+                                    isRelatedTeaching);
+
+                                if (!isRelatedTeaching) return null;
+
+                                const titleText = isPersonSchoolHead
+                                  ? "School Head Workload Designation"
+                                  : "Related Teaching Workload Designation";
+
+                                const subtitleText = hasNoTeaching
+                                  ? isPersonSchoolHead
+                                    ? "✓ Designated with 0 teaching loads (Purely administrative and supervisory functions)."
+                                    : "✓ Designated with 0 teaching loads (Purely administrative, supervisory, or non-classroom functions)."
+                                  : "Currently has grade level(s) assigned. Click button to set 0 teaching load.";
+
+                                return (
+                                  <div
+                                    style={{
+                                      gridColumn: "1 / -1",
+                                      background: hasNoTeaching
+                                        ? "#F0FDF4"
+                                        : "#F8FAFC",
+                                      border: `1.5px solid ${hasNoTeaching ? "#86EFAC" : "var(--line)"}`,
+                                      borderRadius: "12px",
+                                      padding: "14px 18px",
+                                      marginTop: "10px",
+                                      marginBottom: "14px",
                                       display: "flex",
+                                      justifyContent: "space-between",
                                       alignItems: "center",
-                                      gap: "10px",
+                                      flexWrap: "wrap",
+                                      gap: "12px",
                                     }}
                                   >
                                     <div
                                       style={{
-                                        width: "36px",
-                                        height: "36px",
-                                        borderRadius: "8px",
-                                        background: hasNoTeaching
-                                          ? "#DCFCE7"
-                                          : "#E2E8F0",
                                         display: "flex",
                                         alignItems: "center",
-                                        justifyContent: "center",
-                                        color: hasNoTeaching
-                                          ? "#15803D"
-                                          : "#475569",
+                                        gap: "10px",
                                       }}
                                     >
-                                      <FiUser size={18} />
-                                    </div>
-                                    <div>
                                       <div
                                         style={{
-                                          fontWeight: 800,
-                                          fontSize: "13px",
-                                          color: "var(--navy)",
+                                          width: "36px",
+                                          height: "36px",
+                                          borderRadius: "8px",
+                                          background: hasNoTeaching
+                                            ? "#DCFCE7"
+                                            : "#E2E8F0",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "center",
+                                          color: hasNoTeaching
+                                            ? "#15803D"
+                                            : "#475569",
                                         }}
                                       >
-                                        {titleText}
+                                        <FiUser size={18} />
                                       </div>
-                                      <div
+                                      <div>
+                                        <div
+                                          style={{
+                                            fontWeight: 800,
+                                            fontSize: "13px",
+                                            color: "var(--navy)",
+                                          }}
+                                        >
+                                          {titleText}
+                                        </div>
+                                        <div
+                                          style={{
+                                            fontSize: "11.5px",
+                                            color: "#64748B",
+                                          }}
+                                        >
+                                          {subtitleText}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        gap: "8px",
+                                        alignItems: "center",
+                                      }}
+                                    >
+                                      <button
+                                        type="button"
+                                        className={`btn ${hasNoTeaching ? "btn-primary" : "secondary"}`}
                                         style={{
                                           fontSize: "11.5px",
-                                          color: "#64748B",
+                                          fontWeight: 800,
+                                          padding: "7px 14px",
+                                          borderRadius: "8px",
+                                          background: hasNoTeaching
+                                            ? "#16A34A"
+                                            : "#FFFFFF",
+                                          borderColor: hasNoTeaching
+                                            ? "#16A34A"
+                                            : "var(--line)",
+                                          color: hasNoTeaching
+                                            ? "#FFFFFF"
+                                            : "var(--navy)",
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: "6px",
+                                          cursor: "pointer",
+                                        }}
+                                        onClick={() => {
+                                          const nextNoTeaching = !hasNoTeaching;
+                                          handleMultipleFieldsChange({
+                                            assignedGradeLevels: [],
+                                            assigned_grade_levels: [],
+                                            gradeLevelsTaught: [],
+                                            grade_levels_taught: [],
+                                            hasNoTeachingLoad: nextNoTeaching,
+                                            has_no_teaching_load:
+                                              nextNoTeaching,
+                                            teachesShs: false,
+                                            teaches_shs: false,
+                                          });
+                                          if (showToast)
+                                            showToast(
+                                              nextNoTeaching
+                                                ? `${isPersonSchoolHead ? "School Head" : "Related Teaching personnel"} designated with 0 teaching loads (Purely Administrative).`
+                                                : "0-load designation removed. Please select grade levels.",
+                                              "info",
+                                            );
                                         }}
                                       >
-                                        {subtitleText}
-                                      </div>
+                                        <FiCheckCircle size={13} />
+                                        <span>
+                                          No Teaching Assignment (0 Teaching
+                                          Load)
+                                        </span>
+                                      </button>
                                     </div>
                                   </div>
+                                );
+                              })()}
 
-                                  <div
-                                    style={{
-                                      display: "flex",
-                                      gap: "8px",
-                                      alignItems: "center",
-                                    }}
-                                  >
-                                    <button
-                                      type="button"
-                                      className={`btn ${hasNoTeaching ? "btn-primary" : "secondary"}`}
-                                      style={{
-                                        fontSize: "11.5px",
-                                        fontWeight: 800,
-                                        padding: "7px 14px",
-                                        borderRadius: "8px",
-                                        background: hasNoTeaching
-                                          ? "#16A34A"
-                                          : "#FFFFFF",
-                                        borderColor: hasNoTeaching
-                                          ? "#16A34A"
-                                          : "var(--line)",
-                                        color: hasNoTeaching
-                                          ? "#FFFFFF"
-                                          : "var(--navy)",
-                                        display: "inline-flex",
-                                        alignItems: "center",
-                                        gap: "6px",
-                                        cursor: "pointer",
-                                      }}
-                                      onClick={() => {
-                                        const nextNoTeaching = !hasNoTeaching;
-                                        handleMultipleFieldsChange({
-                                          assignedGradeLevels: [],
-                                          assigned_grade_levels: [],
-                                          gradeLevelsTaught: [],
-                                          grade_levels_taught: [],
-                                          hasNoTeachingLoad: nextNoTeaching,
-                                          has_no_teaching_load: nextNoTeaching,
-                                          teachesShs: false,
-                                          teaches_shs: false,
-                                        });
-                                        if (showToast)
-                                          showToast(
-                                            nextNoTeaching
-                                              ? `${isPersonSchoolHead ? "School Head" : "Related Teaching personnel"} designated with 0 teaching loads (Purely Administrative).`
-                                              : "0-load designation removed. Please select grade levels.",
-                                            "info",
-                                          );
-                                      }}
-                                    >
-                                      <FiCheckCircle size={13} />
-                                      <span>
-                                        No Teaching Assignment (0 Teaching Load)
-                                      </span>
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })()}
-
-                            <div
-                              className="full"
-                              style={{
-                                gridColumn: "1 / -1",
-                                marginTop: "10px",
-                              }}
-                            >
                               <div
+                                className="full"
                                 style={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  alignItems: "center",
-                                  flexWrap: "wrap",
-                                  gap: "10px",
-                                  marginBottom: "8px",
+                                  gridColumn: "1 / -1",
+                                  marginTop: "10px",
                                 }}
                               >
-                                <div>
-                                  <label
-                                    style={{
-                                      fontWeight: "800",
-                                      fontSize: "14px",
-                                      color: "var(--navy)",
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: "6px",
-                                    }}
-                                  >
-                                    <FiLayers size={16} color="#0284C7" />{" "}
-                                    Assigned Grade Levels (Teaching /
-                                    Teaching-Related)
-                                  </label>
-                                  <p
-                                    className="field-help"
-                                    style={{
-                                      margin: "2px 0 0",
-                                      color: "#64748B",
-                                      fontSize: "12px",
-                                    }}
-                                  >
-                                    Click any grade level pill below to assign
-                                    or unassign it for this teacher.
-                                  </p>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    flexWrap: "wrap",
+                                    gap: "10px",
+                                    marginBottom: "8px",
+                                  }}
+                                >
+                                  <div>
+                                    <label
+                                      style={{
+                                        fontWeight: "800",
+                                        fontSize: "14px",
+                                        color: "var(--navy)",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "6px",
+                                      }}
+                                    >
+                                      <FiLayers size={16} color="#0284C7" />{" "}
+                                      Assigned Grade Levels (Teaching /
+                                      Teaching-Related)
+                                    </label>
+                                    <p
+                                      className="field-help"
+                                      style={{
+                                        margin: "2px 0 0",
+                                        color: "#64748B",
+                                        fontSize: "12px",
+                                      }}
+                                    >
+                                      Click any grade level pill below to assign
+                                      or unassign it for this teacher.
+                                    </p>
+                                  </div>
+
+                                  {/* Quick Action Presets */}
+                                  {(() => {
+                                    const curr = (
+                                      Array.isArray(
+                                        currentPerson.assignedGradeLevels,
+                                      )
+                                        ? currentPerson.assignedGradeLevels
+                                        : []
+                                    ).map((g) => {
+                                      const u = String(g || "").toUpperCase();
+                                      if (u.includes("KINDER")) return "Kinder";
+                                      if (
+                                        u === "SNED" ||
+                                        u === "SPED" ||
+                                        u === "NON-GRADED" ||
+                                        u === "NON GRADED" ||
+                                        u.includes("SNED") ||
+                                        u.includes("NON-GRADED") ||
+                                        u.includes("NON GRADED")
+                                      )
+                                        return "SNED (NON-GRADED)";
+                                      if (
+                                        u === "ALS" ||
+                                        u.startsWith("ALS-") ||
+                                        u.startsWith("ALS ")
+                                      )
+                                        return "ALS";
+                                      return g;
+                                    });
+
+                                    const updateGrades = (newList) => {
+                                      const hasShs = newList.some(
+                                        (g) =>
+                                          String(g).includes("11") ||
+                                          String(g).includes("12"),
+                                      );
+                                      handleMultipleFieldsChange({
+                                        assignedGradeLevels: newList,
+                                        assigned_grade_levels: newList,
+                                        gradeLevelsTaught: newList,
+                                        grade_levels_taught: newList,
+                                        teachesShs: hasShs,
+                                        teaches_shs: hasShs,
+                                        hasNoTeachingLoad: false,
+                                        has_no_teaching_load: false,
+                                      });
+                                    };
+
+                                    return (
+                                      <div
+                                        style={{
+                                          display: "flex",
+                                          gap: "6px",
+                                          flexWrap: "wrap",
+                                        }}
+                                      >
+                                        <button
+                                          type="button"
+                                          className="btn secondary"
+                                          style={{
+                                            fontSize: "11px",
+                                            padding: "4px 8px",
+                                            fontWeight: "700",
+                                          }}
+                                          onClick={() => {
+                                            const elemGrades = [
+                                              "Kinder",
+                                              "Grade 1",
+                                              "Grade 2",
+                                              "Grade 3",
+                                              "Grade 4",
+                                              "Grade 5",
+                                              "Grade 6",
+                                            ];
+                                            const merged = Array.from(
+                                              new Set([...curr, ...elemGrades]),
+                                            );
+                                            updateGrades(merged);
+                                          }}
+                                        >
+                                          + All Elem (K-6)
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="btn secondary"
+                                          style={{
+                                            fontSize: "11px",
+                                            padding: "4px 8px",
+                                            fontWeight: "700",
+                                          }}
+                                          onClick={() => {
+                                            const jhsGrades = [
+                                              "Grade 7",
+                                              "Grade 8",
+                                              "Grade 9",
+                                              "Grade 10",
+                                            ];
+                                            const merged = Array.from(
+                                              new Set([...curr, ...jhsGrades]),
+                                            );
+                                            updateGrades(merged);
+                                          }}
+                                        >
+                                          + All JHS (7-10)
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="btn secondary"
+                                          style={{
+                                            fontSize: "11px",
+                                            padding: "4px 8px",
+                                            fontWeight: "700",
+                                          }}
+                                          onClick={() => {
+                                            const shsGrades = [
+                                              "Grade 11",
+                                              "Grade 12",
+                                            ];
+                                            const merged = Array.from(
+                                              new Set([...curr, ...shsGrades]),
+                                            );
+                                            updateGrades(merged);
+                                          }}
+                                        >
+                                          + All SHS (11-12)
+                                        </button>
+                                        {curr.length > 0 && (
+                                          <button
+                                            type="button"
+                                            className="btn secondary"
+                                            style={{
+                                              fontSize: "11px",
+                                              padding: "4px 8px",
+                                              color: "#DC2626",
+                                              borderColor: "#FCA5A5",
+                                            }}
+                                            onClick={() => {
+                                              updateGrades([]);
+                                            }}
+                                          >
+                                            Clear All
+                                          </button>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
 
-                                {/* Quick Action Presets */}
+                                {/* Clickable Grade Level Badges Grid */}
                                 {(() => {
-                                  const curr = (
+                                  const groups = [
+                                    {
+                                      title: "Elementary",
+                                      grades: [
+                                        "Kinder",
+                                        "Grade 1",
+                                        "Grade 2",
+                                        "Grade 3",
+                                        "Grade 4",
+                                        "Grade 5",
+                                        "Grade 6",
+                                      ],
+                                    },
+                                    {
+                                      title: "Junior High School",
+                                      grades: [
+                                        "Grade 7",
+                                        "Grade 8",
+                                        "Grade 9",
+                                        "Grade 10",
+                                      ],
+                                    },
+                                    {
+                                      title: "Senior High School",
+                                      grades: ["Grade 11", "Grade 12"],
+                                    },
+                                    {
+                                      title: "Inclusive & Special Programs",
+                                      grades: ["SNED (NON-GRADED)", "ALS"],
+                                    },
+                                  ];
+
+                                  const currentGrades = (
                                     Array.isArray(
                                       currentPerson.assignedGradeLevels,
                                     )
@@ -10487,109 +10803,245 @@ export default function PersonnelProfile() {
                                   return (
                                     <div
                                       style={{
-                                        display: "flex",
-                                        gap: "6px",
-                                        flexWrap: "wrap",
+                                        display: "grid",
+                                        gap: "14px",
+                                        margin: "10px 0 16px",
                                       }}
                                     >
-                                      <button
-                                        type="button"
-                                        className="btn secondary"
-                                        style={{
-                                          fontSize: "11px",
-                                          padding: "4px 8px",
-                                          fontWeight: "700",
-                                        }}
-                                        onClick={() => {
-                                          const elemGrades = [
-                                            "Kinder",
-                                            "Grade 1",
-                                            "Grade 2",
-                                            "Grade 3",
-                                            "Grade 4",
-                                            "Grade 5",
-                                            "Grade 6",
-                                          ];
-                                          const merged = Array.from(
-                                            new Set([...curr, ...elemGrades]),
-                                          );
-                                          updateGrades(merged);
-                                        }}
-                                      >
-                                        + All Elem (K-6)
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="btn secondary"
-                                        style={{
-                                          fontSize: "11px",
-                                          padding: "4px 8px",
-                                          fontWeight: "700",
-                                        }}
-                                        onClick={() => {
-                                          const jhsGrades = [
-                                            "Grade 7",
-                                            "Grade 8",
-                                            "Grade 9",
-                                            "Grade 10",
-                                          ];
-                                          const merged = Array.from(
-                                            new Set([...curr, ...jhsGrades]),
-                                          );
-                                          updateGrades(merged);
-                                        }}
-                                      >
-                                        + All JHS (7-10)
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="btn secondary"
-                                        style={{
-                                          fontSize: "11px",
-                                          padding: "4px 8px",
-                                          fontWeight: "700",
-                                        }}
-                                        onClick={() => {
-                                          const shsGrades = [
-                                            "Grade 11",
-                                            "Grade 12",
-                                          ];
-                                          const merged = Array.from(
-                                            new Set([...curr, ...shsGrades]),
-                                          );
-                                          updateGrades(merged);
-                                        }}
-                                      >
-                                        + All SHS (11-12)
-                                      </button>
-                                      {curr.length > 0 && (
-                                        <button
-                                          type="button"
-                                          className="btn secondary"
+                                      {groups.map((grp, gIdx) => (
+                                        <div
+                                          key={gIdx}
                                           style={{
-                                            fontSize: "11px",
-                                            padding: "4px 8px",
-                                            color: "#DC2626",
-                                            borderColor: "#FCA5A5",
-                                          }}
-                                          onClick={() => {
-                                            updateGrades([]);
+                                            background: "#F8FAFC",
+                                            padding: "12px 14px",
+                                            borderRadius: "12px",
+                                            border: "1px solid #E2E8F0",
                                           }}
                                         >
-                                          Clear All
-                                        </button>
-                                      )}
+                                          <div
+                                            style={{
+                                              fontSize: "11px",
+                                              fontWeight: "800",
+                                              textTransform: "uppercase",
+                                              letterSpacing: "0.5px",
+                                              color: "#64748B",
+                                              marginBottom: "8px",
+                                            }}
+                                          >
+                                            {grp.title}
+                                          </div>
+                                          <div
+                                            style={{
+                                              display: "flex",
+                                              flexWrap: "wrap",
+                                              gap: "8px",
+                                            }}
+                                          >
+                                            {grp.grades.map((grade) => {
+                                              const isSelected =
+                                                currentGrades.includes(grade);
+                                              return (
+                                                <button
+                                                  key={grade}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    let updatedList;
+                                                    if (isSelected) {
+                                                      updatedList =
+                                                        currentGrades.filter(
+                                                          (g) => g !== grade,
+                                                        );
+                                                    } else {
+                                                      updatedList = [
+                                                        ...currentGrades,
+                                                        grade,
+                                                      ];
+                                                    }
+                                                    updateGrades(updatedList);
+                                                  }}
+                                                  style={{
+                                                    background: isSelected
+                                                      ? "linear-gradient(135deg, #0284C7, #0369A1)"
+                                                      : "#FFFFFF",
+                                                    color: isSelected
+                                                      ? "#FFFFFF"
+                                                      : "#1E293B",
+                                                    border: `1.5px solid ${isSelected ? "#0284C7" : "#CBD5E1"}`,
+                                                    borderRadius: "8px",
+                                                    padding: "7px 14px",
+                                                    fontSize: "12.5px",
+                                                    fontWeight: isSelected
+                                                      ? 800
+                                                      : 600,
+                                                    cursor: "pointer",
+                                                    display: "inline-flex",
+                                                    alignItems: "center",
+                                                    gap: "6px",
+                                                    boxShadow: isSelected
+                                                      ? "0 2px 6px rgba(2,132,199,0.3)"
+                                                      : "0 1px 2px rgba(0,0,0,0.03)",
+                                                    transition:
+                                                      "all 0.15s ease",
+                                                  }}
+                                                >
+                                                  {isSelected ? (
+                                                    <FiCheckCircle
+                                                      size={14}
+                                                      color="#FFFFFF"
+                                                    />
+                                                  ) : (
+                                                    <div
+                                                      style={{
+                                                        width: "12px",
+                                                        height: "12px",
+                                                        borderRadius: "50%",
+                                                        border:
+                                                          "1.5px solid #94A3B8",
+                                                      }}
+                                                    />
+                                                  )}
+                                                  <span>{grade}</span>
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      ))}
                                     </div>
                                   );
                                 })()}
-                              </div>
 
-                              {/* Clickable Grade Level Badges Grid */}
-                              {(() => {
-                                const groups = [
-                                  {
-                                    title: "Elementary",
-                                    grades: [
+                                {/* Dropdown to add a new custom grade level if needed */}
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    gap: "10px",
+                                    alignItems: "center",
+                                  }}
+                                >
+                                  <select
+                                    value=""
+                                    onChange={async (e) => {
+                                      const selectedVal = e.target.value;
+                                      if (!selectedVal) return;
+
+                                      const currentList = (
+                                        Array.isArray(
+                                          currentPerson.assignedGradeLevels,
+                                        )
+                                          ? currentPerson.assignedGradeLevels
+                                          : []
+                                      )
+                                        .map((g) => {
+                                          const u = String(
+                                            g || "",
+                                          ).toUpperCase();
+                                          if (u.includes("KINDER"))
+                                            return "Kinder";
+                                          if (
+                                            u === "SNED" ||
+                                            u === "SPED" ||
+                                            u === "NON-GRADED" ||
+                                            u === "NON GRADED" ||
+                                            u.includes("SNED") ||
+                                            u.includes("NON-GRADED") ||
+                                            u.includes("NON GRADED")
+                                          )
+                                            return "SNED (NON-GRADED)";
+                                          if (
+                                            u === "ALS" ||
+                                            u.startsWith("ALS-") ||
+                                            u.startsWith("ALS ")
+                                          )
+                                            return "ALS";
+                                          return g;
+                                        })
+                                        .filter((g) => {
+                                          const u = String(g).toUpperCase();
+                                          return (
+                                            !u.includes("MULTI-GRADE") &&
+                                            !u.includes("MULTIGRADE") &&
+                                            !u.includes("MULTI GRADE") &&
+                                            !u.includes("MONO-GRADE") &&
+                                            !u.includes("MONOGRADE") &&
+                                            !u.includes("MONO GRADE") &&
+                                            u !== "GRADE KINDER"
+                                          );
+                                        });
+                                      if (currentList.includes(selectedVal)) {
+                                        await showAlert(
+                                          "Duplicate Entry",
+                                          "This grade level has already been assigned.",
+                                        );
+                                        return;
+                                      }
+
+                                      const newList = [
+                                        ...currentList,
+                                        selectedVal,
+                                      ];
+                                      const hasShs = newList.some(
+                                        (g) =>
+                                          String(g).includes("11") ||
+                                          String(g).includes("12"),
+                                      );
+                                      handleMultipleFieldsChange({
+                                        assignedGradeLevels: newList,
+                                        assigned_grade_levels: newList,
+                                        gradeLevelsTaught: newList,
+                                        grade_levels_taught: newList,
+                                        teachesShs: hasShs,
+                                        teaches_shs: hasShs,
+                                        hasNoTeachingLoad: false,
+                                        has_no_teaching_load: false,
+                                      });
+                                    }}
+                                    style={{
+                                      maxWidth: "400px",
+                                      background:
+                                        Array.isArray(
+                                          currentPerson.assignedGradeLevels,
+                                        ) &&
+                                        currentPerson.assignedGradeLevels
+                                          .length > 0
+                                          ? "#f0f9ff"
+                                          : "white",
+                                      borderColor:
+                                        Array.isArray(
+                                          currentPerson.assignedGradeLevels,
+                                        ) &&
+                                        currentPerson.assignedGradeLevels
+                                          .length > 0
+                                          ? "#0284c7"
+                                          : "var(--line)",
+                                      color:
+                                        Array.isArray(
+                                          currentPerson.assignedGradeLevels,
+                                        ) &&
+                                        currentPerson.assignedGradeLevels
+                                          .length > 0
+                                          ? "#0369a1"
+                                          : "var(--text)",
+                                      fontWeight:
+                                        Array.isArray(
+                                          currentPerson.assignedGradeLevels,
+                                        ) &&
+                                        currentPerson.assignedGradeLevels
+                                          .length > 0
+                                          ? "600"
+                                          : "normal",
+                                    }}
+                                  >
+                                    <option value="">
+                                      {Array.isArray(
+                                        currentPerson.assignedGradeLevels,
+                                      ) &&
+                                      currentPerson.assignedGradeLevels.length >
+                                        0
+                                        ? `+ Add another grade level (${currentPerson.assignedGradeLevels.length} assigned)...`
+                                        : "+ Add Grade Level..."}
+                                    </option>
+                                    {[
                                       "Kinder",
                                       "Grade 1",
                                       "Grade 2",
@@ -10597,439 +11049,144 @@ export default function PersonnelProfile() {
                                       "Grade 4",
                                       "Grade 5",
                                       "Grade 6",
-                                    ],
-                                  },
-                                  {
-                                    title: "Junior High School",
-                                    grades: [
                                       "Grade 7",
                                       "Grade 8",
                                       "Grade 9",
                                       "Grade 10",
-                                    ],
-                                  },
-                                  {
-                                    title: "Senior High School",
-                                    grades: ["Grade 11", "Grade 12"],
-                                  },
-                                  {
-                                    title: "Inclusive & Special Programs",
-                                    grades: ["SNED (NON-GRADED)", "ALS"],
-                                  },
-                                ];
-
-                                const currentGrades = (
-                                  Array.isArray(
-                                    currentPerson.assignedGradeLevels,
-                                  )
-                                    ? currentPerson.assignedGradeLevels
-                                    : []
-                                ).map((g) => {
-                                  const u = String(g || "").toUpperCase();
-                                  if (u.includes("KINDER")) return "Kinder";
-                                  if (
-                                    u === "SNED" ||
-                                    u === "SPED" ||
-                                    u === "NON-GRADED" ||
-                                    u === "NON GRADED" ||
-                                    u.includes("SNED") ||
-                                    u.includes("NON-GRADED") ||
-                                    u.includes("NON GRADED")
-                                  )
-                                    return "SNED (NON-GRADED)";
-                                  if (
-                                    u === "ALS" ||
-                                    u.startsWith("ALS-") ||
-                                    u.startsWith("ALS ")
-                                  )
-                                    return "ALS";
-                                  return g;
-                                });
-
-                                const updateGrades = (newList) => {
-                                  const hasShs = newList.some(
-                                    (g) =>
-                                      String(g).includes("11") ||
-                                      String(g).includes("12"),
-                                  );
-                                  handleMultipleFieldsChange({
-                                    assignedGradeLevels: newList,
-                                    assigned_grade_levels: newList,
-                                    gradeLevelsTaught: newList,
-                                    grade_levels_taught: newList,
-                                    teachesShs: hasShs,
-                                    teaches_shs: hasShs,
-                                    hasNoTeachingLoad: false,
-                                    has_no_teaching_load: false,
-                                  });
-                                };
-
-                                return (
-                                  <div
-                                    style={{
-                                      display: "grid",
-                                      gap: "14px",
-                                      margin: "10px 0 16px",
-                                    }}
-                                  >
-                                    {groups.map((grp, gIdx) => (
-                                      <div
-                                        key={gIdx}
-                                        style={{
-                                          background: "#F8FAFC",
-                                          padding: "12px 14px",
-                                          borderRadius: "12px",
-                                          border: "1px solid #E2E8F0",
-                                        }}
-                                      >
-                                        <div
-                                          style={{
-                                            fontSize: "11px",
-                                            fontWeight: "800",
-                                            textTransform: "uppercase",
-                                            letterSpacing: "0.5px",
-                                            color: "#64748B",
-                                            marginBottom: "8px",
-                                          }}
-                                        >
-                                          {grp.title}
-                                        </div>
-                                        <div
-                                          style={{
-                                            display: "flex",
-                                            flexWrap: "wrap",
-                                            gap: "8px",
-                                          }}
-                                        >
-                                          {grp.grades.map((grade) => {
-                                            const isSelected =
-                                              currentGrades.includes(grade);
-                                            return (
-                                              <button
-                                                key={grade}
-                                                type="button"
-                                                onClick={() => {
-                                                  let updatedList;
-                                                  if (isSelected) {
-                                                    updatedList =
-                                                      currentGrades.filter(
-                                                        (g) => g !== grade,
-                                                      );
-                                                  } else {
-                                                    updatedList = [
-                                                      ...currentGrades,
-                                                      grade,
-                                                    ];
-                                                  }
-                                                  updateGrades(updatedList);
-                                                }}
-                                                style={{
-                                                  background: isSelected
-                                                    ? "linear-gradient(135deg, #0284C7, #0369A1)"
-                                                    : "#FFFFFF",
-                                                  color: isSelected
-                                                    ? "#FFFFFF"
-                                                    : "#1E293B",
-                                                  border: `1.5px solid ${isSelected ? "#0284C7" : "#CBD5E1"}`,
-                                                  borderRadius: "8px",
-                                                  padding: "7px 14px",
-                                                  fontSize: "12.5px",
-                                                  fontWeight: isSelected
-                                                    ? 800
-                                                    : 600,
-                                                  cursor: "pointer",
-                                                  display: "inline-flex",
-                                                  alignItems: "center",
-                                                  gap: "6px",
-                                                  boxShadow: isSelected
-                                                    ? "0 2px 6px rgba(2,132,199,0.3)"
-                                                    : "0 1px 2px rgba(0,0,0,0.03)",
-                                                  transition: "all 0.15s ease",
-                                                }}
-                                              >
-                                                {isSelected ? (
-                                                  <FiCheckCircle
-                                                    size={14}
-                                                    color="#FFFFFF"
-                                                  />
-                                                ) : (
-                                                  <div
-                                                    style={{
-                                                      width: "12px",
-                                                      height: "12px",
-                                                      borderRadius: "50%",
-                                                      border:
-                                                        "1.5px solid #94A3B8",
-                                                    }}
-                                                  />
-                                                )}
-                                                <span>{grade}</span>
-                                              </button>
-                                            );
-                                          })}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                );
-                              })()}
-
-                              {/* Dropdown to add a new custom grade level if needed */}
-                              <div
-                                style={{
-                                  display: "flex",
-                                  gap: "10px",
-                                  alignItems: "center",
-                                }}
-                              >
-                                <select
-                                  value=""
-                                  onChange={async (e) => {
-                                    const selectedVal = e.target.value;
-                                    if (!selectedVal) return;
-
-                                    const currentList = (
-                                      Array.isArray(
-                                        currentPerson.assignedGradeLevels,
+                                      "Grade 11",
+                                      "Grade 12",
+                                      "SNED (NON-GRADED)",
+                                      "ALS",
+                                    ]
+                                      .filter(
+                                        (item) =>
+                                          !(
+                                            Array.isArray(
+                                              currentPerson.assignedGradeLevels,
+                                            )
+                                              ? currentPerson.assignedGradeLevels
+                                              : []
+                                          ).includes(item),
                                       )
-                                        ? currentPerson.assignedGradeLevels
-                                        : []
-                                    )
-                                      .map((g) => {
-                                        const u = String(g || "").toUpperCase();
-                                        if (u.includes("KINDER"))
-                                          return "Kinder";
-                                        if (
-                                          u === "SNED" ||
-                                          u === "SPED" ||
-                                          u === "NON-GRADED" ||
-                                          u === "NON GRADED" ||
-                                          u.includes("SNED") ||
-                                          u.includes("NON-GRADED") ||
-                                          u.includes("NON GRADED")
-                                        )
-                                          return "SNED (NON-GRADED)";
-                                        if (
-                                          u === "ALS" ||
-                                          u.startsWith("ALS-") ||
-                                          u.startsWith("ALS ")
-                                        )
-                                          return "ALS";
-                                        return g;
-                                      })
-                                      .filter((g) => {
-                                        const u = String(g).toUpperCase();
-                                        return (
-                                          !u.includes("MULTI-GRADE") &&
-                                          !u.includes("MULTIGRADE") &&
-                                          !u.includes("MULTI GRADE") &&
-                                          !u.includes("MONO-GRADE") &&
-                                          !u.includes("MONOGRADE") &&
-                                          !u.includes("MONO GRADE") &&
-                                          u !== "GRADE KINDER"
-                                        );
-                                      });
-                                    if (currentList.includes(selectedVal)) {
-                                      await showAlert(
-                                        "Duplicate Entry",
-                                        "This grade level has already been assigned.",
-                                      );
-                                      return;
-                                    }
-
-                                    const newList = [
-                                      ...currentList,
-                                      selectedVal,
-                                    ];
-                                    const hasShs = newList.some(
-                                      (g) =>
-                                        String(g).includes("11") ||
-                                        String(g).includes("12"),
-                                    );
-                                    handleMultipleFieldsChange({
-                                      assignedGradeLevels: newList,
-                                      assigned_grade_levels: newList,
-                                      gradeLevelsTaught: newList,
-                                      grade_levels_taught: newList,
-                                      teachesShs: hasShs,
-                                      teaches_shs: hasShs,
-                                      hasNoTeachingLoad: false,
-                                      has_no_teaching_load: false,
-                                    });
-                                  }}
-                                  style={{
-                                    maxWidth: "400px",
-                                    background:
-                                      Array.isArray(
-                                        currentPerson.assignedGradeLevels,
-                                      ) &&
-                                      currentPerson.assignedGradeLevels.length >
-                                        0
-                                        ? "#f0f9ff"
-                                        : "white",
-                                    borderColor:
-                                      Array.isArray(
-                                        currentPerson.assignedGradeLevels,
-                                      ) &&
-                                      currentPerson.assignedGradeLevels.length >
-                                        0
-                                        ? "#0284c7"
-                                        : "var(--line)",
-                                    color:
-                                      Array.isArray(
-                                        currentPerson.assignedGradeLevels,
-                                      ) &&
-                                      currentPerson.assignedGradeLevels.length >
-                                        0
-                                        ? "#0369a1"
-                                        : "var(--text)",
-                                    fontWeight:
-                                      Array.isArray(
-                                        currentPerson.assignedGradeLevels,
-                                      ) &&
-                                      currentPerson.assignedGradeLevels.length >
-                                        0
-                                        ? "600"
-                                        : "normal",
-                                  }}
-                                >
-                                  <option value="">
-                                    {Array.isArray(
-                                      currentPerson.assignedGradeLevels,
-                                    ) &&
-                                    currentPerson.assignedGradeLevels.length > 0
-                                      ? `+ Add another grade level (${currentPerson.assignedGradeLevels.length} assigned)...`
-                                      : "+ Add Grade Level..."}
-                                  </option>
-                                  {[
-                                    "Kinder",
-                                    "Grade 1",
-                                    "Grade 2",
-                                    "Grade 3",
-                                    "Grade 4",
-                                    "Grade 5",
-                                    "Grade 6",
-                                    "Grade 7",
-                                    "Grade 8",
-                                    "Grade 9",
-                                    "Grade 10",
-                                    "Grade 11",
-                                    "Grade 12",
-                                    "SNED (NON-GRADED)",
-                                    "ALS",
-                                  ]
-                                    .filter(
-                                      (item) =>
-                                        !(
-                                          Array.isArray(
-                                            currentPerson.assignedGradeLevels,
-                                          )
-                                            ? currentPerson.assignedGradeLevels
-                                            : []
-                                        ).includes(item),
-                                    )
-                                    .map((g) => (
-                                      <option key={g} value={g}>
-                                        {g}
-                                      </option>
-                                    ))}
-                                </select>
+                                      .map((g) => (
+                                        <option key={g} value={g}>
+                                          {g}
+                                        </option>
+                                      ))}
+                                  </select>
+                                </div>
                               </div>
-                            </div>
-                          </>
-                        )}
+                            </>
+                          )}
 
-                      {activeTab === "learning-area" &&
-                        getPersonCategoryType(currentPerson) !==
-                          "non-teaching" && (
-                          <div
-                            style={{
-                              gridColumn: "1 / -1",
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: "16px",
-                            }}
-                          >
+                        {activeTab === "learning-area" &&
+                          getPersonCategoryType(currentPerson) !==
+                            "non-teaching" && (
                             <div
                               style={{
+                                gridColumn: "1 / -1",
                                 display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                flexWrap: "wrap",
-                                gap: "10px",
+                                flexDirection: "column",
+                                gap: "16px",
                               }}
                             >
-                              <div>
-                                <h3
-                                  style={{
-                                    margin: 0,
-                                    fontSize: "16px",
-                                    fontWeight: "800",
-                                    color: "var(--navy)",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "6px",
-                                  }}
-                                >
-                                  <FiBook size={16} /> Learning Area Matrix
-                                </h3>
-                                <p
-                                  style={{
-                                    margin: "4px 0 0",
-                                    fontSize: "12px",
-                                    color: "var(--muted)",
-                                  }}
-                                >
-                                  Record taught primary learning areas across
-                                  DepEd curriculum eras. Check a subject to
-                                  enter total years taught.
-                                </p>
-                              </div>
                               <div
                                 style={{
                                   display: "flex",
-                                  gap: "8px",
+                                  justifyContent: "space-between",
                                   alignItems: "center",
                                   flexWrap: "wrap",
+                                  gap: "10px",
                                 }}
                               >
-                                {showDisableYears ? (
-                                  <span
+                                <div>
+                                  <h3
                                     style={{
-                                      display: "inline-flex",
+                                      margin: 0,
+                                      fontSize: "16px",
+                                      fontWeight: "800",
+                                      color: "var(--navy)",
+                                      display: "flex",
                                       alignItems: "center",
                                       gap: "6px",
-                                      fontSize: "11px",
                                     }}
                                   >
-                                    <label style={{ margin: 0 }}>
-                                      Years to disable
-                                    </label>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      max={getGrossServiceYears(currentPerson)}
-                                      value={disableYearsInput}
-                                      onChange={(e) =>
-                                        setDisableYearsInput(e.target.value)
-                                      }
+                                    <FiBook size={16} /> Learning Area Matrix
+                                  </h3>
+                                  <p
+                                    style={{
+                                      margin: "4px 0 0",
+                                      fontSize: "12px",
+                                      color: "var(--muted)",
+                                    }}
+                                  >
+                                    Record taught primary learning areas across
+                                    DepEd curriculum eras. Check a subject to
+                                    enter total years taught.
+                                  </p>
+                                </div>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    gap: "8px",
+                                    alignItems: "center",
+                                    flexWrap: "wrap",
+                                  }}
+                                >
+                                  {showDisableYears ? (
+                                    <span
                                       style={{
-                                        width: "70px",
-                                        minHeight: "auto",
-                                        padding: "4px 6px",
-                                      }}
-                                    />
-                                    <button
-                                      type="button"
-                                      className="btn"
-                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "6px",
                                         fontSize: "11px",
-                                        padding: "6px 12px",
                                       }}
-                                      onClick={applyDisabledYears}
                                     >
-                                      Apply
-                                    </button>
+                                      <label style={{ margin: 0 }}>
+                                        Years to disable
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max={getGrossServiceYears(
+                                          currentPerson,
+                                        )}
+                                        value={disableYearsInput}
+                                        onChange={(e) =>
+                                          setDisableYearsInput(e.target.value)
+                                        }
+                                        style={{
+                                          width: "70px",
+                                          minHeight: "auto",
+                                          padding: "4px 6px",
+                                        }}
+                                      />
+                                      <button
+                                        type="button"
+                                        className="btn"
+                                        style={{
+                                          fontSize: "11px",
+                                          padding: "6px 12px",
+                                        }}
+                                        onClick={applyDisabledYears}
+                                      >
+                                        Apply
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="btn secondary"
+                                        style={{
+                                          fontSize: "11px",
+                                          padding: "6px 12px",
+                                        }}
+                                        onClick={() =>
+                                          setShowDisableYears(false)
+                                        }
+                                      >
+                                        Cancel
+                                      </button>
+                                    </span>
+                                  ) : (
                                     <button
                                       type="button"
                                       className="btn secondary"
@@ -11037,12 +11194,29 @@ export default function PersonnelProfile() {
                                         fontSize: "11px",
                                         padding: "6px 12px",
                                       }}
-                                      onClick={() => setShowDisableYears(false)}
+                                      title="Exclude years that should not be counted (e.g. years served as non-teaching before becoming a teacher)"
+                                      onClick={() => {
+                                        setDisableYearsInput(
+                                          String(
+                                            Number(
+                                              currentPerson?.disabledServiceYears ??
+                                                currentPerson?.disabled_service_years ??
+                                                0,
+                                            ) || 0,
+                                          ),
+                                        );
+                                        setShowDisableYears(true);
+                                      }}
                                     >
-                                      Cancel
+                                      Disable Years
+                                      {Number(
+                                        currentPerson?.disabledServiceYears ||
+                                          0,
+                                      ) > 0
+                                        ? ` (${currentPerson.disabledServiceYears})`
+                                        : ""}
                                     </button>
-                                  </span>
-                                ) : (
+                                  )}
                                   <button
                                     type="button"
                                     className="btn secondary"
@@ -11050,256 +11224,13 @@ export default function PersonnelProfile() {
                                       fontSize: "11px",
                                       padding: "6px 12px",
                                     }}
-                                    title="Exclude years that should not be counted (e.g. years served as non-teaching before becoming a teacher)"
                                     onClick={() => {
-                                      setDisableYearsInput(
-                                        String(
-                                          Number(
-                                            currentPerson?.disabledServiceYears ??
-                                              currentPerson?.disabled_service_years ??
-                                              0,
-                                          ) || 0,
-                                        ),
-                                      );
-                                      setShowDisableYears(true);
-                                    }}
-                                  >
-                                    Disable Years
-                                    {Number(
-                                      currentPerson?.disabledServiceYears || 0,
-                                    ) > 0
-                                      ? ` (${currentPerson.disabledServiceYears})`
-                                      : ""}
-                                  </button>
-                                )}
-                                <button
-                                  type="button"
-                                  className="btn secondary"
-                                  style={{
-                                    fontSize: "11px",
-                                    padding: "6px 12px",
-                                  }}
-                                  onClick={() => {
-                                    const totalMax =
-                                      getMaxAllowedServiceYears(currentPerson);
-                                    let budget = totalMax;
-                                    const newMap = {};
-                                    const firstServiceYear = (() => {
-                                      const d =
-                                        currentPerson?.firstServiceDate ||
-                                        currentPerson?.first_service_date ||
-                                        "";
-                                      if (!d) return null;
-                                      const y = parseInt(d.substring(0, 4), 10);
-                                      return isNaN(y) ? null : y;
-                                    })();
-                                    // Allocate budget starting from newest curriculum era
-                                    const activeEras = [
-                                      ...CURRICULUM_ERAS,
-                                    ].reverse();
-                                    for (const era of activeEras) {
-                                      const isDisabled =
-                                        firstServiceYear !== null &&
-                                        firstServiceYear > era.endYear;
-                                      if (!isDisabled && budget > 0) {
-                                        for (const sub of PRIMARY_SUBJECTS) {
-                                          if (budget > 0) {
-                                            newMap[`${era.key}||${sub}`] = {
-                                              checked: true,
-                                              years: 1,
-                                            };
-                                            budget -= 1;
-                                          }
-                                        }
-                                      }
-                                    }
-                                    setLearningAreaMap(newMap);
-                                    localStorage.setItem(
-                                      `draft_learning_areas_${currentPerson.id}`,
-                                      JSON.stringify(newMap),
-                                    );
-                                    if (setHasUnsavedChanges)
-                                      setHasUnsavedChanges(true);
-                                  }}
-                                >
-                                  Select All Active
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn secondary"
-                                  style={{
-                                    fontSize: "11px",
-                                    padding: "6px 12px",
-                                  }}
-                                  onClick={() => {
-                                    setLearningAreaMap({});
-                                    localStorage.setItem(
-                                      `draft_learning_areas_${currentPerson.id}`,
-                                      JSON.stringify({}),
-                                    );
-                                    if (setHasUnsavedChanges)
-                                      setHasUnsavedChanges(true);
-                                  }}
-                                >
-                                  Clear All
-                                </button>
-                              </div>
-                            </div>
-
-                            {(() => {
-                              const maxYears =
-                                getMaxAllowedServiceYears(currentPerson);
-                              const totalAssigned =
-                                getTotalAssignedLearningYears(learningAreaMap);
-                              const isAtCapacity = totalAssigned >= maxYears;
-                              const serviceStartYear =
-                                currentPerson?.firstServiceDate ||
-                                currentPerson?.first_service_date;
-
-                              return (
-                                <div
-                                  style={{
-                                    background: isAtCapacity
-                                      ? "#FEF3C7"
-                                      : "#EFF6FF",
-                                    border: `1.5px solid ${isAtCapacity ? "#F59E0B" : "#93C5FD"}`,
-                                    padding: "12px 18px",
-                                    borderRadius: "14px",
-                                    fontSize: "12.5px",
-                                    color: isAtCapacity ? "#92400E" : "#1E40AF",
-                                    fontWeight: "600",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "space-between",
-                                    gap: "12px",
-                                    flexWrap: "wrap",
-                                  }}
-                                >
-                                  <div
-                                    style={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: "8px",
-                                    }}
-                                  >
-                                    <FiInfo
-                                      size={18}
-                                      style={{
-                                        color: isAtCapacity
-                                          ? "#D97706"
-                                          : "#2563EB",
-                                        flexShrink: 0,
-                                      }}
-                                    />
-                                    <span>
-                                      {serviceStartYear
-                                        ? `Max allowed teaching experience: ${maxYears} ${maxYears === 1 ? "Year" : "Years"} (calculated from 1st Service Date: ${serviceStartYear.substring(0, 10)})`
-                                        : "Max allowed experience: 70 Years (specify Date of First Day of Service in Employment tab to enable dynamic service validation)"}
-                                    </span>
-                                  </div>
-                                  <div
-                                    style={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: "6px",
-                                      background: isAtCapacity
-                                        ? "#FDE68A"
-                                        : "#DBEAFE",
-                                      padding: "4px 12px",
-                                      borderRadius: "20px",
-                                      fontSize: "11.5px",
-                                      fontWeight: "700",
-                                      color: isAtCapacity
-                                        ? "#78350F"
-                                        : "#1D4ED8",
-                                    }}
-                                  >
-                                    <span>
-                                      Assigned: {totalAssigned} / {maxYears} yrs
-                                    </span>
-                                    {isAtCapacity && (
-                                      <span style={{ color: "#B45309" }}>
-                                        (Max Reached - Unchecked Locked)
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })()}
-
-                            {learningAreaLoading ? (
-                              <p
-                                style={{
-                                  padding: "1rem",
-                                  color: "var(--muted)",
-                                }}
-                              >
-                                Loading learning area matrix...
-                              </p>
-                            ) : (
-                              <div
-                                style={{
-                                  overflowX: "auto",
-                                  border: "1.5px solid var(--line)",
-                                  borderRadius: "14px",
-                                  background: "white",
-                                  boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                                }}
-                              >
-                                <table
-                                  style={{
-                                    borderCollapse: "collapse",
-                                    width: "100%",
-                                    fontSize: "12px",
-                                  }}
-                                >
-                                  <thead>
-                                    <tr
-                                      style={{
-                                        background: "#F8FAFC",
-                                        borderBottom: "2px solid var(--line)",
-                                      }}
-                                    >
-                                      {/* Y Axis Header (Curriculum Era) */}
-                                      <th
-                                        style={{
-                                          position: "sticky",
-                                          left: 0,
-                                          background: "#F8FAFC",
-                                          padding: "12px 16px",
-                                          textAlign: "left",
-                                          zIndex: 3,
-                                          minWidth: "240px",
-                                          maxWidth: "300px",
-                                          fontWeight: "800",
-                                          color: "var(--navy)",
-                                          borderRight: "2px solid var(--line)",
-                                        }}
-                                      >
-                                        Curriculum Era (Y) ↓ / Primary Subject
-                                        (X) →
-                                      </th>
-                                      {/* X Axis Headers (8 Primary Subjects) */}
-                                      {PRIMARY_SUBJECTS.map((sub) => (
-                                        <th
-                                          key={sub}
-                                          style={{
-                                            padding: "12px 14px",
-                                            textAlign: "center",
-                                            fontWeight: "800",
-                                            color: "var(--navy)",
-                                            borderRight:
-                                              "1px solid var(--line)",
-                                            minWidth: "110px",
-                                          }}
-                                        >
-                                          {sub}
-                                        </th>
-                                      ))}
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {(() => {
+                                      const totalMax =
+                                        getMaxAllowedServiceYears(
+                                          currentPerson,
+                                        );
+                                      let budget = totalMax;
+                                      const newMap = {};
                                       const firstServiceYear = (() => {
                                         const d =
                                           currentPerson?.firstServiceDate ||
@@ -11312,359 +11243,608 @@ export default function PersonnelProfile() {
                                         );
                                         return isNaN(y) ? null : y;
                                       })();
-                                      const totalMax =
-                                        getMaxAllowedServiceYears(
-                                          currentPerson,
-                                        );
-                                      const currentTotal =
-                                        getTotalAssignedLearningYears(
-                                          learningAreaMap,
-                                        );
-                                      const isCapacityFull =
-                                        currentTotal >= totalMax;
-
-                                      return CURRICULUM_ERAS.map((era) => {
-                                        const isDisabledEra =
+                                      // Allocate budget starting from newest curriculum era
+                                      const activeEras = [
+                                        ...CURRICULUM_ERAS,
+                                      ].reverse();
+                                      for (const era of activeEras) {
+                                        const isDisabled =
                                           firstServiceYear !== null &&
                                           firstServiceYear > era.endYear;
+                                        if (!isDisabled && budget > 0) {
+                                          for (const sub of PRIMARY_SUBJECTS) {
+                                            if (budget > 0) {
+                                              newMap[`${era.key}||${sub}`] = {
+                                                checked: true,
+                                                years: 1,
+                                              };
+                                              budget -= 1;
+                                            }
+                                          }
+                                        }
+                                      }
+                                      setLearningAreaMap(newMap);
+                                      localStorage.setItem(
+                                        `draft_learning_areas_${currentPerson.id}`,
+                                        JSON.stringify(newMap),
+                                      );
+                                      if (setHasUnsavedChanges)
+                                        setHasUnsavedChanges(true);
+                                    }}
+                                  >
+                                    Select All Active
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn secondary"
+                                    style={{
+                                      fontSize: "11px",
+                                      padding: "6px 12px",
+                                    }}
+                                    onClick={() => {
+                                      setLearningAreaMap({});
+                                      localStorage.setItem(
+                                        `draft_learning_areas_${currentPerson.id}`,
+                                        JSON.stringify({}),
+                                      );
+                                      if (setHasUnsavedChanges)
+                                        setHasUnsavedChanges(true);
+                                    }}
+                                  >
+                                    Clear All
+                                  </button>
+                                </div>
+                              </div>
 
-                                        return (
-                                          <tr
-                                            key={era.key}
+                              {(() => {
+                                const maxYears =
+                                  getMaxAllowedServiceYears(currentPerson);
+                                const totalAssigned =
+                                  getTotalAssignedLearningYears(
+                                    learningAreaMap,
+                                  );
+                                const isAtCapacity = totalAssigned >= maxYears;
+                                const serviceStartYear =
+                                  currentPerson?.firstServiceDate ||
+                                  currentPerson?.first_service_date;
+
+                                return (
+                                  <div
+                                    style={{
+                                      background: isAtCapacity
+                                        ? "#FEF3C7"
+                                        : "#EFF6FF",
+                                      border: `1.5px solid ${isAtCapacity ? "#F59E0B" : "#93C5FD"}`,
+                                      padding: "12px 18px",
+                                      borderRadius: "14px",
+                                      fontSize: "12.5px",
+                                      color: isAtCapacity
+                                        ? "#92400E"
+                                        : "#1E40AF",
+                                      fontWeight: "600",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "space-between",
+                                      gap: "12px",
+                                      flexWrap: "wrap",
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "8px",
+                                      }}
+                                    >
+                                      <FiInfo
+                                        size={18}
+                                        style={{
+                                          color: isAtCapacity
+                                            ? "#D97706"
+                                            : "#2563EB",
+                                          flexShrink: 0,
+                                        }}
+                                      />
+                                      <span>
+                                        {serviceStartYear
+                                          ? `Max allowed teaching experience: ${maxYears} ${maxYears === 1 ? "Year" : "Years"} (calculated from 1st Service Date: ${serviceStartYear.substring(0, 10)})`
+                                          : "Max allowed experience: 70 Years (specify Date of First Day of Service in Employment tab to enable dynamic service validation)"}
+                                      </span>
+                                    </div>
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "6px",
+                                        background: isAtCapacity
+                                          ? "#FDE68A"
+                                          : "#DBEAFE",
+                                        padding: "4px 12px",
+                                        borderRadius: "20px",
+                                        fontSize: "11.5px",
+                                        fontWeight: "700",
+                                        color: isAtCapacity
+                                          ? "#78350F"
+                                          : "#1D4ED8",
+                                      }}
+                                    >
+                                      <span>
+                                        Assigned: {totalAssigned} / {maxYears}{" "}
+                                        yrs
+                                      </span>
+                                      {isAtCapacity && (
+                                        <span style={{ color: "#B45309" }}>
+                                          (Max Reached - Unchecked Locked)
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+
+                              {learningAreaLoading ? (
+                                <p
+                                  style={{
+                                    padding: "1rem",
+                                    color: "var(--muted)",
+                                  }}
+                                >
+                                  Loading learning area matrix...
+                                </p>
+                              ) : (
+                                <div
+                                  style={{
+                                    overflowX: "auto",
+                                    border: "1.5px solid var(--line)",
+                                    borderRadius: "14px",
+                                    background: "white",
+                                    boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+                                  }}
+                                >
+                                  <table
+                                    style={{
+                                      borderCollapse: "collapse",
+                                      width: "100%",
+                                      fontSize: "12px",
+                                    }}
+                                  >
+                                    <thead>
+                                      <tr
+                                        style={{
+                                          background: "#F8FAFC",
+                                          borderBottom: "2px solid var(--line)",
+                                        }}
+                                      >
+                                        {/* Y Axis Header (Curriculum Era) */}
+                                        <th
+                                          style={{
+                                            position: "sticky",
+                                            left: 0,
+                                            background: "#F8FAFC",
+                                            padding: "12px 16px",
+                                            textAlign: "left",
+                                            zIndex: 3,
+                                            minWidth: "240px",
+                                            maxWidth: "300px",
+                                            fontWeight: "800",
+                                            color: "var(--navy)",
+                                            borderRight:
+                                              "2px solid var(--line)",
+                                          }}
+                                        >
+                                          Curriculum Era (Y) ↓ / Primary Subject
+                                          (X) →
+                                        </th>
+                                        {/* X Axis Headers (8 Primary Subjects) */}
+                                        {PRIMARY_SUBJECTS.map((sub) => (
+                                          <th
+                                            key={sub}
                                             style={{
-                                              borderBottom:
+                                              padding: "12px 14px",
+                                              textAlign: "center",
+                                              fontWeight: "800",
+                                              color: "var(--navy)",
+                                              borderRight:
                                                 "1px solid var(--line)",
-                                              background: isDisabledEra
-                                                ? "#F1F5F9"
-                                                : "#FFFFFF",
-                                              opacity: isDisabledEra ? 0.65 : 1,
+                                              minWidth: "110px",
                                             }}
                                           >
-                                            {/* Y Axis Row Value (Curriculum Era) */}
-                                            <td
+                                            {sub}
+                                          </th>
+                                        ))}
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {(() => {
+                                        const firstServiceYear = (() => {
+                                          const d =
+                                            currentPerson?.firstServiceDate ||
+                                            currentPerson?.first_service_date ||
+                                            "";
+                                          if (!d) return null;
+                                          const y = parseInt(
+                                            d.substring(0, 4),
+                                            10,
+                                          );
+                                          return isNaN(y) ? null : y;
+                                        })();
+                                        const totalMax =
+                                          getMaxAllowedServiceYears(
+                                            currentPerson,
+                                          );
+                                        const currentTotal =
+                                          getTotalAssignedLearningYears(
+                                            learningAreaMap,
+                                          );
+                                        const isCapacityFull =
+                                          currentTotal >= totalMax;
+
+                                        return CURRICULUM_ERAS.map((era) => {
+                                          const isDisabledEra =
+                                            firstServiceYear !== null &&
+                                            firstServiceYear > era.endYear;
+
+                                          return (
+                                            <tr
+                                              key={era.key}
                                               style={{
-                                                position: "sticky",
-                                                left: 0,
+                                                borderBottom:
+                                                  "1px solid var(--line)",
                                                 background: isDisabledEra
                                                   ? "#F1F5F9"
                                                   : "#FFFFFF",
-                                                padding: "12px 16px",
-                                                fontWeight: "800",
-                                                color: isDisabledEra
-                                                  ? "#64748B"
-                                                  : "var(--navy)",
-                                                zIndex: 2,
-                                                borderRight:
-                                                  "2px solid var(--line)",
+                                                opacity: isDisabledEra
+                                                  ? 0.65
+                                                  : 1,
                                               }}
                                             >
-                                              <div
+                                              {/* Y Axis Row Value (Curriculum Era) */}
+                                              <td
                                                 style={{
-                                                  display: "flex",
-                                                  flexDirection: "column",
-                                                  gap: "4px",
+                                                  position: "sticky",
+                                                  left: 0,
+                                                  background: isDisabledEra
+                                                    ? "#F1F5F9"
+                                                    : "#FFFFFF",
+                                                  padding: "12px 16px",
+                                                  fontWeight: "800",
+                                                  color: isDisabledEra
+                                                    ? "#64748B"
+                                                    : "var(--navy)",
+                                                  zIndex: 2,
+                                                  borderRight:
+                                                    "2px solid var(--line)",
                                                 }}
                                               >
-                                                <span>{era.label}</span>
-                                                {isDisabledEra && (
-                                                  <span
-                                                    style={{
-                                                      fontSize: "9px",
-                                                      fontWeight: "bold",
-                                                      color: "#94A3B8",
-                                                      textTransform:
-                                                        "uppercase",
-                                                      letterSpacing: "0.02em",
-                                                      display: "inline-flex",
-                                                      alignItems: "center",
-                                                      gap: "3px",
-                                                    }}
-                                                  >
-                                                    <FiLock size={9} /> Prior to
-                                                    Service Start (
-                                                    {firstServiceYear})
-                                                  </span>
-                                                )}
-                                              </div>
-                                            </td>
-
-                                            {/* X Axis Matrix Cells for 8 Primary Subjects */}
-                                            {PRIMARY_SUBJECTS.map((sub) => {
-                                              const cellKey = `${era.key}||${sub}`;
-                                              const cellData =
-                                                learningAreaMap[cellKey];
-                                              const isChecked =
-                                                !!cellData?.checked;
-                                              const isCheckboxDisabled =
-                                                isReassignedOutInMotherSchool ||
-                                                isDisabledEra ||
-                                                (!isChecked && isCapacityFull);
-
-                                              return (
-                                                <td
-                                                  key={sub}
+                                                <div
                                                   style={{
-                                                    textAlign: "center",
-                                                    padding: "10px 8px",
-                                                    borderRight:
-                                                      "1px solid var(--line)",
-                                                    background:
-                                                      isChecked &&
-                                                      !isDisabledEra
-                                                        ? "#EFF6FF"
-                                                        : "transparent",
+                                                    display: "flex",
+                                                    flexDirection: "column",
+                                                    gap: "4px",
                                                   }}
                                                 >
-                                                  <div
+                                                  <span>{era.label}</span>
+                                                  {isDisabledEra && (
+                                                    <span
+                                                      style={{
+                                                        fontSize: "9px",
+                                                        fontWeight: "bold",
+                                                        color: "#94A3B8",
+                                                        textTransform:
+                                                          "uppercase",
+                                                        letterSpacing: "0.02em",
+                                                        display: "inline-flex",
+                                                        alignItems: "center",
+                                                        gap: "3px",
+                                                      }}
+                                                    >
+                                                      <FiLock size={9} /> Prior
+                                                      to Service Start (
+                                                      {firstServiceYear})
+                                                    </span>
+                                                  )}
+                                                </div>
+                                              </td>
+
+                                              {/* X Axis Matrix Cells for 8 Primary Subjects */}
+                                              {PRIMARY_SUBJECTS.map((sub) => {
+                                                const cellKey = `${era.key}||${sub}`;
+                                                const cellData =
+                                                  learningAreaMap[cellKey];
+                                                const isChecked =
+                                                  !!cellData?.checked;
+                                                const isCheckboxDisabled =
+                                                  isReassignedOutInMotherSchool ||
+                                                  isDisabledEra ||
+                                                  (!isChecked &&
+                                                    isCapacityFull);
+
+                                                return (
+                                                  <td
+                                                    key={sub}
                                                     style={{
-                                                      display: "flex",
-                                                      flexDirection: "column",
-                                                      alignItems: "center",
-                                                      gap: "4px",
+                                                      textAlign: "center",
+                                                      padding: "10px 8px",
+                                                      borderRight:
+                                                        "1px solid var(--line)",
+                                                      background:
+                                                        isChecked &&
+                                                        !isDisabledEra
+                                                          ? "#EFF6FF"
+                                                          : "transparent",
                                                     }}
                                                   >
-                                                    <input
-                                                      type="checkbox"
-                                                      checked={isChecked}
-                                                      onChange={() =>
-                                                        handleToggleLearningAreaCell(
-                                                          era.key,
-                                                          sub,
-                                                        )
-                                                      }
-                                                      disabled={
-                                                        isCheckboxDisabled
-                                                      }
-                                                      title={
-                                                        !isChecked &&
-                                                        isCapacityFull
-                                                          ? `Max allowed service years (${totalMax} yrs) reached. Cannot add more subjects.`
-                                                          : undefined
-                                                      }
+                                                    <div
                                                       style={{
-                                                        cursor:
+                                                        display: "flex",
+                                                        flexDirection: "column",
+                                                        alignItems: "center",
+                                                        gap: "4px",
+                                                      }}
+                                                    >
+                                                      <input
+                                                        type="checkbox"
+                                                        checked={isChecked}
+                                                        onChange={() =>
+                                                          handleToggleLearningAreaCell(
+                                                            era.key,
+                                                            sub,
+                                                          )
+                                                        }
+                                                        disabled={
                                                           isCheckboxDisabled
-                                                            ? "not-allowed"
-                                                            : "pointer",
-                                                        width: "18px",
-                                                        height: "18px",
-                                                        accentColor: "#0284C7",
-                                                        opacity:
+                                                        }
+                                                        title={
                                                           !isChecked &&
                                                           isCapacityFull
-                                                            ? 0.35
-                                                            : 1,
-                                                      }}
-                                                    />
-                                                    {isChecked &&
-                                                      !isDisabledEra && (
-                                                        <div
-                                                          style={{
-                                                            display: "flex",
-                                                            alignItems:
-                                                              "center",
-                                                            gap: "2px",
-                                                            marginTop: "2px",
-                                                          }}
-                                                        >
-                                                          {(() => {
-                                                            const cellMax =
-                                                              getCellMaxYears(
-                                                                era.key,
-                                                                sub,
-                                                                currentPerson,
-                                                                learningAreaMap,
-                                                              );
-                                                            return (
-                                                              <input
-                                                                type="number"
-                                                                min="1"
-                                                                max={cellMax}
-                                                                value={
-                                                                  cellData.years !== undefined && cellData.years !== null
-                                                                    ? cellData.years
-                                                                    : ""
-                                                                }
-                                                                onFocus={(e) =>
-                                                                  e.target.select()
-                                                                }
-                                                                onBlur={(e) => {
-                                                                  const v = parseInt(
-                                                                    e.target
-                                                                      .value,
-                                                                    10,
-                                                                  );
-                                                                  if (
-                                                                    !v ||
-                                                                    isNaN(v) ||
-                                                                    v < 1
-                                                                  ) {
+                                                            ? `Max allowed service years (${totalMax} yrs) reached. Cannot add more subjects.`
+                                                            : undefined
+                                                        }
+                                                        style={{
+                                                          cursor:
+                                                            isCheckboxDisabled
+                                                              ? "not-allowed"
+                                                              : "pointer",
+                                                          width: "18px",
+                                                          height: "18px",
+                                                          accentColor:
+                                                            "#0284C7",
+                                                          opacity:
+                                                            !isChecked &&
+                                                            isCapacityFull
+                                                              ? 0.35
+                                                              : 1,
+                                                        }}
+                                                      />
+                                                      {isChecked &&
+                                                        !isDisabledEra && (
+                                                          <div
+                                                            style={{
+                                                              display: "flex",
+                                                              alignItems:
+                                                                "center",
+                                                              gap: "2px",
+                                                              marginTop: "2px",
+                                                            }}
+                                                          >
+                                                            {(() => {
+                                                              const cellMax =
+                                                                getCellMaxYears(
+                                                                  era.key,
+                                                                  sub,
+                                                                  currentPerson,
+                                                                  learningAreaMap,
+                                                                );
+                                                              return (
+                                                                <input
+                                                                  type="number"
+                                                                  min="1"
+                                                                  max={cellMax}
+                                                                  value={
+                                                                    cellData.years !==
+                                                                      undefined &&
+                                                                    cellData.years !==
+                                                                      null
+                                                                      ? cellData.years
+                                                                      : ""
+                                                                  }
+                                                                  onFocus={(
+                                                                    e,
+                                                                  ) =>
+                                                                    e.target.select()
+                                                                  }
+                                                                  onBlur={(
+                                                                    e,
+                                                                  ) => {
+                                                                    const v =
+                                                                      parseInt(
+                                                                        e.target
+                                                                          .value,
+                                                                        10,
+                                                                      );
+                                                                    if (
+                                                                      !v ||
+                                                                      isNaN(
+                                                                        v,
+                                                                      ) ||
+                                                                      v < 1
+                                                                    ) {
+                                                                      handleYearsChange(
+                                                                        era.key,
+                                                                        sub,
+                                                                        1,
+                                                                      );
+                                                                    }
+                                                                  }}
+                                                                  onInput={(
+                                                                    e,
+                                                                  ) => {
+                                                                    if (
+                                                                      e.target
+                                                                        .value
+                                                                        .length >
+                                                                      2
+                                                                    ) {
+                                                                      e.target.value =
+                                                                        e.target.value.slice(
+                                                                          0,
+                                                                          2,
+                                                                        );
+                                                                    }
+                                                                    const num =
+                                                                      parseInt(
+                                                                        e.target
+                                                                          .value,
+                                                                        10,
+                                                                      );
+                                                                    if (
+                                                                      !isNaN(
+                                                                        num,
+                                                                      ) &&
+                                                                      num >
+                                                                        cellMax
+                                                                    ) {
+                                                                      e.target.value =
+                                                                        String(
+                                                                          cellMax,
+                                                                        );
+                                                                    }
+                                                                  }}
+                                                                  onChange={(
+                                                                    e,
+                                                                  ) =>
                                                                     handleYearsChange(
                                                                       era.key,
                                                                       sub,
-                                                                      1,
-                                                                    );
-                                                                  }
-                                                                }}
-                                                                onInput={(e) => {
-                                                                  if (
-                                                                    e.target
-                                                                      .value
-                                                                      .length > 2
-                                                                  ) {
-                                                                    e.target.value =
-                                                                      e.target.value.slice(
-                                                                        0,
-                                                                        2,
-                                                                      );
-                                                                  }
-                                                                  const num =
-                                                                    parseInt(
                                                                       e.target
                                                                         .value,
-                                                                      10,
-                                                                    );
-                                                                  if (
-                                                                    !isNaN(
-                                                                      num,
-                                                                    ) &&
-                                                                    num >
-                                                                      cellMax
-                                                                  ) {
-                                                                    e.target.value =
-                                                                      String(
-                                                                        cellMax,
-                                                                      );
+                                                                    )
                                                                   }
-                                                                }}
-                                                                onChange={(e) =>
-                                                                  handleYearsChange(
-                                                                    era.key,
-                                                                    sub,
-                                                                    e.target
-                                                                      .value,
-                                                                  )
-                                                                }
-                                                                disabled={
-                                                                  isDisabledEra
-                                                                }
-                                                                style={{
-                                                                  width: "42px",
-                                                                  textAlign:
-                                                                    "center",
-                                                                  fontSize:
-                                                                    "11px",
-                                                                  fontWeight:
-                                                                    "bold",
-                                                                  padding:
-                                                                    "2px",
-                                                                  border:
-                                                                    "1.5px solid #0284C7",
-                                                                  borderRadius:
-                                                                    "4px",
-                                                                  background:
-                                                                    "#FFFFFF",
-                                                                }}
-                                                              />
-                                                            );
-                                                          })()}
-                                                          <span
-                                                            style={{
-                                                              fontSize: "10px",
-                                                              fontWeight: "700",
-                                                              color:
-                                                                "var(--navy)",
-                                                            }}
-                                                          >
-                                                            yr
-                                                            {cellData.years > 1
-                                                              ? "s"
-                                                              : ""}
-                                                          </span>
-                                                        </div>
-                                                      )}
-                                                  </div>
-                                                </td>
-                                              );
-                                            })}
-                                          </tr>
-                                        );
-                                      });
-                                    })()}
-                                  </tbody>
-                                </table>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                    </div>
+                                                                  disabled={
+                                                                    isDisabledEra
+                                                                  }
+                                                                  style={{
+                                                                    width:
+                                                                      "42px",
+                                                                    textAlign:
+                                                                      "center",
+                                                                    fontSize:
+                                                                      "11px",
+                                                                    fontWeight:
+                                                                      "bold",
+                                                                    padding:
+                                                                      "2px",
+                                                                    border:
+                                                                      "1.5px solid #0284C7",
+                                                                    borderRadius:
+                                                                      "4px",
+                                                                    background:
+                                                                      "#FFFFFF",
+                                                                  }}
+                                                                />
+                                                              );
+                                                            })()}
+                                                            <span
+                                                              style={{
+                                                                fontSize:
+                                                                  "10px",
+                                                                fontWeight:
+                                                                  "700",
+                                                                color:
+                                                                  "var(--navy)",
+                                                              }}
+                                                            >
+                                                              yr
+                                                              {cellData.years >
+                                                              1
+                                                                ? "s"
+                                                                : ""}
+                                                            </span>
+                                                          </div>
+                                                        )}
+                                                    </div>
+                                                  </td>
+                                                );
+                                              })}
+                                            </tr>
+                                          );
+                                        });
+                                      })()}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                      </div>
 
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: "8px",
-                        flexWrap: "wrap",
-                        marginTop: "20px",
-                        borderTop: "1.5px solid var(--line)",
-                        paddingTop: "15px",
-                        alignItems: "center",
-                      }}
-                    >
-                      <button
-                        className="btn"
-                        type="button"
-                        onClick={handleSave}
+                      <div
                         style={{
-                          background: "#0284c7",
-                          borderColor: "#0284c7",
-                          color: "white",
-                          display: "inline-flex",
+                          display: "flex",
+                          gap: "8px",
+                          flexWrap: "wrap",
+                          marginTop: "20px",
+                          borderTop: "1.5px solid var(--line)",
+                          paddingTop: "15px",
                           alignItems: "center",
-                          gap: "6px",
                         }}
                       >
-                        <FiSave size={14} /> <span>Save Changes</span>
-                      </button>
-                      <button
-                        className="btn secondary"
-                        type="button"
-                        onClick={handleValidateOnly}
-                        style={{
-                          borderColor: "var(--blue)",
-                          color: "var(--blue)",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "6px",
-                          fontWeight: "800",
-                        }}
-                      >
-                        <FiCheckCircle size={14} /> <span>Validate</span>
-                      </button>
-                      <button
-                        className="btn secondary"
-                        type="button"
-                        onClick={handleDuplicate}
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "6px",
-                        }}
-                      >
-                        <FiCopy size={14} /> <span>Duplicate</span>
-                      </button>
-                      <div style={{ marginLeft: "auto" }}>
                         <button
-                          className="btn danger"
+                          className="btn"
                           type="button"
-                          onClick={handleDelete}
+                          onClick={handleSave}
+                          style={{
+                            background: "#0284c7",
+                            borderColor: "#0284c7",
+                            color: "white",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "6px",
+                          }}
+                        >
+                          <FiSave size={14} /> <span>Save Changes</span>
+                        </button>
+                        <button
+                          className="btn secondary"
+                          type="button"
+                          onClick={handleValidateOnly}
+                          style={{
+                            borderColor: "var(--blue)",
+                            color: "var(--blue)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            fontWeight: "800",
+                          }}
+                        >
+                          <FiCheckCircle size={14} /> <span>Validate</span>
+                        </button>
+                        <button
+                          className="btn secondary"
+                          type="button"
+                          onClick={handleDuplicate}
                           style={{
                             display: "inline-flex",
                             alignItems: "center",
                             gap: "6px",
                           }}
                         >
-                          <FiTrash2 size={14} /> <span>Delete</span>
+                          <FiCopy size={14} /> <span>Duplicate</span>
                         </button>
+                        <div style={{ marginLeft: "auto" }}>
+                          <button
+                            className="btn danger"
+                            type="button"
+                            onClick={handleDelete}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "6px",
+                            }}
+                          >
+                            <FiTrash2 size={14} /> <span>Delete</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -11672,8 +11852,7 @@ export default function PersonnelProfile() {
               </div>
             </div>
           </div>
-        </div>
-      </article>
+        </article>
       )}
       {showRa1080Modal && (
         <div

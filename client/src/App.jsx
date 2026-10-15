@@ -216,8 +216,7 @@ function MainAppContent() {
               style={{
                 minHeight: "38px",
                 padding: "0 16px",
-                background:
-                  "linear-gradient(180deg, var(--blue), var(--navy))",
+                background: "linear-gradient(180deg, var(--blue), var(--navy))",
                 borderColor: "var(--navy)",
                 color: "white",
               }}

@@ -30,7 +30,9 @@ async function migrateDeletedPersonnelTable() {
         CREATE INDEX IF NOT EXISTS idx_esf7_del_pers_prn ON esf7_deleted_personnel(prn);
         CREATE INDEX IF NOT EXISTS idx_esf7_del_pers_name ON esf7_deleted_personnel(school_id, full_name_clean);
       `);
-      console.log(`✅ Table \`esf7_deleted_personnel\` verified / created in ${name}.`);
+      console.log(
+        `✅ Table \`esf7_deleted_personnel\` verified / created in ${name}.`,
+      );
     } catch (err) {
       console.error(
         `❌ [Migration Error] Failed to create \`esf7_deleted_personnel\` in ${name}:`,

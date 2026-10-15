@@ -89,12 +89,18 @@ export default function UnsyncedChangesQueue() {
       const res = await retryOutboxEntry(entry);
       if (res && res.success) {
         if (showToast) {
-          showToast(`✓ Saved ${formatModuleName(entry.module)} to server.`, "success");
+          showToast(
+            `✓ Saved ${formatModuleName(entry.module)} to server.`,
+            "success",
+          );
         }
         await loadEntries();
       } else {
         if (showToast) {
-          showToast(`Could not save ${formatModuleName(entry.module)}. Kept in queue.`, "error");
+          showToast(
+            `Could not save ${formatModuleName(entry.module)}. Kept in queue.`,
+            "error",
+          );
         }
       }
     } catch (err) {
@@ -128,11 +134,23 @@ export default function UnsyncedChangesQueue() {
     await loadEntries();
 
     if (successCount > 0 && failCount === 0) {
-      if (showToast) showToast(`✓ All ${successCount} unsynced items saved to server!`, "success");
+      if (showToast)
+        showToast(
+          `✓ All ${successCount} unsynced items saved to server!`,
+          "success",
+        );
     } else if (successCount > 0 && failCount > 0) {
-      if (showToast) showToast(`Saved ${successCount} items; ${failCount} items still in queue.`, "warning");
+      if (showToast)
+        showToast(
+          `Saved ${successCount} items; ${failCount} items still in queue.`,
+          "warning",
+        );
     } else if (failCount > 0) {
-      if (showToast) showToast(`Save failed for ${failCount} items. They remain in queue.`, "error");
+      if (showToast)
+        showToast(
+          `Save failed for ${failCount} items. They remain in queue.`,
+          "error",
+        );
     }
   };
 
@@ -142,13 +160,18 @@ export default function UnsyncedChangesQueue() {
           "Discard Unsynced Changes?",
           `Are you sure you want to discard your unsent changes for "${formatModuleName(entry.module)}"? This cannot be undone.`,
         )
-      : window.confirm("Are you sure you want to discard these unsynced changes?"));
+      : window.confirm(
+          "Are you sure you want to discard these unsynced changes?",
+        ));
 
     if (!confirmed) return;
 
     try {
       await removeOutboxEntry(entry.id);
-      if (showToast) showToast(`Discarded unsynced changes for ${formatModuleName(entry.module)}.`);
+      if (showToast)
+        showToast(
+          `Discarded unsynced changes for ${formatModuleName(entry.module)}.`,
+        );
       if (reviewEntry?.id === entry.id) {
         setReviewEntry(null);
       }
@@ -162,7 +185,8 @@ export default function UnsyncedChangesQueue() {
     try {
       await resolveOutboxConflict(entry.id, choice);
       if (choice === "keep_server") {
-        if (showToast) showToast("Discarded local version; kept server version.");
+        if (showToast)
+          showToast("Discarded local version; kept server version.");
         setReviewEntry(null);
       } else {
         if (showToast) showToast("Marked for overwrite; ready to retry.");
@@ -228,9 +252,18 @@ export default function UnsyncedChangesQueue() {
             color: "#065F46",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: "600" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              fontWeight: "600",
+            }}
+          >
             <FiWifi style={{ fontSize: "16px", color: "#059669" }} />
-            <span>Connection restored! You have unsent changes waiting to be saved.</span>
+            <span>
+              Connection restored! You have unsent changes waiting to be saved.
+            </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <button
@@ -297,7 +330,13 @@ export default function UnsyncedChangesQueue() {
           </div>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span style={{ fontSize: "15px", fontWeight: "700", color: "#92400E" }}>
+              <span
+                style={{
+                  fontSize: "15px",
+                  fontWeight: "700",
+                  color: "#92400E",
+                }}
+              >
                 Unsynced Changes
               </span>
               <span
@@ -313,8 +352,15 @@ export default function UnsyncedChangesQueue() {
                 {entries.length} {entries.length === 1 ? "item" : "items"}
               </span>
             </div>
-            <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#B45309" }}>
-              Changes made offline or during connection errors are held safely in your browser outbox.
+            <p
+              style={{
+                margin: "2px 0 0 0",
+                fontSize: "12px",
+                color: "#B45309",
+              }}
+            >
+              Changes made offline or during connection errors are held safely
+              in your browser outbox.
             </p>
           </div>
         </div>
@@ -393,8 +439,21 @@ export default function UnsyncedChangesQueue() {
             >
               {/* Left Column: Info & Status */}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                  <span style={{ fontSize: "14px", fontWeight: "700", color: "#1F2937" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: "14px",
+                      fontWeight: "700",
+                      color: "#1F2937",
+                    }}
+                  >
                     {formatModuleName(entry.module)}
                   </span>
 
@@ -464,7 +523,8 @@ export default function UnsyncedChangesQueue() {
                   )}
 
                   <span style={{ fontSize: "12px", color: "#6B7280" }}>
-                    {entry.schoolYear || "Current SY"} • {entry.term || "1st Term"}
+                    {entry.schoolYear || "Current SY"} •{" "}
+                    {entry.term || "1st Term"}
                   </span>
                 </div>
 
@@ -478,7 +538,13 @@ export default function UnsyncedChangesQueue() {
                     color: "#6B7280",
                   }}
                 >
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                    }}
+                  >
                     <FiClock style={{ fontSize: "12px" }} />
                     {entry.createdAt
                       ? new Date(entry.createdAt).toLocaleString([], {
@@ -514,7 +580,9 @@ export default function UnsyncedChangesQueue() {
               </div>
 
               {/* Right Column: Actions */}
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
                 <button
                   onClick={() => handleRetrySingle(entry)}
                   disabled={isRetrying || retryingAll}
@@ -537,7 +605,9 @@ export default function UnsyncedChangesQueue() {
                   <FiRefreshCw
                     style={{
                       fontSize: "13px",
-                      animation: isRetrying ? "spin 1s linear infinite" : "none",
+                      animation: isRetrying
+                        ? "spin 1s linear infinite"
+                        : "none",
                     }}
                   />
                   <span>{isRetrying ? "Retrying..." : "Retry"}</span>
@@ -635,10 +705,23 @@ export default function UnsyncedChangesQueue() {
               }}
             >
               <div>
-                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "700", color: "#0F172A" }}>
+                <h3
+                  style={{
+                    margin: 0,
+                    fontSize: "16px",
+                    fontWeight: "700",
+                    color: "#0F172A",
+                  }}
+                >
                   Review Unsent Changes: {formatModuleName(reviewEntry.module)}
                 </h3>
-                <p style={{ margin: "3px 0 0 0", fontSize: "12px", color: "#64748B" }}>
+                <p
+                  style={{
+                    margin: "3px 0 0 0",
+                    fontSize: "12px",
+                    color: "#64748B",
+                  }}
+                >
                   Stable Key: <code>{reviewEntry.stableKey}</code>
                 </p>
               </div>
@@ -672,14 +755,27 @@ export default function UnsyncedChangesQueue() {
                       color: "#92400E",
                     }}
                   >
-                    <strong>⚠️ Server Version Conflict:</strong> The server's saved data was updated by
-                    another session or user since your changes were made. Choose which version you wish
-                    to keep.
+                    <strong>⚠️ Server Version Conflict:</strong> The server's
+                    saved data was updated by another session or user since your
+                    changes were made. Choose which version you wish to keep.
                   </div>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: "16px",
+                    }}
+                  >
                     <div>
-                      <h4 style={{ margin: "0 0 8px 0", fontSize: "13px", fontWeight: "700", color: "#1E293B" }}>
+                      <h4
+                        style={{
+                          margin: "0 0 8px 0",
+                          fontSize: "13px",
+                          fontWeight: "700",
+                          color: "#1E293B",
+                        }}
+                      >
                         Your Local Queued Changes
                       </h4>
                       <pre
@@ -697,7 +793,9 @@ export default function UnsyncedChangesQueue() {
                         {JSON.stringify(reviewEntry.payload, null, 2)}
                       </pre>
                       <button
-                        onClick={() => handleResolveConflict(reviewEntry, "keep_queued")}
+                        onClick={() =>
+                          handleResolveConflict(reviewEntry, "keep_queued")
+                        }
                         style={{
                           marginTop: "10px",
                           width: "100%",
@@ -716,7 +814,14 @@ export default function UnsyncedChangesQueue() {
                     </div>
 
                     <div>
-                      <h4 style={{ margin: "0 0 8px 0", fontSize: "13px", fontWeight: "700", color: "#1E293B" }}>
+                      <h4
+                        style={{
+                          margin: "0 0 8px 0",
+                          fontSize: "13px",
+                          fontWeight: "700",
+                          color: "#1E293B",
+                        }}
+                      >
                         Base Server Version
                       </h4>
                       <pre
@@ -736,7 +841,9 @@ export default function UnsyncedChangesQueue() {
                           : "No base version recorded"}
                       </pre>
                       <button
-                        onClick={() => handleResolveConflict(reviewEntry, "keep_server")}
+                        onClick={() =>
+                          handleResolveConflict(reviewEntry, "keep_server")
+                        }
                         style={{
                           marginTop: "10px",
                           width: "100%",
@@ -758,7 +865,14 @@ export default function UnsyncedChangesQueue() {
               ) : (
                 <div>
                   <div style={{ marginBottom: "16px" }}>
-                    <h4 style={{ margin: "0 0 8px 0", fontSize: "13px", fontWeight: "700", color: "#1E293B" }}>
+                    <h4
+                      style={{
+                        margin: "0 0 8px 0",
+                        fontSize: "13px",
+                        fontWeight: "700",
+                        color: "#1E293B",
+                      }}
+                    >
                       Queued Payload
                     </h4>
                     <pre

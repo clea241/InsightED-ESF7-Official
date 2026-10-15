@@ -1,6 +1,6 @@
 /**
  * High-Performance Migration & Rebuild of esf7_personnel_allowances
- * 
+ *
  * Rules:
  * - Strictly isolated to insighted_esf7.
  * - Creates safety backup table `esf7_personnel_allowances_backup_20261013`.
@@ -12,14 +12,14 @@
  * - Recreates indexes and constraints cleanly.
  */
 
-const { Pool } = require('../node_modules/pg');
+const { Pool } = require("../node_modules/pg");
 
 const pool = new Pool({
-  host: 'stride-posgre-prod-01.postgres.database.azure.com',
+  host: "stride-posgre-prod-01.postgres.database.azure.com",
   port: 5432,
-  user: 'Administrator1',
-  password: 'pRZTbQ2T1JD7',
-  database: 'insighted_esf7',
+  user: "Administrator1",
+  password: "pRZTbQ2T1JD7",
+  database: "insighted_esf7",
   ssl: { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
@@ -35,16 +35,24 @@ async function main() {
     console.log("==========================================================");
 
     // 1. Safety backup
-    console.log("1. Creating safety backup table esf7_personnel_allowances_backup_20261013...");
+    console.log(
+      "1. Creating safety backup table esf7_personnel_allowances_backup_20261013...",
+    );
     await client.query(`
       CREATE TABLE IF NOT EXISTS esf7_personnel_allowances_backup_20261013 AS 
       SELECT * FROM esf7_personnel_allowances;
     `);
-    const backupCount = await client.query("SELECT count(*) FROM esf7_personnel_allowances_backup_20261013;");
-    console.log(`   ✓ Safety backup confirmed: ${backupCount.rows[0].count} records intact.`);
+    const backupCount = await client.query(
+      "SELECT count(*) FROM esf7_personnel_allowances_backup_20261013;",
+    );
+    console.log(
+      `   ✓ Safety backup confirmed: ${backupCount.rows[0].count} records intact.`,
+    );
 
     // 2. Drop raw_payload and ensure extras exists
-    console.log("2. Adjusting columns: dropping raw_payload and ensuring extras column exists...");
+    console.log(
+      "2. Adjusting columns: dropping raw_payload and ensuring extras column exists...",
+    );
     await client.query(`
       ALTER TABLE esf7_personnel_allowances 
       ADD COLUMN IF NOT EXISTS extras JSONB NOT NULL DEFAULT '{}'::jsonb;
@@ -52,7 +60,9 @@ async function main() {
       ALTER TABLE esf7_personnel_allowances 
       DROP COLUMN IF EXISTS raw_payload;
     `);
-    console.log("   ✓ Column adjustments complete: raw_payload dropped, extras ensured.");
+    console.log(
+      "   ✓ Column adjustments complete: raw_payload dropped, extras ensured.",
+    );
 
     // 3. Truncate table cleanly
     console.log("3. Truncating esf7_personnel_allowances cleanly...");
@@ -60,7 +70,9 @@ async function main() {
     console.log("   ✓ Table truncated.");
 
     // 4. Ingest mapped existing allowances
-    console.log("4. Ingesting mapped allowances from backup connected to esf7_personnel_profile(id)...");
+    console.log(
+      "4. Ingesting mapped allowances from backup connected to esf7_personnel_profile(id)...",
+    );
     const mappedInsert = await client.query(`
       WITH mapped_raw AS (
         SELECT 
@@ -132,10 +144,14 @@ async function main() {
         created_at, updated_at
       FROM deduped;
     `);
-    console.log(`   ✓ Ingested ${mappedInsert.rowCount} mapped customized allowance records.`);
+    console.log(
+      `   ✓ Ingested ${mappedInsert.rowCount} mapped customized allowance records.`,
+    );
 
     // 5. Ingest default allowance records for all remaining personnel profiles
-    console.log("5. Ingesting allowance records for all remaining personnel in esf7_personnel_profile...");
+    console.log(
+      "5. Ingesting allowance records for all remaining personnel in esf7_personnel_profile...",
+    );
     const defaultsInsert = await client.query(`
       INSERT INTO esf7_personnel_allowances (
         id, personnel_id, school_id, school_year,
@@ -173,7 +189,9 @@ async function main() {
       )
       ON CONFLICT (personnel_id, school_year) DO NOTHING;
     `);
-    console.log(`   ✓ Ingested ${defaultsInsert.rowCount} default allowance records for remaining personnel.`);
+    console.log(
+      `   ✓ Ingested ${defaultsInsert.rowCount} default allowance records for remaining personnel.`,
+    );
 
     // 6. Create alias view esf7_personnel_allowance
     console.log("6. Creating compatibility view esf7_personnel_allowance...");
@@ -193,9 +211,15 @@ async function main() {
 
     // 8. Verification checks
     console.log("\n==================== VERIFICATION ====================");
-    const finalCount = await client.query("SELECT count(*) FROM esf7_personnel_allowances;");
-    const viewCount = await client.query("SELECT count(*) FROM esf7_personnel_allowance;");
-    const profCount = await client.query("SELECT count(*) FROM esf7_personnel_profile;");
+    const finalCount = await client.query(
+      "SELECT count(*) FROM esf7_personnel_allowances;",
+    );
+    const viewCount = await client.query(
+      "SELECT count(*) FROM esf7_personnel_allowance;",
+    );
+    const profCount = await client.query(
+      "SELECT count(*) FROM esf7_personnel_profile;",
+    );
     const rawCheck = await client.query(`
       SELECT column_name 
       FROM information_schema.columns 
@@ -218,7 +242,7 @@ async function main() {
       personnel_profile_count: Number(profCount.rows[0].count),
       raw_payload_present: rawCheck.rows.length > 0,
       extras_column_present: extrasCheck.rows.length > 0,
-      orphan_allowances_count: Number(orphanCheck.rows[0].count)
+      orphan_allowances_count: Number(orphanCheck.rows[0].count),
     });
 
     const sampleRows = await client.query(`
@@ -235,7 +259,6 @@ async function main() {
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
     console.log(`\n🎉 Rebuild completed successfully in ${elapsed}s!`);
-
   } finally {
     client.release();
     await pool.end();

@@ -1,6 +1,6 @@
 const { Pool } = require("pg");
 const path = require("path");
-require("./loadEnv"); });
+require("./loadEnv");
 
 const poolString = process.env.DATABASE_URL
   ? process.env.DATABASE_URL.replace("insighted_esf7", "insightEd")

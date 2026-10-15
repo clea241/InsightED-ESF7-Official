@@ -64,7 +64,6 @@ const fakeClient = {
 };
 db.getClient = async () => fakeClient;
 
-
 let server;
 let base;
 beforeAll(async () => {
