@@ -1,5 +1,8 @@
 # CHANGELOG
 
+## 2026-10-15 (fix: School Profile "Unsaved Changes" modal with no edits)
+- `SchoolProfile.jsx`: the clean baseline was captured in the same tick as the hydrating `setState` calls, so it held the pre-load defaults and the guard saw 4 phantom differences. The baseline is now captured in an effect after the hydrated state has rendered (initial load and outbox sync), and the dirty check recomputes after every baseline reset (including save). Modal, buttons and normalization are unchanged; real edits still trigger the guard. The field/from/to table is already logged by `dirtyGuard.js` in dev.
+
 ## 2026-10-10 (security: report download path traversal, SEC-571)
 - Server: `GET /api/reports/download-overload-pay/:filename` now only serves a plain `*.xlsx` file name that resolves inside `server/scratch/`; `..`, slashes, encoded separators, null bytes and other extensions return 400. Previously an encoded `..%2F` let any logged-in user read files such as `server/package.json` or `server/.env`.
 - Tests: `e2e/security/report-download-traversal.spec.mjs` (traversal variants refused, a legitimate file still downloads intact).

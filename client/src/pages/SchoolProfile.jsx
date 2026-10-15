@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+} from "react";
 import { useApp } from "../context/AppContext";
 import { useAuth } from "../context/AuthContext";
 import { getLocalDraft, setLocalDraft, deleteLocalDraft } from "../services/db";
@@ -203,64 +209,195 @@ export default function SchoolProfile() {
   const [confirmInput, setConfirmInput] = useState("");
 
   const savedSnapshotRef = useRef(null);
+  // Baseline is captured in an effect AFTER hydrated state has rendered; capturing it right after the setState calls
+  // would read the stale (pre-hydration) values and make the screen look dirty with no edits.
+  const [baselinePending, setBaselinePending] = useState(false);
+  const [baselineVersion, setBaselineVersion] = useState(0);
 
-  const getCurrentConfigSnapshot = () => ({
-    iern: String(iern || "").trim(),
+  const getCurrentConfigSnapshot = useCallback(() => {
+    const normArr = (arr) =>
+      Array.isArray(arr)
+        ? Array.from(
+            new Set(arr.map((s) => String(s || "").trim()).filter(Boolean)),
+          ).sort()
+        : [];
+
+    const normObj = (obj) => {
+      if (!obj || typeof obj !== "object") return {};
+      const sorted = {};
+      Object.keys(obj)
+        .sort()
+        .forEach((k) => {
+          if (obj[k] != null && obj[k] !== "") {
+            sorted[k] = String(obj[k]).trim();
+          }
+        });
+      return sorted;
+    };
+
+    const hasShiftsNorm = hasShifts === "yes" ? "yes" : "no";
+
+    return {
+      iern: String(iern || "").trim(),
+      hasElemSpecialPrograms:
+        isElemActive && hasElemSpecialPrograms === "yes" ? "yes" : "no",
+      elemSpecialProgram:
+        isElemActive && hasElemSpecialPrograms === "yes"
+          ? Boolean(elemSpecialProgram)
+          : false,
+      hasJhsSpecialPrograms:
+        isJHSActive && hasJhsSpecialPrograms === "yes" ? "yes" : "no",
+      jhsSpecialPrograms:
+        isJHSActive && hasJhsSpecialPrograms === "yes"
+          ? normArr(jhsSpecialPrograms)
+          : [],
+      hasElemInclusive:
+        isElemActive && hasElemInclusive === "yes" ? "yes" : "no",
+      elemInclusivePrograms:
+        isElemActive && hasElemInclusive === "yes"
+          ? normArr(elemInclusivePrograms)
+          : [],
+      hasJhsInclusive: isJHSActive && hasJhsInclusive === "yes" ? "yes" : "no",
+      jhsInclusivePrograms:
+        isJHSActive && hasJhsInclusive === "yes"
+          ? normArr(jhsInclusivePrograms)
+          : [],
+      hasShsInclusive: isSHSActive && hasShsInclusive === "yes" ? "yes" : "no",
+      shsInclusivePrograms:
+        isSHSActive && hasShsInclusive === "yes"
+          ? normArr(shsInclusivePrograms)
+          : [],
+      shsCurriculumModel: isSHSActive
+        ? String(shsCurriculumModel || "Standard K-12 SHS Curriculum").trim()
+        : "Standard K-12 SHS Curriculum",
+      hasShifts: hasShiftsNorm,
+      shiftStartTime:
+        hasShiftsNorm === "yes"
+          ? String(shiftStartTime || "07:00").trim()
+          : "07:00",
+      shiftEndTime:
+        hasShiftsNorm === "yes"
+          ? String(shiftEndTime || "18:00").trim()
+          : "18:00",
+      shiftsConfig: hasShiftsNorm === "yes" ? normObj(shiftsConfig) : {},
+    };
+  }, [
+    iern,
     hasElemSpecialPrograms,
-    elemSpecialProgram: !!elemSpecialProgram,
+    elemSpecialProgram,
     hasJhsSpecialPrograms,
-    jhsSpecialPrograms: [...(jhsSpecialPrograms || [])].sort(),
+    jhsSpecialPrograms,
     hasElemInclusive,
-    elemInclusivePrograms: [...(elemInclusivePrograms || [])].sort(),
+    elemInclusivePrograms,
     hasJhsInclusive,
-    jhsInclusivePrograms: [...(jhsInclusivePrograms || [])].sort(),
+    jhsInclusivePrograms,
     hasShsInclusive,
-    shsInclusivePrograms: [...(shsInclusivePrograms || [])].sort(),
+    shsInclusivePrograms,
     shsCurriculumModel,
     hasShifts,
     shiftStartTime,
     shiftEndTime,
-    shiftsConfig: JSON.stringify(shiftsConfig || {}),
-  });
+    shiftsConfig,
+    isElemActive,
+    isJHSActive,
+    isSHSActive,
+  ]);
 
-  const isDirty = Boolean(
-    savedSnapshotRef.current &&
-    JSON.stringify(getCurrentConfigSnapshot()) !== savedSnapshotRef.current,
-  );
+  const diffConfig = useCallback((base, curr) => {
+    if (!base || !curr) return [];
+    const reasons = [];
+    const keys = [
+      "iern",
+      "hasElemSpecialPrograms",
+      "elemSpecialProgram",
+      "hasJhsSpecialPrograms",
+      "jhsSpecialPrograms",
+      "hasElemInclusive",
+      "elemInclusivePrograms",
+      "hasJhsInclusive",
+      "jhsInclusivePrograms",
+      "hasShsInclusive",
+      "shsInclusivePrograms",
+      "shsCurriculumModel",
+      "hasShifts",
+      "shiftStartTime",
+      "shiftEndTime",
+      "shiftsConfig",
+    ];
+    for (const k of keys) {
+      const vBase = JSON.stringify(base[k]);
+      const vCurr = JSON.stringify(curr[k]);
+      if (vBase !== vCurr) {
+        reasons.push({ field: k, from: base[k], to: curr[k] });
+      }
+    }
+    return reasons;
+  }, []);
 
-  const handleDiscard = () => {
-    if (!savedSnapshotRef.current) return;
+  const dirtyReasons = useMemo(() => {
+    if (!savedSnapshotRef.current) return [];
     try {
-      const snap = JSON.parse(savedSnapshotRef.current);
-      setHasElemSpecialPrograms(snap.hasElemSpecialPrograms);
-      setElemSpecialProgram(snap.elemSpecialProgram);
-      setHasJhsSpecialPrograms(snap.hasJhsSpecialPrograms);
-      setJhsSpecialPrograms(snap.jhsSpecialPrograms || []);
-      setHasElemInclusive(snap.hasElemInclusive);
-      setElemInclusivePrograms(snap.elemInclusivePrograms || []);
-      setHasJhsInclusive(snap.hasJhsInclusive);
-      setJhsInclusivePrograms(snap.jhsInclusivePrograms || []);
-      setHasShsInclusive(snap.hasShsInclusive);
-      setShsInclusivePrograms(snap.shsInclusivePrograms || []);
-      setShsCurriculumModel(snap.shsCurriculumModel);
-      setIern(snap.iern || "");
-      setHasShifts(snap.hasShifts || "no");
-      setShiftStartTime(snap.shiftStartTime || "07:00");
-      setShiftEndTime(snap.shiftEndTime || "18:00");
-      setShiftsConfig(
-        snap.shiftsConfig
-          ? typeof snap.shiftsConfig === "string"
-            ? JSON.parse(snap.shiftsConfig)
-            : snap.shiftsConfig
-          : schoolInfo?.shiftsConfig || schoolInfo?.shifts_config || {},
-      );
-    } catch (e) {}
-  };
+      const base = JSON.parse(savedSnapshotRef.current);
+      const curr = getCurrentConfigSnapshot();
+      return diffConfig(base, curr);
+    } catch (e) {
+      return [];
+    }
+  }, [getCurrentConfigSnapshot, diffConfig, baselineVersion]);
+
+  const isDirty = dirtyReasons.length > 0;
+
+  const handleDiscard = useCallback(() => {
+    try {
+      let snap = null;
+      if (savedSnapshotRef.current) {
+        snap = JSON.parse(savedSnapshotRef.current);
+      }
+      if (snap) {
+        setHasElemSpecialPrograms(snap.hasElemSpecialPrograms || "no");
+        setElemSpecialProgram(Boolean(snap.elemSpecialProgram));
+        setHasJhsSpecialPrograms(snap.hasJhsSpecialPrograms || "no");
+        setJhsSpecialPrograms(snap.jhsSpecialPrograms || []);
+        setHasElemInclusive(snap.hasElemInclusive || "no");
+        setElemInclusivePrograms(snap.elemInclusivePrograms || []);
+        setHasJhsInclusive(snap.hasJhsInclusive || "no");
+        setJhsInclusivePrograms(snap.jhsInclusivePrograms || []);
+        setHasShsInclusive(snap.hasShsInclusive || "no");
+        setShsInclusivePrograms(snap.shsInclusivePrograms || []);
+        setShsCurriculumModel(
+          snap.shsCurriculumModel || "Standard K-12 SHS Curriculum",
+        );
+        setIern(snap.iern || "");
+        setHasShifts(snap.hasShifts || "no");
+        setShiftStartTime(snap.shiftStartTime || "07:00");
+        setShiftEndTime(snap.shiftEndTime || "18:00");
+        setShiftsConfig(snap.shiftsConfig || {});
+      }
+      const draftKey = `insighted_school_curricular_config_${schoolInfo?.schoolId || "default"}`;
+      localStorage.removeItem(draftKey);
+      if (typeof deleteLocalDraft === "function") {
+        deleteLocalDraft(draftKey).catch(() => {});
+      }
+      removeOutboxEntryByModule({
+        schoolId: schoolInfo?.schoolId,
+        user: user?.username || user?.email,
+        term: activeTerm,
+        module: "school_profile",
+      }).catch(() => {});
+      if (typeof markCleanRef.current === "function") {
+        markCleanRef.current(snap);
+      }
+    } catch (e) {
+      console.warn("[SchoolProfile] Discard error:", e);
+    }
+  }, [schoolInfo?.schoolId, user, activeTerm]);
 
   const runSaveRef = useRef(() => Promise.resolve({ ok: true })); // the page's one save, shared with the unsaved-changes dialog
-  useDirtyGuard({
+  const markCleanRef = useRef(null);
+  const { markClean } = useDirtyGuard({
     screenId: "school_profile",
     isDirty,
+    getDirtyReasons: () => dirtyReasons,
     onDiscard: handleDiscard,
     onSave: () => runSaveRef.current(),
     getPayload: () => getCurrentConfigSnapshot(),
@@ -272,6 +409,16 @@ export default function SchoolProfile() {
       endpoint: "/api/schools/curricular-config",
     }),
   });
+  markCleanRef.current = markClean;
+
+  useEffect(() => {
+    if (!baselinePending) return;
+    const snap = getCurrentConfigSnapshot();
+    savedSnapshotRef.current = JSON.stringify(snap);
+    setBaselinePending(false);
+    setBaselineVersion((v) => v + 1);
+    if (typeof markCleanRef.current === "function") markCleanRef.current(snap);
+  }, [baselinePending, getCurrentConfigSnapshot]);
 
   // Load configuration on mount or when schoolInfo updates
   useEffect(() => {
@@ -433,9 +580,7 @@ export default function SchoolProfile() {
           }
         }
 
-        setTimeout(() => {
-          savedSnapshotRef.current = JSON.stringify(getCurrentConfigSnapshot());
-        }, 50);
+        setBaselinePending(true);
 
         // Seamlessly auto-apply and sync queued offline changes for school_profile (No blocking modal)
         autoSyncOutboxOnSectionOpen({
@@ -482,17 +627,16 @@ export default function SchoolProfile() {
               }
             }
           },
+          onSynced: () => {
+            setBaselinePending(true);
+          },
         }).catch(() => {});
       } catch (err) {
         console.error("Error loading school profile configuration:", err);
       }
     };
     loadConfig();
-  }, [
-    schoolInfo.schoolId,
-    schoolInfo.inclusivePrograms,
-    schoolInfo.specialPrograms,
-  ]);
+  }, [schoolInfo?.schoolId]);
 
   const syncConfigDraft = (overrides = {}) => {
     try {
@@ -806,7 +950,12 @@ export default function SchoolProfile() {
       if (setSchoolInfo)
         setSchoolInfo((prev) => ({ ...prev, curricularConfigSaved: true }));
 
-      savedSnapshotRef.current = JSON.stringify(getCurrentConfigSnapshot());
+      const confirmedSnapshot = getCurrentConfigSnapshot();
+      savedSnapshotRef.current = JSON.stringify(confirmedSnapshot);
+      setBaselineVersion((v) => v + 1);
+      if (typeof markCleanRef.current === "function") {
+        markCleanRef.current(confirmedSnapshot);
+      }
       setIsConfirmModalOpen(false);
       setConfirmInput("");
 
@@ -904,7 +1053,12 @@ export default function SchoolProfile() {
         showNodeMap={true}
         onContinue={() => setIsConfirmModalOpen(true)}
         continueText="Save"
-        continueDisabled={isSaving}
+        continueDisabled={
+          isSaving || (!isDirty && Boolean(schoolInfo?.curricularConfigSaved))
+        }
+        discardDisabled={isSaving || !isDirty}
+        showDiscard={true}
+        onDiscard={handleDiscard}
       />
 
       {/* 2-Column Split Dashboard Layout */}

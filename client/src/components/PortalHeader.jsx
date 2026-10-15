@@ -22,6 +22,7 @@ export default function PortalHeader({
   onLogout,
   showLogout = false,
   showDiscard = true,
+  discardDisabled = false,
   onDiscard,
   showNodeMap = false,
   onNodeMap,
@@ -365,6 +366,7 @@ export default function PortalHeader({
                 <button
                   type="button"
                   onClick={handleDiscardClick}
+                  disabled={discardDisabled}
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
@@ -385,7 +387,7 @@ export default function PortalHeader({
                     border: isSaveDisabled
                       ? "1px solid #E2E8F0"
                       : "1px solid rgba(239, 68, 68, 0.35)",
-                    cursor: "pointer",
+                    cursor: discardDisabled ? "not-allowed" : "pointer",
                     transition: "all 0.2s ease",
                     boxShadow: isSaveDisabled
                       ? "none"
