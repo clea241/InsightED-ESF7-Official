@@ -363,11 +363,14 @@ app.get("/api/salary-matrix", async (req, res) => {
   }
 });
 
+const { poolTimeoutHandler } = require("./utils/poolErrors");
 // Global error handler: never sends stack traces or file paths to the client; full detail is logged server-side only.
 const stripServerPaths = (msg) =>
   String(msg || "")
     .replace(/[A-Za-z]:[\\/][^\s'"<>)]*/g, "[path]")
     .replace(/(^|[\s(])\/(?:[\w.-]+\/)+[\w.-]+/g, "$1[path]");
+// A pool-acquire timeout becomes 503 + Retry-After here; every other error falls through to the handler below.
+app.use(poolTimeoutHandler);
 app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
   let status = Number(err.status || err.statusCode) || 500;

@@ -1,6 +1,7 @@
 const pg = require("pg");
 const { Pool } = pg;
 const { AsyncLocalStorage } = require("async_hooks");
+const { poolMax, connectTimeoutMs } = require("./poolConfig");
 
 // Load consolidated environment configuration and synthesize database variables
 require("../loadEnv");
@@ -75,7 +76,7 @@ const baseConfig = {
   keepAlive: true,
   keepAliveInitialDelayMillis: 5000,
   idleTimeoutMillis: 10000, // Reclaim idle connections after 10s
-  connectionTimeoutMillis: 15000, // Fail fast at 15s instead of hanging indefinitely
+  connectionTimeoutMillis: connectTimeoutMs(), // PG_CONNECT_TIMEOUT_MS, default 15s: fail fast instead of hanging indefinitely
 };
 
 // Lazy pool references (instantiated on first access)
@@ -97,7 +98,7 @@ function getPool() {
     );
     _pool = new Pool({
       ...baseConfig,
-      max: 8,
+      max: poolMax("PG_POOL_MAX_PRIMARY"),
       connectionString: connStr,
     });
     _pool.on("error", (err) =>
@@ -126,7 +127,7 @@ function getStagingPool() {
     );
     _stagingPool = new Pool({
       ...baseConfig,
-      max: 5,
+      max: poolMax("PG_POOL_MAX_STAGING"),
       connectionString: connStr,
     });
     _stagingPool.on("error", (err) =>
@@ -156,7 +157,7 @@ function getProdPool() {
     );
     _prodPool = new Pool({
       ...baseConfig,
-      max: 8,
+      max: poolMax("PG_POOL_MAX_PROD"),
       connectionString: connStr,
     });
     _prodPool.on("error", (err) =>
@@ -192,7 +193,7 @@ function getInsightEdPool() {
     );
     _insightEdPool = new Pool({
       ...baseConfig,
-      max: 5,
+      max: poolMax("PG_POOL_MAX_INSIGHTED"),
       connectionString: connStr,
     });
     _insightEdPool.on("error", (err) =>
@@ -223,7 +224,7 @@ function getUsersDbPool() {
     );
     _usersDbPool = new Pool({
       ...baseConfig,
-      max: 4,
+      max: poolMax("PG_POOL_MAX_USERS"),
       connectionString: connStr,
     });
     _usersDbPool.on("error", (err) =>
