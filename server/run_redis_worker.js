@@ -34,6 +34,7 @@ async function main() {
   console.log("----------------------------------------------------");
 
   require("./queue_worker").logConsumerStatus();
+  await require("./queue_worker").verifyWorkerSchema();
   const initialized = await redisQueue.initRedisStream();
   if (!initialized) {
     console.warn(

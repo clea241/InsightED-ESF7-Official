@@ -543,6 +543,13 @@ function logConsumerStatus() {
   );
 }
 
+// With the consumer on, warn at boot if the database lacks columns the worker writes (read-only check).
+async function verifyWorkerSchema() {
+  if (!isConsumerEnabled()) return false;
+  const { warnIfWorkerSchemaMismatch } = require("./db/workerSchemaCheck");
+  return warnIfWorkerSchemaMismatch(db.pool);
+}
+
 // options.alreadyClaimed: the caller already moved the row to 'processing' (claimNextPendingJob), so do not claim again.
 async function processJobById(
   targetJobId,
@@ -3470,6 +3477,7 @@ function setPollInterval(ms) {
 async function startWorker(intervalMs = 2000) {
   logConsumerStatus();
   if (!isConsumerEnabled()) return;
+  verifyWorkerSchema().catch(() => {});
   if (workerInterval || isRedisWorkerActive) return;
 
   console.log(
@@ -3550,4 +3558,5 @@ module.exports = {
   getCurrentProcessingJobId,
   requeueInFlightJob,
   logConsumerStatus,
+  verifyWorkerSchema,
 };
