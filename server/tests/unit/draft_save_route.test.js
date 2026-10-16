@@ -13,11 +13,30 @@ const schoolsRouter = nodeRequire("../../controllers/schools/index.js");
 // --- fake school_drafts table implementing the same semantics as the SQL in the route ---
 const rows = new Map(); // "school|year" -> { payload, version, updated_at }
 let failWrites = false;
+let deletedPersonnelQueries = 0;
+let mockDeletedPersonnelRows = [];
 
 db.query = async (sql, params = []) => {
   const text = String(sql);
   if (/information_schema\.columns/.test(text))
     return { rows: [{ "?column?": 1 }] };
+  if (/to_regclass/i.test(text))
+    return { rows: [{ regclass: "public.school_drafts" }] };
+  if (/SELECT COUNT\(\*\)::int FROM esf7_personnel_profile/i.test(text)) {
+    const r = rows.get("302261|SY 26-27");
+    const persCount = (r?.payload?.personnel || []).length;
+    const secCount = (r?.payload?.classSections || r?.payload?.sections || [])
+      .length;
+    return {
+      rows: [
+        {
+          personnel: persCount,
+          regularSections: secCount,
+          workloadRows: 0,
+        },
+      ],
+    };
+  }
   if (/FROM esf7_regular_sections/.test(text)) {
     const r = rows.get("302261|SY 26-27");
     const sections = (
@@ -68,8 +87,11 @@ db.query = async (sql, params = []) => {
   if (/FROM schools/.test(text)) {
     return { rows: [{ school_id: "302261", school_name: "School 302261" }] };
   }
+  if (/FROM esf7_deleted_personnel/.test(text)) {
+    deletedPersonnelQueries++;
+    return { rows: mockDeletedPersonnelRows };
+  }
   if (
-    /FROM esf7_deleted_personnel/.test(text) ||
     /FROM esf7_school_node_status/.test(text) ||
     /FROM esf7_workload_rows/.test(text)
   ) {
@@ -314,4 +336,55 @@ test("duplicate sections with same ID or same grade+name are automatically dedup
   assert.equal(saved.length, 2);
   assert.ok(saved.some((s) => s.sectionName === "Section A"));
   assert.ok(saved.some((s) => s.sectionName === "Section B"));
+});
+
+test("combined count query returns entity_counts and excludes deleted personnel without redundant pre-save query", async () => {
+  // Setup tombstone in esf7_deleted_personnel mock
+  mockDeletedPersonnelRows = [
+    {
+      personnel_id: "DEL-P99",
+      prn: "PRN-999",
+      employee_no: "EMP-999",
+      full_name_clean: "deleted teacher",
+    },
+  ];
+  deletedPersonnelQueries = 0;
+
+  const res = await put({
+    schoolYear: "SY 26-27",
+    payload: {
+      schoolInfo: { schoolId: "302261" },
+      personnel: [
+        { id: "P1", prn: "PRN-001" },
+        { id: "DEL-P99", prn: "PRN-999" }, // should be filtered out by tombstone
+      ],
+      classSections: [
+        {
+          id: "sec-1",
+          gradeLevel: "Grade 7",
+          sectionName: "Section A",
+          numberOfLearners: 40,
+        },
+      ],
+    },
+    baseVersion: 8,
+  });
+
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.success, true);
+  // Verification entity_counts returned from combined subquery
+  assert.ok(body.entity_counts);
+  assert.equal(typeof body.entity_counts.personnel, "number");
+  assert.equal(typeof body.entity_counts.regularSections, "number");
+  assert.equal(typeof body.entity_counts.workloadRows, "number");
+
+  // Tombstoned teacher was excluded
+  const savedPers = rows.get("302261|SY 26-27").payload.personnel;
+  assert.ok(savedPers.some((p) => p.id === "P1"));
+  assert.ok(!savedPers.some((p) => p.id === "DEL-P99"));
+
+  // Exactly 1 query was made to esf7_deleted_personnel (inside loadNormalizedDraft),
+  // proving the pre-save duplicate query was removed!
+  assert.equal(deletedPersonnelQueries, 1);
 });

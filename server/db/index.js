@@ -1,7 +1,7 @@
 const pg = require("pg");
 const { Pool } = pg;
 const { AsyncLocalStorage } = require("async_hooks");
-const { poolMax, connectTimeoutMs, positiveIntEnv } = require("./poolConfig");
+const { poolMax, connectTimeoutMs } = require("./poolConfig");
 
 // Load consolidated environment configuration and synthesize database variables
 require("../loadEnv");
@@ -70,18 +70,15 @@ const isStagingEnv =
   defaultDbName === "insighted_esf7_staging" ||
   (primaryConnUrl && primaryConnUrl.includes("insighted_esf7_staging"));
 
-// Base configuration with bounded connection timeout, statement timeout, idle transaction termination, and quick idle recovery
+// Base configuration with bounded connection timeout and quick idle recovery
+// Note: statement_timeout and idle_in_transaction_session_timeout are applied server-side
+// via ALTER DATABASE/ROLE to avoid PgBouncer startup packet rejection in transaction mode.
 const baseConfig = {
   ssl: dbSsl,
   keepAlive: true,
   keepAliveInitialDelayMillis: 5000,
   idleTimeoutMillis: 10000, // Reclaim idle connections after 10s
   connectionTimeoutMillis: connectTimeoutMs(), // PG_CONNECT_TIMEOUT_MS: fail fast instead of hanging indefinitely
-  statement_timeout: positiveIntEnv("PG_STATEMENT_TIMEOUT_MS", 10000), // Cancel queries taking > 10s
-  idle_in_transaction_session_timeout: positiveIntEnv(
-    "PG_IDLE_IN_TRANSACTION_TIMEOUT_MS",
-    10000,
-  ), // Terminate transactions idle > 10s
 };
 
 // Lazy pool references (instantiated on first access)
@@ -134,6 +131,24 @@ function getPoolMetrics() {
   };
 }
 
+function formatPoolDestination(
+  connString,
+  fallbackDb,
+  fallbackHost,
+  fallbackPort,
+) {
+  try {
+    if (connString) {
+      const u = new URL(connString);
+      const isBouncer = String(u.port) === "6432";
+      const db = u.pathname.replace(/^\//, "") || fallbackDb;
+      return `database: "${db}" on ${u.hostname}:${u.port || "5432"} (${isBouncer ? "via PgBouncer" : "Direct Postgres"}, user: "${u.username || dbUser || "default"}")`;
+    }
+  } catch (e) {}
+  const isBouncer = String(fallbackPort) === "6432";
+  return `database: "${fallbackDb}" on ${fallbackHost}:${fallbackPort} (${isBouncer ? "via PgBouncer" : "Direct Postgres"}, user: "${dbUser || "default"}")`;
+}
+
 // 1. Primary Pool (env configured)
 function getPool() {
   if (!_pool) {
@@ -142,7 +157,7 @@ function getPool() {
       process.env.DATABASE_URL ||
       `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${defaultDbName}`;
     console.log(
-      `📦 [DB Pool] Primary Pool connected -> database: "${defaultDbName}" on ${dbHost}:${dbPort}`,
+      `📦 [DB Pool] Primary Pool connected -> ${formatPoolDestination(connStr, defaultDbName, dbHost, dbPort)}`,
     );
     _pool = new Pool({
       ...baseConfig,
@@ -172,7 +187,7 @@ function getStagingPool() {
         ? primaryConnUrl.replace(/\/[^/?]+(\?|$)/, `/insighted_esf7_staging$1`)
         : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/insighted_esf7_staging`);
     console.log(
-      `📦 [DB Pool] Staging Pool connected -> database: "insighted_esf7_staging" on ${dbHost}:${dbPort}`,
+      `📦 [DB Pool] Staging Pool connected -> ${formatPoolDestination(connStr, "insighted_esf7_staging", dbHost, dbPort)}`,
     );
     _stagingPool = new Pool({
       ...baseConfig,
@@ -203,7 +218,7 @@ function getProdPool() {
         ? primaryConnUrl.replace(/\/[^/?]+(\?|$)/, `/insighted_esf7$1`)
         : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/insighted_esf7`);
     console.log(
-      `📦 [DB Pool] Production Pool connected -> database: "insighted_esf7" on ${dbHost}:${dbPort}`,
+      `📦 [DB Pool] Production Pool connected -> ${formatPoolDestination(connStr, "insighted_esf7", dbHost, dbPort)}`,
     );
     _prodPool = new Pool({
       ...baseConfig,
@@ -240,7 +255,7 @@ function getInsightEdPool() {
         ? primaryConnUrl.replace(/\/[^/?]+(\?|$)/, `/${masterDbName}$1`)
         : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${masterDbName}`);
     console.log(
-      `📦 [DB Pool] insightEd (Master) Pool connected -> database: "${masterDbName}" on ${dbHost}:${dbPort}`,
+      `📦 [DB Pool] insightEd (Master) Pool connected -> ${formatPoolDestination(connStr, masterDbName, dbHost, dbPort)}`,
     );
     _insightEdPool = new Pool({
       ...baseConfig,
@@ -272,7 +287,7 @@ function getUsersDbPool() {
         ? primaryConnUrl.replace(/\/[^/?]+(\?|$)/, `/${usersDbName}$1`)
         : `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${usersDbName}`);
     console.log(
-      `📦 [DB Pool] Auth/Users Pool connected -> database: "${usersDbName}" on ${dbHost}:${dbPort}`,
+      `📦 [DB Pool] Auth/Users Pool connected -> ${formatPoolDestination(connStr, usersDbName, dbHost, dbPort)}`,
     );
     _usersDbPool = new Pool({
       ...baseConfig,

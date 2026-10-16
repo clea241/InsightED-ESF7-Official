@@ -15,9 +15,12 @@ const { to: copyTo, from: copyFrom } = require("pg-copy-streams");
 const plan = require("../migration_esf7_2.0_plan.json");
 
 const SOURCE_URL =
-  "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insightEd?sslmode=require";
+  process.env.SOURCE_DATABASE_URL || process.env.INSIGHTED_DATABASE_URL || "";
 const STAGING_URL =
-  "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted_esf7_staging?sslmode=require";
+  process.env.STAGING_DATABASE_URL ||
+  process.env.PRIMARY_DATABASE_URL ||
+  process.env.DATABASE_URL ||
+  "";
 
 async function run() {
   console.log("======================================================");

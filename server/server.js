@@ -523,8 +523,9 @@ const initDB = async () => {
   console.log(`   Primary DB    : ${primaryStatus}`);
   console.log(`   Master DB     : ${masterStatus}`);
   console.log(`   Auth Database : ${authStatus}`);
+  const isBouncer = String(dbPort) === "6432";
   console.log(
-    `   Host & Port   : ${dbHost}:${dbPort}${primaryRow.ip ? ` (Resolved: ${primaryRow.ip}:${primaryRow.port || dbPort})` : ""}`,
+    `   Host & Port   : ${dbHost}:${dbPort} (${isBouncer ? "via PgBouncer" : "Direct Postgres"})${primaryRow.ip ? ` (Resolved: ${primaryRow.ip}:${primaryRow.port || dbPort})` : ""}`,
   );
   console.log(
     `   Database User : ${primaryRow.current_user || process.env.DB_USER || "postgres"}`,

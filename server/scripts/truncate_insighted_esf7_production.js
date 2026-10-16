@@ -1,8 +1,9 @@
+require("../loadEnv");
 require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 const { Client } = require("pg");
 
 const PROD_URL =
-  "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted_esf7?sslmode=require";
+  process.env.PROD_DATABASE_URL || process.env.INSIGHTED_DATABASE_URL || "";
 
 async function prepareCleanProduction() {
   const client = new Client({ connectionString: PROD_URL });

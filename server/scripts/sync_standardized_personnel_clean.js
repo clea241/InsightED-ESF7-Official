@@ -1,12 +1,14 @@
+require("../loadEnv");
 require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
-const path = require("path");
-const root = "e:\\InsightED - ESF7 Official";
-const { Pool } = require(path.join(root, "node_modules", "pg"));
+const { Pool } = require("pg");
 
 const PROD_URL =
-  "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted_esf7?sslmode=require";
+  process.env.PROD_DATABASE_URL || process.env.INSIGHTED_DATABASE_URL || "";
 const STAGING_URL =
-  "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted_esf7_staging?sslmode=require";
+  process.env.STAGING_DATABASE_URL ||
+  process.env.PRIMARY_DATABASE_URL ||
+  process.env.DATABASE_URL ||
+  "";
 
 const TARGET_SCHOOLS = ["300488", "342285"];
 

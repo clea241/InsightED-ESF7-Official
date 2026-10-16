@@ -85,7 +85,7 @@ describe("server startup requires a real JWT secret in production (no hard-coded
           if (['node_modules', 'tests', 'scratch', 'uploads'].includes(e.name)) continue;
           const p = path.join(d, e.name);
           if (e.isDirectory()) walk(p);
-          else if (/\.js$/.test(e.name) && !/^(test_|scratch_)/.test(e.name) && fs.readFileSync(p, 'utf8').includes('STRIDE_INSIGHTED_SECRET')) bad.push(p);
+          else if (/[.]js$/.test(e.name) && !/^(test_|scratch_)/.test(e.name) && fs.readFileSync(p, 'utf8').includes('STRIDE_INSIGHTED_SECRET')) bad.push(p);
         }
       })(process.cwd());
       console.log(JSON.stringify(bad));

@@ -57,6 +57,12 @@ describe.skipIf(!enabled)(
        VALUES ('PER-X-1', 'PRN-X-1', $1, 'SY 26-27', 'T', 'X')`,
         [school],
       );
+      // Teaching blocks need assigned classes (NO_CLASSES_ASSIGNED rule), so the fixture teacher has some.
+      await pool.query(
+        `INSERT INTO esf7_personnel_employment (id, personnel_id, school_id, grade_levels_taught)
+       VALUES ('EMP-X-1', 'PER-X-1', $1, '["Grade 1","Grade 2"]'::jsonb)`,
+        [school],
+      );
       const router = nodeRequire("../../controllers/workload_rows/index.js");
       const { apiAuthGate } = nodeRequire("../../middleware/auth.js");
       const app = express();

@@ -12,7 +12,7 @@ else:
     conn = psycopg2.connect(
         host=os.environ.get('DB_HOST', 'stride-posgre-prod-01.postgres.database.azure.com'),
         user=os.environ.get('DB_USER', 'Administrator1'),
-        password=os.environ.get('DB_PASSWORD', 'pRZTbQ2T1JD7'),
+        password=os.environ.get('DB_PASSWORD', os.environ.get('DB_PASSWORD')),
         dbname='insighted_esf7',
         port=5432,
         sslmode='require'

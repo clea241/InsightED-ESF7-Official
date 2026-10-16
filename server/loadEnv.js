@@ -10,12 +10,33 @@ const isTest =
   process.env.NODE_ENV === "test" ||
   process.env.NODE_ENV === "load-test" ||
   Boolean(process.env.TEST_DATABASE_URL);
+// Capture pre-existing runtime environment settings (e.g. from PM2, docker, or CLI)
+const preEnv = {
+  DB_HOST: process.env.DB_HOST,
+  DB_PORT: process.env.DB_PORT,
+  DB_USER: process.env.DB_USER,
+  DB_PASSWORD: process.env.DB_PASSWORD,
+  DB_NAME: process.env.DB_NAME,
+  DB_SSL: process.env.DB_SSL,
+  PRIMARY_DATABASE_URL: process.env.PRIMARY_DATABASE_URL,
+  DATABASE_URL: process.env.DATABASE_URL,
+  PORT: process.env.PORT,
+  NODE_ENV: process.env.NODE_ENV,
+};
+
 if (fs.existsSync(rootEnvPath)) {
   dotenv.config({ path: rootEnvPath, override: !isTest });
 } else if (fs.existsSync(serverEnvPath)) {
   dotenv.config({ path: serverEnvPath, override: !isTest });
 } else {
   dotenv.config({ override: !isTest });
+}
+
+// Restore any explicitly provided pre-existing environment variables so dotenv cannot clobber them
+for (const [key, val] of Object.entries(preEnv)) {
+  if (val !== undefined && val !== "") {
+    process.env[key] = val;
+  }
 }
 
 // Automatically synthesize legacy individual database fields from standardized URLs
@@ -55,6 +76,52 @@ if (primaryUrl) {
     }
   } catch (err) {
     // If not a parseable URL, will be caught by downstream validation
+  }
+}
+
+// Ensure DB_PORT and DB_HOST are the single source of truth:
+// synchronize all database connection URLs so they cannot silently bypass PgBouncer
+function alignUrl(urlStr, targetHost, targetPort) {
+  if (!urlStr) return urlStr;
+  try {
+    const u = new URL(urlStr);
+    if (targetHost) u.hostname = targetHost;
+    if (targetPort) u.port = String(targetPort);
+    if (String(targetPort) === "6432" || process.env.DB_SSL === "false") {
+      u.searchParams.delete("sslmode");
+    }
+    return u.toString();
+  } catch (e) {
+    return urlStr;
+  }
+}
+
+if (process.env.DB_HOST || process.env.DB_PORT) {
+  const h = process.env.DB_HOST;
+  const p = process.env.DB_PORT;
+  if (process.env.PRIMARY_DATABASE_URL) {
+    process.env.PRIMARY_DATABASE_URL = alignUrl(
+      process.env.PRIMARY_DATABASE_URL,
+      h,
+      p,
+    );
+  }
+  if (process.env.DATABASE_URL) {
+    process.env.DATABASE_URL = alignUrl(process.env.DATABASE_URL, h, p);
+  }
+  if (process.env.INSIGHTED_DATABASE_URL) {
+    process.env.INSIGHTED_DATABASE_URL = alignUrl(
+      process.env.INSIGHTED_DATABASE_URL,
+      h,
+      p,
+    );
+  }
+  if (process.env.USERS_DATABASE_URL) {
+    process.env.USERS_DATABASE_URL = alignUrl(
+      process.env.USERS_DATABASE_URL,
+      h,
+      p,
+    );
   }
 }
 

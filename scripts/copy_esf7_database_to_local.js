@@ -47,7 +47,7 @@ async function verifyCounts() {
     host: "stride-posgre-prod-01.postgres.database.azure.com",
     port: 5432,
     user: "Administrator1",
-    password: "pRZTbQ2T1JD7",
+    password: process.env.DB_PASSWORD,
     database: "insightEd",
     ssl: { rejectUnauthorized: false },
   });
@@ -124,7 +124,7 @@ async function main() {
   ];
 
   await runStep("pg_dump from Azure insightEd", PG_DUMP_BIN, dumpArgs, {
-    PGPASSWORD: "pRZTbQ2T1JD7",
+    PGPASSWORD: process.env.DB_PASSWORD,
   });
 
   const stats = fs.statSync(DUMP_PATH);

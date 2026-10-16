@@ -1869,7 +1869,12 @@ async function loadNormalizedDraft(schoolId, schoolYear) {
         [sidPair],
       )
       .catch(() => ({ rows: [] })),
-    Promise.resolve({ rows: [] }),
+    db
+      .query(
+        "SELECT personnel_id, prn, employee_no, full_name_clean FROM esf7_deleted_personnel WHERE school_id = ANY($1)",
+        [sidPair],
+      )
+      .catch(() => ({ rows: [] })),
     db
       .query(
         "SELECT * FROM esf7_personnel_designations WHERE school_id = ANY($1) ORDER BY created_at ASC",
@@ -2228,12 +2233,9 @@ const handleSaveDraft = async (req, res) => {
     const finalPayload = { ...payload };
 
     // 1. Personnel Deletion Filter & Protection
+    // Note: esf7_deleted_personnel is already queried during loadNormalizedDraft above
+    // and exposed via existingPayload.deletedPersonnelIds, making an extra pre-save query redundant.
     if (Array.isArray(payload.personnel)) {
-      const cleanSchoolId = schoolId.replace(/^SCH-/i, "");
-      const sidPair = [schoolId, cleanSchoolId, "SCH-" + cleanSchoolId];
-
-      const dbTombstoneKeys = [];
-
       const rawDeletedPers = [
         ...(Array.isArray(payload.deletedPersonnelIds)
           ? payload.deletedPersonnelIds
@@ -2241,7 +2243,6 @@ const handleSaveDraft = async (req, res) => {
         ...(Array.isArray(existingPayload?.deletedPersonnelIds)
           ? existingPayload.deletedPersonnelIds
           : []),
-        ...dbTombstoneKeys,
       ];
 
       const deletedPersSet = new Set(
@@ -2531,20 +2532,26 @@ const handleSaveDraft = async (req, res) => {
       await persistNormalizedDraft(client, schoolId, schoolYear, finalPayload);
 
       // Read back what the database now holds for this school (same transaction) so the client gets server-verified counts.
+      // Combined into a single round trip with subqueries instead of 3 sequential round trips.
       const sidPair = [schoolId, `SCH-${schoolId}`];
-      const countOf = async (table) => {
-        const r = await safeDraftQuery(client, "cnt", () =>
-          client.query(
-            `SELECT COUNT(*)::int AS n FROM ${table} WHERE school_id = ANY($1)`,
-            [sidPair],
-          ),
-        ).catch(() => null);
-        return r && r.rows && r.rows[0] ? r.rows[0].n : null;
-      };
+      const countsRes = await safeDraftQuery(client, "cnt", () =>
+        client.query(
+          `SELECT 
+            (SELECT COUNT(*)::int FROM esf7_personnel_profile WHERE school_id = ANY($1)) AS personnel,
+            (SELECT COUNT(*)::int FROM esf7_regular_sections WHERE school_id = ANY($1)) AS "regularSections",
+            (SELECT COUNT(*)::int FROM esf7_workload_rows WHERE school_id = ANY($1)) AS "workloadRows"`,
+          [sidPair],
+        ),
+      ).catch(() => null);
+      const countRow = countsRes?.rows?.[0] || {};
       entityCounts = {
-        personnel: await countOf("esf7_personnel_profile"),
-        regularSections: await countOf("esf7_regular_sections"),
-        workloadRows: await countOf("esf7_workload_rows"),
+        personnel: countRow.personnel !== undefined ? countRow.personnel : null,
+        regularSections:
+          countRow.regularSections !== undefined
+            ? countRow.regularSections
+            : null,
+        workloadRows:
+          countRow.workloadRows !== undefined ? countRow.workloadRows : null,
       };
 
       await client.query("COMMIT");

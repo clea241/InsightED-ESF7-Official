@@ -15,7 +15,7 @@ async function main() {
     host: "stride-posgre-prod-01.postgres.database.azure.com",
     port: 5432,
     user: "Administrator1",
-    password: "pRZTbQ2T1JD7",
+    password: process.env.DB_PASSWORD,
     database: "insighted_esf7",
     ssl: { rejectUnauthorized: false },
   });

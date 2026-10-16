@@ -1356,7 +1356,7 @@ Your Ticketing `.env` was configured to connect to a database named **`insightEd
 ### What I Did:
 I modified [`e:\InsightEd-Ticketing\.env`](file:///e:/InsightEd-Ticketing/.env) (line 1) to point to the correct shared staging database name:
 ```env
-DATABASE_URL=postgres://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted-staging
+DATABASE_URL=postgres://Administrator1:[REDACTED_SECRET]@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted-staging
 ```
 
 ### Next Step:

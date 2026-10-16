@@ -1,12 +1,14 @@
+require("./loadEnv");
 require("./db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 const { Pool } = require("pg");
 
 const pool = new Pool({
-  user: "Administrator1",
-  password: "pRZTbQ2T1JD7",
-  host: "stride-posgre-prod-01.postgres.database.azure.com",
+  user: process.env.DB_USER || "Administrator1",
+  password: process.env.DB_PASSWORD,
+  host:
+    process.env.DB_HOST || "stride-posgre-prod-01.postgres.database.azure.com",
   database: "insightEd",
-  port: 5432,
+  port: Number(process.env.DB_PORT || 5432),
   ssl: { rejectUnauthorized: false },
 });
 

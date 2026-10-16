@@ -1,8 +1,9 @@
+require("./loadEnv");
 require("./db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 const { Client } = require("pg");
 const client = new Client({
   connectionString:
-    "postgresql://Administrator1:pRZTbQ2T1JD7@stride-posgre-prod-01.postgres.database.azure.com:5432/insighted_esf7",
+    process.env.INSIGHTED_DATABASE_URL || process.env.PRIMARY_DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
 client
