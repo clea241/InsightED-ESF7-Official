@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 // ADDITIVE ONLY: adds a `version` column to school_drafts. Nothing is dropped, rewritten or truncated.
 //
 // BEFORE RUNNING: take a database backup (for example: pg_dump -Fc -t school_drafts insighted_esf7 > school_drafts.dump).

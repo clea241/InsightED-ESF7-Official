@@ -1,3 +1,4 @@
+require("./db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 // Run the queue worker's processNextJob manually with verbose logging
 const db = require("./db");
 

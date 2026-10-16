@@ -43,7 +43,18 @@ export const AuthProvider = ({ children }) => {
     () =>
       onSessionExpired(async () => {
         await pauseForAuth();
-        logoutRef.current();
+        await logoutRef.current({ skipGuard: true });
+        if (
+          typeof window !== "undefined" &&
+          window.location &&
+          !window.location.pathname.includes("/login")
+        ) {
+          const basePath = import.meta.env.BASE_URL || "/";
+          const loginPath = basePath.endsWith("/")
+            ? `${basePath}login`
+            : `${basePath}/login`;
+          window.location.replace(loginPath);
+        }
       }),
     [],
   );

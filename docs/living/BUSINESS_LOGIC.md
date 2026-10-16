@@ -78,3 +78,10 @@ Sections live in `esf7_regular_sections` (and sibling sned/als/aral/remedial tab
 
 ## Extras rule for the other six tables (2026-10-10)
 - Same rule as workload rows: only fields with no typed column, or whose value differs from the typed column, are kept in `extras` and returned as before. A section adviser who has no profile row yet is still kept in `extras` (the adviser foreign key cannot hold it) and shown as before.
+
+## Submission queue (2026-10-15)
+- A certified submission is saved to `esf7_submission_queue` before anything else; the Redis message is only a wake-up and its failure never loses the submission. The worker must commit the database transaction before the Redis entry is acknowledged.
+- If the client sends a `submissionId` (UUID, created once per certify click and reused on every retry), the same school and `submissionId` always map to one job; a repeat returns that job's current status.
+- A failed job is retried with a growing, randomised delay up to `QUEUE_MAX_ATTEMPTS` (default 5); after that it stays `failed` for a person to look at. Jobs are never deleted by the worker.
+- If no database connection is free in time, the API answers 503 with `Retry-After` (1 to 5 seconds), not 500.
+- A submission is always for the logged-in user's own school. If the request names a different school (in the body or inside the payload) it is refused with 403; if the login has no school it is refused with 403. There is no default school.

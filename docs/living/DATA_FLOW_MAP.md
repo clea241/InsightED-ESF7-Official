@@ -43,3 +43,8 @@ Personnel Profile > Learning Area > "Disable Years" -> person.disabledServiceYea
 
 ## Payload storage for allowances, requests, school profile, tasks and regular sections (2026-10-10)
 - Allowance toggle/bulk (`POST /api/allowances/toggle|bulk`), request create (`POST /api/requests/create`), regular section save (`POST /api/sections/regular`), curricular-config save (`PUT /api/schools/curricular-config`), workload bulk save (teaching-related and administrative tasks) and the queue worker write typed columns plus `extras` on `esf7_personnel_allowances`, `esf7_requests`, `esf7_regular_sections`, `esf7_school_profile`, `esf7_related_task`, `esf7_admin_task`; none writes a copy of the body any more. The allowance `ON CONFLICT` still does not refresh `extras` (unchanged behavior).
+
+## Submission queue paths (2026-10-15)
+- Certify / resubmit (`POST /api/submissions`, `POST /api/validation/resubmit`) -> one INSERT into `esf7_submission_queue` (idempotent on `school_id` + `submission_id` once the column exists) -> Redis stream pointer (soft failure). `resubmit` also upserts `esf7_validation` to RESUBMITTED.
+- Worker (`server/run_redis_worker.js`, only when `QUEUE_CONSUMER_ENABLED=true`): claims the row (`processing`), runs one transaction over the normalized tables, then sets `completed` (or records the failure: `attempts`, `next_attempt_at`, `failed`) and acknowledges the stream entry.
+- Scripts and migrations connect through `DB_DIRECT_PORT`; the app and the worker connect through `DB_PORT`.

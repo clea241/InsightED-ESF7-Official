@@ -61,45 +61,110 @@ const qi = (s) => '"' + String(s).replace(/"/g, '""') + '"';
   const c = new Client({ connectionString: env.LOAD_DATABASE_URL });
   await c.connect();
 
-  // 1. Schema: apply the project's generated schema once if the main table is missing.
-  const have = await c.query(
-    "SELECT to_regclass('public.esf7_personnel_profile') AS r",
-  );
-  if (!have.rows[0].r) {
-    const dir = path.join(root, "server", "drizzle");
-    const file = fs.readdirSync(dir).filter((f) => /^0000_.*\.sql$/.test(f))[0];
-    if (!file) {
-      console.error("server/drizzle/0000_*.sql not found");
-      process.exit(2);
-    }
-    console.log("Applying schema from server/drizzle/" + file);
-    const sqlText = fs
-      .readFileSync(path.join(dir, file), "utf8")
-      .replace(/^\/\*\s*$/m, "")
-      .replace(/^\*\/\s*$/m, ""); // drizzle introspection files wrap the whole schema in a comment block: unwrap it
-    let pending = sqlText
-      .split("--> statement-breakpoint")
+  // 1. Schema: apply schema.sql and drizzle schema to ensure complete DB definitions
+  const schemaFile = path.join(root, "server", "schema.sql");
+  if (fs.existsSync(schemaFile)) {
+    const rawSql = fs.readFileSync(schemaFile, "utf8");
+    const stmts = rawSql
+      .split("\n")
+      .map((l) => (l.trim().startsWith("--") ? "" : l))
+      .join("\n")
+      .split(";")
       .map((s) => s.trim())
-      .filter(Boolean);
-    for (let pass = 0; pass < 4 && pending.length; pass++) {
-      // retry: statements may depend on tables created later in the file
-      const failed = [];
-      for (const stmt of pending) {
-        try {
-          await c.query(stmt);
-        } catch (e) {
-          if (!/already exists/.test(e.message))
-            failed.push([stmt, e.message.split("\n")[0]]);
-        }
+      .filter((s) => s.length > 5);
+    for (const stmt of stmts) {
+      try {
+        await c.query(stmt);
+      } catch (e) {
+        // ignore idempotent creation errors
       }
-      pending = failed.map((f) => f[0]);
-      if (pass === 3)
-        for (const f of failed) console.log("  schema note: " + f[1]);
     }
   }
-  // Columns the running code uses that the introspected drizzle schema does not list (found by probing the endpoints). Test DB only.
+  // Apply missing section and auxiliary tables
   for (const stmt of [
     "ALTER TABLE esf7_perssonel_educ ADD COLUMN IF NOT EXISTS college_degrees jsonb",
+    "ALTER TABLE esf7_workload_rows ADD COLUMN IF NOT EXISTS extras jsonb DEFAULT '{}'::jsonb",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS iern TEXT",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_elem_special_programs BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS elem_special_programs JSONB DEFAULT '[]'::jsonb",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_jhs_special_programs BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS jhs_special_programs JSONB DEFAULT '[]'::jsonb",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS shs_curriculum_model TEXT DEFAULT 'Standard K-12 SHS Curriculum'",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_es_sned BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_es_als BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_es_iped BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_es_mad BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_jhs_sned BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_jhs_als BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_jhs_iped BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_jhs_mad BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_shs_sned BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_shs_iped BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_shs_mad BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_sned BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_als BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_iped BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_madrasah BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS inclusive_programs JSONB DEFAULT '[]'::jsonb",
+    "ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_shifts BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE esf7_personnel_profile ADD COLUMN IF NOT EXISTS allow_email_discrepancy BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE esf7_personnel_profile ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'canonical'",
+    "ALTER TABLE esf7_personnel_profile ADD COLUMN IF NOT EXISTS legacy_id VARCHAR(128)",
+    "ALTER TABLE esf7_personnel_profile ADD COLUMN IF NOT EXISTS no_deped_email BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE esf7_personnel_profile ADD COLUMN IF NOT EXISTS is_main_sh BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE esf7_regular_sections ADD COLUMN IF NOT EXISTS extras JSONB DEFAULT '{}'::jsonb",
+    "ALTER TABLE esf7_sned_sections ADD COLUMN IF NOT EXISTS extras JSONB DEFAULT '{}'::jsonb",
+    "ALTER TABLE esf7_als_sections ADD COLUMN IF NOT EXISTS extras JSONB DEFAULT '{}'::jsonb",
+    "ALTER TABLE esf7_aral_sections ADD COLUMN IF NOT EXISTS extras JSONB DEFAULT '{}'::jsonb",
+    "ALTER TABLE esf7_remedial_enrichment_sections ADD COLUMN IF NOT EXISTS extras JSONB DEFAULT '{}'::jsonb",
+    `CREATE TABLE IF NOT EXISTS esf7_sned_sections (
+      id VARCHAR(50) PRIMARY KEY,
+      school_id TEXT NOT NULL,
+      school_year TEXT NOT NULL DEFAULT '2026-2027',
+      grade_level TEXT NOT NULL DEFAULT 'SNED (NON-GRADED)',
+      section_name TEXT NOT NULL,
+      program_type TEXT,
+      adviser_id VARCHAR(50) REFERENCES esf7_personnel_profile(id) ON DELETE SET NULL,
+      male_learners INTEGER DEFAULT 0,
+      female_learners INTEGER DEFAULT 0,
+      number_of_learners INTEGER DEFAULT 0,
+      size_status TEXT DEFAULT 'WITHIN STANDARD',
+      raw_payload JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT uq_sned_section_school_sy UNIQUE (school_id, school_year, section_name)
+    )`,
+    "CREATE INDEX IF NOT EXISTS idx_sned_sections_school_sy ON esf7_sned_sections (school_id, school_year)",
+    "CREATE INDEX IF NOT EXISTS idx_sned_sections_adviser ON esf7_sned_sections (adviser_id)",
+    `CREATE TABLE IF NOT EXISTS esf7_als_sections (
+      id VARCHAR(50) PRIMARY KEY,
+      school_id TEXT NOT NULL,
+      school_year TEXT NOT NULL DEFAULT '2026-2027',
+      grade_level TEXT NOT NULL DEFAULT 'ALS',
+      section_name TEXT NOT NULL,
+      delivery_mode TEXT,
+      clc_name TEXT,
+      adviser_id VARCHAR(50) REFERENCES esf7_personnel_profile(id) ON DELETE SET NULL,
+      male_learners INTEGER DEFAULT 0,
+      female_learners INTEGER DEFAULT 0,
+      number_of_learners INTEGER DEFAULT 0,
+      size_status TEXT DEFAULT 'WITHIN STANDARD',
+      raw_payload JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT uq_als_section_school_sy UNIQUE (school_id, school_year, section_name)
+    )`,
+    "CREATE INDEX IF NOT EXISTS idx_als_sections_school_sy ON esf7_als_sections (school_id, school_year)",
+    "CREATE INDEX IF NOT EXISTS idx_als_sections_adviser ON esf7_als_sections (adviser_id)",
+    "ALTER TABLE esf7_database ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT false",
+    "ALTER TABLE esf7_database_dummy ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT false",
+    `CREATE TABLE IF NOT EXISTS unit1_school_identity (
+      school_id TEXT PRIMARY KEY,
+      school_name TEXT,
+      division TEXT,
+      region TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`,
   ]) {
     try {
       await c.query(stmt);
@@ -107,22 +172,62 @@ const qi = (s) => '"' + String(s).replace(/"/g, '""') + '"';
       console.log("  compat note: " + e.message.split("\n")[0]);
     }
   }
-  // additive migration used by the app for draft versions (best effort)
-  const dbEnv = {
-    ...process.env,
-    DATABASE_URL: env.LOAD_DATABASE_URL,
-    DB_HOST: u.hostname,
-    DB_PORT: u.port || "5432",
-    DB_NAME: decodeURIComponent(u.pathname.slice(1)),
-    DB_USER: decodeURIComponent(u.username),
-    DB_PASSWORD: decodeURIComponent(u.password),
-    DB_SSL: "false",
+
+  // 1b. Fail loudly if any required table is missing
+  const REQUIRED_TABLES = [
+    "esf7_personnel_profile",
+    "esf7_school_profile",
+    "esf7_regular_sections",
+    "esf7_sned_sections",
+    "esf7_als_sections",
+    "esf7_aral_sections",
+    "esf7_remedial_enrichment_sections",
+    "esf7_workload_rows",
+    "school_drafts",
+  ];
+  const missing = [];
+  for (const t of REQUIRED_TABLES) {
+    const r = await c.query("SELECT to_regclass($1) AS r", [t]);
+    if (!r.rows[0].r) missing.push(t);
+  }
+  if (missing.length > 0) {
+    console.error(
+      "❌ FATAL: Required tables missing in test database: " +
+        missing.join(", "),
+    );
+    process.exit(1);
+  }
+
+  // 1c. Verify required columns in key tables
+  const REQUIRED_COLUMNS = {
+    esf7_school_profile: [
+      "iern",
+      "elem_special_programs",
+      "jhs_special_programs",
+    ],
+    esf7_personnel_profile: [
+      "allow_email_discrepancy",
+      "status",
+      "no_deped_email",
+      "is_main_sh",
+    ],
+    esf7_regular_sections: ["extras"],
   };
-  spawnSync(process.execPath, ["migrations/add_school_drafts_version.js"], {
-    cwd: path.join(root, "server"),
-    env: dbEnv,
-    stdio: "ignore",
-  });
+  for (const [table, cols] of Object.entries(REQUIRED_COLUMNS)) {
+    for (const colName of cols) {
+      const colCheck = await c.query(
+        "SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2",
+        [table, colName],
+      );
+      if (colCheck.rowCount === 0) {
+        console.error(
+          `❌ FATAL: Required column "${colName}" missing on table "${table}"`,
+        );
+        process.exit(1);
+      }
+    }
+  }
+  console.log("✓ All required tables and columns verified present.");
 
   // 2. Generic row generator driven by information_schema (only NOT NULL columns without a default are filled, plus known keys).
   async function columns(table) {
@@ -155,7 +260,7 @@ const qi = (s) => '"' + String(s).replace(/"/g, '""') + '"';
     if (n === "first_name") return `'Fake'||${g}`;
     if (n === "last_name") return `'Person'||${g}`;
     if (n === "grade_level") return `'Grade '||(7 + ${g} % 6)`;
-    if (n === "section_name") return `'Section '||${g}`;
+    if (n === "section_name") return `'SECTION '||${g}`;
     if (n === "subject") return `'Subject '||(${g} % 12)`;
     if (n === "type") return `'teaching'`;
     if (n === "start_time") return `'07:30'::time`;
@@ -204,8 +309,8 @@ const qi = (s) => '"' + String(s).replace(/"/g, '""') + '"';
         `'${tenant}'`,
         `'${SY}'`,
         `(SELECT jsonb_build_object('schoolInfo', jsonb_build_object('schoolId', '${tenant}', 'schoolName', 'Fake School ${tenant}'),
-        'personnel', (SELECT jsonb_agg(jsonb_build_object('id', 'p${tenant}_'||k, 'firstName', 'Fake'||k, 'lastName', 'Person'||k, 'type', 'teaching', 'workloadRows', (SELECT jsonb_agg(jsonb_build_object('subject', 'Subject '||(r % 12), 'gradeLevel', 'Grade '||(7 + r % 6), 'sectionName', 'Section '||r)) FROM generate_series(1, 8) r))) FROM generate_series(1, ${nP}) k),
-        'classSections', (SELECT jsonb_agg(jsonb_build_object('id', 's${tenant}_'||k, 'gradeLevel', 'Grade '||(7 + k % 6), 'sectionName', 'Section '||k)) FROM generate_series(1, ${nS}) k)))`,
+        'personnel', (SELECT jsonb_agg(jsonb_build_object('id', 'p${tenant}_'||k, 'firstName', 'Fake'||k, 'lastName', 'Person'||k, 'type', 'teaching', 'workloadRows', (SELECT jsonb_agg(jsonb_build_object('subject', 'Subject '||(r % 12), 'gradeLevel', 'Grade '||(7 + r % 6), 'sectionName', 'SECTION '||r)) FROM generate_series(1, 8) r))) FROM generate_series(1, ${nP}) k),
+        'classSections', (SELECT jsonb_agg(jsonb_build_object('id', 's${tenant}_'||k, 'gradeLevel', 'Grade '||(7 + k % 6), 'sectionName', 'SECTION '||k)) FROM generate_series(1, ${nS}) k)))`,
       ];
       await c.query(
         `INSERT INTO school_drafts (${names.join(",")}) SELECT ${vals.join(",")} FROM generate_series(1,1) g ON CONFLICT DO NOTHING`,
@@ -264,7 +369,7 @@ const qi = (s) => '"' + String(s).replace(/"/g, '""') + '"';
     const nP = rp.esf7_personnel_profile || 10,
       nS = rp.esf7_regular_sections || 5;
     for (const t of tables) await seedTable(t, tid, rp[t] || 0, nP, nS);
-    if (i <= 5) accounts.push({ school_id: tid, is_largest: false });
+    accounts.push({ school_id: tid, is_largest: false });
   }
   console.log(`Seeded ${others.count || 0} other tenants.`);
   await c.query("ANALYZE");

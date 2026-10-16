@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 // Generic expand -> backfill -> verify -> drop for tables that keep a whole copy of the request body in raw_payload.
 // Same steps and safety rules as the esf7_workload_rows pilot (see docs/orm-optimizer/workload-rows-payload-pilot.md).
 //

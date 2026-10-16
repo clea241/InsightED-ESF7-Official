@@ -16,6 +16,7 @@ case "$SCENARIO" in baseline|peak|spike|stress|soak) ;; *) echo "Usage: run-load
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ROOT="$(cd "$SKILL_DIR/../../.." && pwd)"
 cd "$ROOT"
+export PATH="/c/Program Files/k6:$PATH"
 RAW="$ROOT/load-test/reports/raw"
 mkdir -p "$RAW"
 
@@ -66,8 +67,8 @@ node -e '
 # NODE_ENV is deliberately NOT "production": server/db/index.js sends real-school traffic in production mode to a pool with a
 # hard-coded database name (insighted_esf7), which would bypass the guard. Instances/cluster layout and PM2 settings still match production.
 export NODE_ENV=load-test PORT="$PORT" JWT_SECRET="$LOAD_JWT_SECRET" DATABASE_URL="$LOAD_DATABASE_URL" DB_HOST="$DBHOST" DB_PORT="$DBPORT" DB_NAME="$DBNAME" DB_USER="$DBUSER" DB_PASSWORD="$DBPASS" DB_SSL=false
-# The app has separate pools (master, users/auth, ...). Point every one of them at the local test database so nothing falls back to a built-in default host.
 export INSIGHTED_DB_NAME="$DBNAME" USERS_DB_NAME="$DBNAME" AUTH_DB_NAME="$DBNAME"
+export PRIMARY_DATABASE_URL="$LOAD_DATABASE_URL" USERS_DATABASE_URL="$LOAD_DATABASE_URL" INSIGHTED_DATABASE_URL="$LOAD_DATABASE_URL" STAGING_DATABASE_URL="$LOAD_DATABASE_URL"
 [ -n "${LOAD_REDIS_URL:-}" ] && export REDIS_URL="$LOAD_REDIS_URL"
 LAYOUT="single node process (pm2 not installed: cluster layout NOT reproduced)"
 if command -v pm2 >/dev/null 2>&1; then

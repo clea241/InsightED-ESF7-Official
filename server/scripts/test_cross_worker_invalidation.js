@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 const cacheService1 = require("../services/cacheService");
 
 async function testCrossWorker() {

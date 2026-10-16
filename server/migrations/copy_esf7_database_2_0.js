@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 /**
  * Migration: Copy esf7_database from insightEd to insighted_esf7 as "esf7_database_2.0"
  *

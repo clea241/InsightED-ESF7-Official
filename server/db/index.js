@@ -1,6 +1,7 @@
 const pg = require("pg");
 const { Pool } = pg;
 const { AsyncLocalStorage } = require("async_hooks");
+const { poolMax, connectTimeoutMs, positiveIntEnv } = require("./poolConfig");
 
 // Load consolidated environment configuration and synthesize database variables
 require("../loadEnv");
@@ -69,13 +70,18 @@ const isStagingEnv =
   defaultDbName === "insighted_esf7_staging" ||
   (primaryConnUrl && primaryConnUrl.includes("insighted_esf7_staging"));
 
-// Base configuration with bounded connection timeout and quick idle recovery
+// Base configuration with bounded connection timeout, statement timeout, idle transaction termination, and quick idle recovery
 const baseConfig = {
   ssl: dbSsl,
   keepAlive: true,
   keepAliveInitialDelayMillis: 5000,
   idleTimeoutMillis: 10000, // Reclaim idle connections after 10s
-  connectionTimeoutMillis: 15000, // Fail fast at 15s instead of hanging indefinitely
+  connectionTimeoutMillis: connectTimeoutMs(), // PG_CONNECT_TIMEOUT_MS: fail fast instead of hanging indefinitely
+  statement_timeout: positiveIntEnv("PG_STATEMENT_TIMEOUT_MS", 10000), // Cancel queries taking > 10s
+  idle_in_transaction_session_timeout: positiveIntEnv(
+    "PG_IDLE_IN_TRANSACTION_TIMEOUT_MS",
+    10000,
+  ), // Terminate transactions idle > 10s
 };
 
 // Lazy pool references (instantiated on first access)
@@ -84,6 +90,49 @@ let _stagingPool = null;
 let _prodPool = null;
 let _insightEdPool = null;
 let _usersDbPool = null;
+
+let _starvationTimerStarted = false;
+function ensureStarvationMonitoring() {
+  if (_starvationTimerStarted) return;
+  _starvationTimerStarted = true;
+  setInterval(() => {
+    const active = [
+      { p: _prodPool, name: "prod" },
+      { p: _pool, name: "primary" },
+      { p: _stagingPool, name: "staging" },
+      { p: _insightEdPool, name: "insightEd" },
+      { p: _usersDbPool, name: "users" },
+    ];
+    for (const { p, name } of active) {
+      if (p && p.waitingCount > 0) {
+        console.warn(
+          `⚠️ [DB Pool Starvation Warning] Pool "${name}" clients waiting: ${p.waitingCount}, active total: ${p.totalCount}, idle: ${p.idleCount}`,
+        );
+      }
+    }
+  }, 2000).unref();
+}
+
+function getPoolMetrics() {
+  const getStats = (p, name) =>
+    p
+      ? {
+          name,
+          total: p.totalCount,
+          idle: p.idleCount,
+          waiting: p.waitingCount,
+        }
+      : null;
+
+  return {
+    primary: getStats(_pool, "primary"),
+    prod: getStats(_prodPool, "prod"),
+    staging: getStats(_stagingPool, "staging"),
+    insightEd: getStats(_insightEdPool, "insightEd"),
+    users: getStats(_usersDbPool, "users"),
+    timestamp: new Date().toISOString(),
+  };
+}
 
 // 1. Primary Pool (env configured)
 function getPool() {
@@ -97,7 +146,7 @@ function getPool() {
     );
     _pool = new Pool({
       ...baseConfig,
-      max: 8,
+      max: poolMax("PG_POOL_MAX_PRIMARY"),
       connectionString: connStr,
     });
     _pool.on("error", (err) =>
@@ -106,6 +155,7 @@ function getPool() {
         err.message,
       ),
     );
+    ensureStarvationMonitoring();
   }
   return _pool;
 }
@@ -126,7 +176,7 @@ function getStagingPool() {
     );
     _stagingPool = new Pool({
       ...baseConfig,
-      max: 5,
+      max: poolMax("PG_POOL_MAX_STAGING"),
       connectionString: connStr,
     });
     _stagingPool.on("error", (err) =>
@@ -135,6 +185,7 @@ function getStagingPool() {
         err.message,
       ),
     );
+    ensureStarvationMonitoring();
   }
   return _stagingPool;
 }
@@ -156,7 +207,7 @@ function getProdPool() {
     );
     _prodPool = new Pool({
       ...baseConfig,
-      max: 8,
+      max: poolMax("PG_POOL_MAX_PROD"),
       connectionString: connStr,
     });
     _prodPool.on("error", (err) =>
@@ -165,6 +216,7 @@ function getProdPool() {
         err.message,
       ),
     );
+    ensureStarvationMonitoring();
   }
   return _prodPool;
 }
@@ -192,7 +244,7 @@ function getInsightEdPool() {
     );
     _insightEdPool = new Pool({
       ...baseConfig,
-      max: 5,
+      max: poolMax("PG_POOL_MAX_INSIGHTED"),
       connectionString: connStr,
     });
     _insightEdPool.on("error", (err) =>
@@ -201,6 +253,7 @@ function getInsightEdPool() {
         err.message,
       ),
     );
+    ensureStarvationMonitoring();
   }
   return _insightEdPool;
 }
@@ -223,7 +276,7 @@ function getUsersDbPool() {
     );
     _usersDbPool = new Pool({
       ...baseConfig,
-      max: 4,
+      max: poolMax("PG_POOL_MAX_USERS"),
       connectionString: connStr,
     });
     _usersDbPool.on("error", (err) =>
@@ -232,6 +285,7 @@ function getUsersDbPool() {
         err.message,
       ),
     );
+    ensureStarvationMonitoring();
   }
   return _usersDbPool;
 }
@@ -469,6 +523,7 @@ const dbExport = {
   dbMiddleware,
   runWithSchool,
   dbStorage,
+  getPoolMetrics,
 };
 
 // Lazy getter properties preserve full backwards-compatibility with `db.stagingPool`, `db.prodPool`, etc.

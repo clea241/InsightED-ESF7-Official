@@ -246,6 +246,7 @@ def post_deploy_smoke_test(ssh_target):
         f"TOKEN=$(cd {REMOTE_ROOT}/server && echo {token_b64} | base64 -d | node -); "
         f"curl -sf {base}/health/readiness | grep -q '\"db\":\"up\"' && echo HEALTH_OK; "
         f"test \"$(curl -s -o /dev/null -w '%{{http_code}}' -H 'x-school-id: 000000' '{base}/school/draft?schoolYear=SMOKE')\" = 401 && echo AUTH_OK; "
+        f"curl -s -X POST -H 'Content-Type: application/json' -d '{{\"schoolId\":\"000000\",\"passcode\":\"TEST999\"}}' {base}/room-profiling/verify-passcode | grep -q 'success' && echo PASSCODE_OK; "
         f"curl -sf -X PUT {hdr} -d '{body}' {base}/school/draft | grep -q '\"success\":true' && echo SAVE_OK; "
         f"curl -sf {hdr} '{base}/school/draft?schoolYear=SMOKE' | grep -q '\"smoke\":true' && echo READ_OK; "
         f"curl -sf -X DELETE {hdr} '{base}/school/draft?schoolYear=SMOKE' | grep -q '\"success\":true' && echo CLEANUP_OK"
@@ -253,10 +254,12 @@ def post_deploy_smoke_test(ssh_target):
     res = run_command(["ssh"] + SSH_OPTS + [ssh_target, script], capture=True, retries=1, timeout=60)
     out = res.stdout or ""
     tags = (("HEALTH_OK", "health endpoint (database up)"), ("AUTH_OK", "request without a token is rejected (401)"),
+            ("PASSCODE_OK", "verify-passcode endpoint (schedule rules loaded)"),
             ("SAVE_OK", "draft save confirmed"), ("READ_OK", "draft read back"), ("CLEANUP_OK", "smoke record removed"))
     for tag, label in tags:
         (success if tag in out else error)(f"Smoke test: {label}")
     return all(tag in out for tag, _ in tags)
+
 
 
 def main():
@@ -292,7 +295,7 @@ def main():
 
         # 2. Archive
         print(f"\n{YELLOW}📦 [2/5] ARCHIVING deployment payload -> {ARCHIVE_NAME}...{NC}")
-        files_to_include = [".env", "server", "client/dist", "client/public", "package.json", "package-lock.json", ECOSYSTEM_CONFIG]
+        files_to_include = [".env", "server", "shared", "client/dist", "client/public", "package.json", "package-lock.json", ECOSYSTEM_CONFIG]
         
         def exclude_node_modules(tarinfo):
             if "node_modules" in tarinfo.name or ".git" in tarinfo.name:
@@ -339,6 +342,8 @@ def main():
             "echo \"       -> Running production npm install...\" && "
             "npm install --omit=dev --legacy-peer-deps --prefer-offline --no-audit --no-fund 2>&1 | tail -n 10 && "
             "cd server && npm install --omit=dev --legacy-peer-deps --prefer-offline --no-audit --no-fund 2>&1 | tail -n 10 && "
+            "echo \"       -> Verifying server entry and shared modules import cleanly before reload...\" && "
+            "node -e \"require('./utils/sharedRules').loadScheduleRules().then(() => console.log('       -> Shared rules import OK.')).catch(e => { console.error('FATAL: Shared rules import failed:', e); process.exit(1); })\" && "
             f"cd {REMOTE_ROOT} && "
             f"if pm2 describe {PM2_NAME} >/dev/null 2>&1; then "
             f"  echo '       -> Reloading {PM2_NAME} cluster with zero downtime (--update-env)...'; "

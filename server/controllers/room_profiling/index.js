@@ -5,68 +5,77 @@ const { loadScheduleRules } = require("../../utils/sharedRules");
 const cacheService = require("../../services/cacheService");
 const { passcodeLimiter } = require("../../middleware/rateLimiter");
 const { validateRequest, z } = require("../../middleware/validate");
+const { handleControllerError } = require("../../utils/poolErrors");
 
 // Ensure ephemeral queue table & cross-device lockout table exist
 let isTableInitialized = false;
+let tableInitPromise = null;
 const initQueueTable = async () => {
-  try {
-    await db.query(`
-      CREATE UNLOGGED TABLE IF NOT EXISTS esf7_personnel_submission (
-        id VARCHAR(128) PRIMARY KEY,
-        school_id VARCHAR(64) NOT NULL,
-        personnel_id VARCHAR(64) NOT NULL,
-        personnel_name VARCHAR(255),
-        room_name VARCHAR(255),
-        status VARCHAR(32) DEFAULT 'PENDING',
-        payload_json JSONB NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        created_timestamp BIGINT
-      );
-      CREATE INDEX IF NOT EXISTS idx_pers_sub_school_status ON esf7_personnel_submission(school_id, status);
-      CREATE INDEX IF NOT EXISTS idx_pers_sub_school_personnel ON esf7_personnel_submission(school_id, personnel_id);
+  if (isTableInitialized) return;
+  if (tableInitPromise) return tableInitPromise;
+  tableInitPromise = (async () => {
+    try {
+      await db.query(`
+        CREATE UNLOGGED TABLE IF NOT EXISTS esf7_personnel_submission (
+          id VARCHAR(128) PRIMARY KEY,
+          school_id VARCHAR(64) NOT NULL,
+          personnel_id VARCHAR(64) NOT NULL,
+          personnel_name VARCHAR(255),
+          room_name VARCHAR(255),
+          status VARCHAR(32) DEFAULT 'PENDING',
+          payload_json JSONB NOT NULL,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          created_timestamp BIGINT
+        );
+        CREATE INDEX IF NOT EXISTS idx_pers_sub_school_status ON esf7_personnel_submission(school_id, status);
+        CREATE INDEX IF NOT EXISTS idx_pers_sub_school_personnel ON esf7_personnel_submission(school_id, personnel_id);
 
-      CREATE TABLE IF NOT EXISTS esf7_personnel_submission_archive (
-        id VARCHAR(128) PRIMARY KEY,
-        school_id VARCHAR(64) NOT NULL,
-        personnel_id VARCHAR(64) NOT NULL,
-        personnel_name VARCHAR(255),
-        room_name VARCHAR(255),
-        status VARCHAR(32) DEFAULT 'APPROVED',
-        payload_json JSONB NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        created_timestamp BIGINT
-      );
-      CREATE INDEX IF NOT EXISTS idx_pers_archive_school ON esf7_personnel_submission_archive(school_id);
-      CREATE INDEX IF NOT EXISTS idx_pers_archive_personnel ON esf7_personnel_submission_archive(school_id, personnel_id);
+        CREATE TABLE IF NOT EXISTS esf7_personnel_submission_archive (
+          id VARCHAR(128) PRIMARY KEY,
+          school_id VARCHAR(64) NOT NULL,
+          personnel_id VARCHAR(64) NOT NULL,
+          personnel_name VARCHAR(255),
+          room_name VARCHAR(255),
+          status VARCHAR(32) DEFAULT 'APPROVED',
+          payload_json JSONB NOT NULL,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          created_timestamp BIGINT
+        );
+        CREATE INDEX IF NOT EXISTS idx_pers_archive_school ON esf7_personnel_submission_archive(school_id);
+        CREATE INDEX IF NOT EXISTS idx_pers_archive_personnel ON esf7_personnel_submission_archive(school_id, personnel_id);
 
-      CREATE TABLE IF NOT EXISTS esf7_profiling_snapshots (
-        id VARCHAR(128) PRIMARY KEY,
-        school_id VARCHAR(64) NOT NULL,
-        snapshot_name VARCHAR(255),
-        personnel_count INT DEFAULT 0,
-        verified_count INT DEFAULT 0,
-        snapshot_json JSONB NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_pers_snapshots_school ON esf7_profiling_snapshots(school_id);
+        CREATE TABLE IF NOT EXISTS esf7_profiling_snapshots (
+          id VARCHAR(128) PRIMARY KEY,
+          school_id VARCHAR(64) NOT NULL,
+          snapshot_name VARCHAR(255),
+          personnel_count INT DEFAULT 0,
+          verified_count INT DEFAULT 0,
+          snapshot_json JSONB NOT NULL,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_pers_snapshots_school ON esf7_profiling_snapshots(school_id);
 
-      CREATE UNLOGGED TABLE IF NOT EXISTS esf7_passcode_lockout (
-        lockout_key VARCHAR(128) PRIMARY KEY,
-        school_id VARCHAR(64) NOT NULL,
-        failed_attempts INT DEFAULT 0,
-        lockout_until BIGINT DEFAULT 0,
-        last_attempt_at TIMESTAMPTZ DEFAULT NOW()
+        CREATE UNLOGGED TABLE IF NOT EXISTS esf7_passcode_lockout (
+          lockout_key VARCHAR(128) PRIMARY KEY,
+          school_id VARCHAR(64) NOT NULL,
+          failed_attempts INT DEFAULT 0,
+          lockout_until BIGINT DEFAULT 0,
+          last_attempt_at TIMESTAMPTZ DEFAULT NOW()
+        );
+      `);
+      isTableInitialized = true;
+      console.log(
+        "✅ [Room Profiling Queue, Archive, Snapshots & Roster Cache] Tables initialized successfully.",
       );
-    `);
-    isTableInitialized = true;
-    console.log(
-      "✅ [Room Profiling Queue, Archive, Snapshots & Roster Cache] Tables initialized successfully.",
-    );
-  } catch (err) {
-    console.warn("[Room Profiling Table Init Warning]:", err.message);
-  }
+    } catch (err) {
+      console.warn("[Room Profiling Table Init Warning]:", err.message);
+    } finally {
+      tableInitPromise = null;
+    }
+  })();
+  return tableInitPromise;
 };
-initQueueTable();
+initQueueTable().catch(() => {});
 
 // Periodic self-cleanup: purge old PENDING queue and APPROVED rows (APPROVED records are preserved in archive)
 setInterval(
@@ -85,13 +94,11 @@ setInterval(
     } catch (e) {}
   },
   15 * 60 * 1000,
-);
+).unref();
 
 // GET /api/room-profiling/check-lockout — Check if a passcode / personnel is locked out across all devices
-router.get("/check-lockout", async (req, res) => {
+router.get("/check-lockout", async (req, res, next) => {
   try {
-    if (!isTableInitialized) await initQueueTable();
-
     const { schoolId, school_id, passcode, personnelId, personnel_id } =
       req.query;
     const activeSchoolId = String(schoolId || school_id || "502624")
@@ -112,20 +119,41 @@ router.get("/check-lockout", async (req, res) => {
 
     const lockoutKey = `${activeSchoolId}:${cleanCode}`;
     const cacheKey = `room_profiling:lockout:${lockoutKey}`;
-    const cached = await cacheService.get(cacheKey);
-    if (cached) return res.json(cached);
+    const now = Date.now();
 
-    const { rows } = await db.query(
-      `
-      SELECT failed_attempts, lockout_until 
-      FROM esf7_passcode_lockout 
-      WHERE lockout_key = $1
-    `,
-      [lockoutKey],
-    );
+    // 1. Check fast Redis/memory cache first (0 DB pool queries)
+    const cached = await cacheService.get(cacheKey);
+    if (cached) {
+      const lockoutUntil =
+        Number(cached.lockout_until || cached.lockoutUntil) || 0;
+      if (lockoutUntil > now) {
+        const remainingSecs = Math.ceil((lockoutUntil - now) / 1000);
+        return res.json({
+          isLockedOut: true,
+          lockoutRemainingSecs: remainingSecs,
+          failedAttempts: cached.failed_attempts || cached.failedAttempts || 0,
+        });
+      }
+      return res.json({
+        isLockedOut: false,
+        lockoutRemainingSecs: 0,
+        failedAttempts: cached.failed_attempts || cached.failedAttempts || 0,
+      });
+    }
+
+    // 2. Cache miss: read from DB with try/catch fallback (fail-open so pool hiccups never block users)
+    let rows = [];
+    try {
+      const dbRes = await db.query(
+        `SELECT failed_attempts, lockout_until FROM esf7_passcode_lockout WHERE lockout_key = $1`,
+        [lockoutKey],
+      );
+      rows = dbRes.rows;
+    } catch (_dbErr) {
+      // Degraded/busy pool fallback: fail open
+    }
 
     if (rows && rows.length > 0) {
-      const now = Date.now();
       const row = rows[0];
       const lockoutUntil = Number(row.lockout_until) || 0;
       if (lockoutUntil > now) {
@@ -135,7 +163,11 @@ router.get("/check-lockout", async (req, res) => {
           lockoutRemainingSecs: remainingSecs,
           failedAttempts: row.failed_attempts,
         };
-        await cacheService.set(cacheKey, resultObj, 3);
+        await cacheService.set(
+          cacheKey,
+          { failed_attempts: row.failed_attempts, lockout_until: lockoutUntil },
+          remainingSecs,
+        );
         return res.json(resultObj);
       }
     }
@@ -145,19 +177,20 @@ router.get("/check-lockout", async (req, res) => {
       lockoutRemainingSecs: 0,
       failedAttempts: (rows && rows[0]?.failed_attempts) || 0,
     };
-    await cacheService.set(cacheKey, notLocked, 3);
+    await cacheService.set(
+      cacheKey,
+      { failed_attempts: notLocked.failedAttempts, lockout_until: 0 },
+      30,
+    );
     res.json(notLocked);
   } catch (err) {
-    console.error("[Room Profiling Check Lockout Error]:", err);
-    res.status(500).json({ error: err.message });
+    return handleControllerError(err, req, res, next);
   }
 });
 
 // POST /api/room-profiling/record-attempt — Record successful or failed attempt across all devices
-router.post("/record-attempt", async (req, res) => {
+router.post("/record-attempt", async (req, res, next) => {
   try {
-    if (!isTableInitialized) await initQueueTable();
-
     const {
       schoolId,
       school_id,
@@ -183,17 +216,16 @@ router.post("/record-attempt", async (req, res) => {
     }
 
     const lockoutKey = `${activeSchoolId}:${cleanCode}`;
+    const cacheKey = `room_profiling:lockout:${lockoutKey}`;
     const now = Date.now();
 
-    // If verification succeeded: Reset lockout & attempts
+    // If verification succeeded: Reset lockout in cache, and fire-and-forget DB delete
     if (isSuccess) {
-      await db.query(
-        `
-        DELETE FROM esf7_passcode_lockout 
-        WHERE lockout_key = $1 OR (school_id = $2 AND lockout_key LIKE $3)
-      `,
+      await cacheService.del(cacheKey);
+      db.query(
+        `DELETE FROM esf7_passcode_lockout WHERE lockout_key = $1 OR (school_id = $2 AND lockout_key LIKE $3)`,
         [lockoutKey, activeSchoolId, `%${cleanCode}%`],
-      );
+      ).catch(() => {});
 
       return res.json({
         isLockedOut: false,
@@ -202,28 +234,27 @@ router.post("/record-attempt", async (req, res) => {
       });
     }
 
-    // Otherwise, handle failed attempt
-    const { rows } = await db.query(
-      `
-      SELECT failed_attempts, lockout_until 
-      FROM esf7_passcode_lockout 
-      WHERE lockout_key = $1
-    `,
-      [lockoutKey],
-    );
+    // Failed attempt: get current attempt count from cache (or DB if uncached)
+    let cached = await cacheService.get(cacheKey);
+    let currentAttempts = cached ? Number(cached.failed_attempts || 0) : 0;
+    let existingLockout = cached ? Number(cached.lockout_until || 0) : 0;
 
-    let currentAttempts = 0;
-    let existingLockout = 0;
+    if (!cached) {
+      try {
+        const { rows } = await db.query(
+          `SELECT failed_attempts, lockout_until FROM esf7_passcode_lockout WHERE lockout_key = $1`,
+          [lockoutKey],
+        );
+        if (rows && rows.length > 0) {
+          currentAttempts = Number(rows[0].failed_attempts) || 0;
+          existingLockout = Number(rows[0].lockout_until) || 0;
+        }
+      } catch (_e) {}
+    }
 
-    if (rows && rows.length > 0) {
-      currentAttempts = Number(rows[0].failed_attempts) || 0;
-      existingLockout = Number(rows[0].lockout_until) || 0;
-
-      // If previous lockout already expired, reset counter
-      if (existingLockout > 0 && existingLockout <= now) {
-        currentAttempts = 0;
-        existingLockout = 0;
-      }
+    if (existingLockout > 0 && existingLockout <= now) {
+      currentAttempts = 0;
+      existingLockout = 0;
     }
 
     const nextAttempts = currentAttempts + 1;
@@ -237,19 +268,21 @@ router.post("/record-attempt", async (req, res) => {
       remainingSecs = 600;
     }
 
-    await db.query(
-      `
-      INSERT INTO esf7_passcode_lockout (lockout_key, school_id, failed_attempts, lockout_until, last_attempt_at)
-      VALUES ($1, $2, $3, $4, NOW())
-      ON CONFLICT (lockout_key) DO UPDATE
-      SET failed_attempts = $3, lockout_until = $4, last_attempt_at = NOW()
-    `,
-      [lockoutKey, activeSchoolId, nextAttempts, nextLockoutUntil],
+    // Update cache immediately (takes 0 pool connections)
+    await cacheService.set(
+      cacheKey,
+      { failed_attempts: nextAttempts, lockout_until: nextLockoutUntil },
+      isLockedOut ? 600 : 300,
     );
 
-    console.log(
-      `[Room Profiling Security] School ${activeSchoolId} Passcode ${cleanCode} Failed Attempt #${nextAttempts} (Locked: ${isLockedOut})`,
-    );
+    // Persist to DB asynchronously in background without blocking response or consuming pool slots synchronously
+    db.query(
+      `INSERT INTO esf7_passcode_lockout (lockout_key, school_id, failed_attempts, lockout_until, last_attempt_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (lockout_key) DO UPDATE
+       SET failed_attempts = $3, lockout_until = $4, last_attempt_at = NOW()`,
+      [lockoutKey, activeSchoolId, nextAttempts, nextLockoutUntil],
+    ).catch(() => {});
 
     res.json({
       isLockedOut,
@@ -258,13 +291,12 @@ router.post("/record-attempt", async (req, res) => {
       remainingAttempts: Math.max(0, 3 - nextAttempts),
     });
   } catch (err) {
-    console.error("[Room Profiling Record Attempt Error]:", err);
-    res.status(500).json({ error: err.message });
+    return handleControllerError(err, req, res, next);
   }
 });
 
 // POST /api/room-profiling/submit — Teacher submits verified profile from phone
-router.post("/submit", async (req, res) => {
+router.post("/submit", async (req, res, next) => {
   try {
     if (!isTableInitialized) await initQueueTable();
 
@@ -334,13 +366,12 @@ router.post("/submit", async (req, res) => {
       message: "Profile queued for School Head review.",
     });
   } catch (err) {
-    console.error("[Room Profiling Queue Submit Error]:", err);
-    res.status(500).json({ error: err.message });
+    return handleControllerError(err, req, res, next);
   }
 });
 
 // GET /api/room-profiling/pending — School Head checks for incoming teacher submissions
-router.get("/pending", async (req, res) => {
+router.get("/pending", async (req, res, next) => {
   try {
     if (!isTableInitialized) await initQueueTable();
 
@@ -366,13 +397,12 @@ router.get("/pending", async (req, res) => {
     await cacheService.set(cacheKey, result, 3);
     res.json(result);
   } catch (err) {
-    console.error("[Room Profiling Queue Pending GET Error]:", err);
-    res.status(500).json({ error: err.message });
+    return handleControllerError(err, req, res, next);
   }
 });
 
 // POST /api/room-profiling/ack — School Head merges/acknowledges submissions (updates status to APPROVED & archives)
-router.post("/ack", async (req, res) => {
+router.post("/ack", async (req, res, next) => {
   try {
     if (!isTableInitialized) await initQueueTable();
 
@@ -433,8 +463,7 @@ router.post("/ack", async (req, res) => {
     );
     res.json({ success: true, count: result.rowCount || 0 });
   } catch (err) {
-    console.error("[Room Profiling Queue ACK Error]:", err);
-    res.status(500).json({ error: err.message });
+    return handleControllerError(err, req, res, next);
   }
 });
 
@@ -559,7 +588,7 @@ const getPositionCategory = (pos) => {
 };
 
 // POST /api/room-profiling/accept — High-performance atomic batched accept & persistence
-router.post("/accept", async (req, res) => {
+router.post("/accept", async (req, res, next) => {
   try {
     if (!isTableInitialized) await initQueueTable();
 
@@ -1641,16 +1670,12 @@ router.post("/accept", async (req, res) => {
       message: `Successfully accepted and saved ${updatedPersonnelList.length} submission(s).`,
     });
   } catch (err) {
-    console.error("[Room Profiling Accept Error]:", err);
-    res.status(500).json({
-      error: err.message,
-      stack: process.env.NODE_ENV !== "production" ? err.stack : undefined,
-    });
+    return handleControllerError(err, req, res, next);
   }
 });
 
 // GET /api/room-profiling/approved — School Head fetches historical submissions from active queue, archive, and room cache
-router.get("/approved", async (req, res) => {
+router.get("/approved", async (req, res, next) => {
   try {
     if (!isTableInitialized) await initQueueTable();
 
@@ -1742,13 +1767,12 @@ router.get("/approved", async (req, res) => {
     await cacheService.set(cacheKey, results, 5);
     res.json(results);
   } catch (err) {
-    console.error("[Room Profiling Queue Approved GET Error]:", err);
-    res.status(500).json({ error: err.message });
+    return handleControllerError(err, req, res, next);
   }
 });
 
 // GET /api/room-profiling/snapshots — List saved profiling snapshots for school
-router.get("/snapshots", async (req, res) => {
+router.get("/snapshots", async (req, res, next) => {
   try {
     if (!isTableInitialized) await initQueueTable();
     const schoolId = req.query.schoolId || req.query.school_id || "199998";
@@ -1769,13 +1793,12 @@ router.get("/snapshots", async (req, res) => {
 
     res.json(rows || []);
   } catch (err) {
-    console.error("[Room Profiling Snapshots GET Error]:", err);
-    res.status(500).json({ error: err.message });
+    return handleControllerError(err, req, res, next);
   }
 });
 
 // POST /api/room-profiling/snapshots — Save new profiling snapshot
-router.post("/snapshots", async (req, res) => {
+router.post("/snapshots", async (req, res, next) => {
   try {
     if (!isTableInitialized) await initQueueTable();
     const { schoolId, school_id, snapshotName, personnel } = req.body;
@@ -1825,13 +1848,12 @@ router.post("/snapshots", async (req, res) => {
       message: "Snapshot saved successfully.",
     });
   } catch (err) {
-    console.error("[Room Profiling Snapshots POST Error]:", err);
-    res.status(500).json({ error: err.message });
+    return handleControllerError(err, req, res, next);
   }
 });
 
 // GET /api/room-profiling/snapshots/:id — Fetch specific snapshot content
-router.get("/snapshots/:id", async (req, res) => {
+router.get("/snapshots/:id", async (req, res, next) => {
   try {
     const { id } = req.params;
     const cleanId = String(id || "").trim();
@@ -1855,15 +1877,14 @@ router.get("/snapshots/:id", async (req, res) => {
     }
     res.json(rows[0]);
   } catch (err) {
-    console.error("[Room Profiling Snapshot GET By ID Error]:", err);
-    res.status(500).json({ error: err.message });
+    return handleControllerError(err, req, res, next);
   }
 });
 
 // POST /api/room-profiling/sync-roster — School Head laptop broadcasts active roster
 const activeRosterCache = new Map();
 
-router.post("/sync-roster", async (req, res) => {
+router.post("/sync-roster", async (req, res, next) => {
   try {
     if (!isTableInitialized) await initQueueTable();
     const { schoolId, school_id, roster } = req.body;
@@ -1877,6 +1898,51 @@ router.post("/sync-roster", async (req, res) => {
         count: 0,
         message: "No personnel changes to sync",
       });
+    }
+
+    // Pre-fetch all school personnel and ID mappings in 2 batch queries (eliminating N+1 queries in loop)
+    const existingProfilesRes = await db
+      .query(
+        `SELECT id, legacy_id, prn FROM esf7_personnel_profile WHERE school_id = $1 OR school_id = $2`,
+        [cleanSchoolId, `SCH-${cleanSchoolId}`],
+      )
+      .catch(() => ({ rows: [] }));
+
+    const profileByLegacyOrId = new Map();
+    const profileByPrn = new Map();
+    for (const row of existingProfilesRes.rows) {
+      if (row.id) profileByLegacyOrId.set(String(row.id).trim(), row.id);
+      if (row.legacy_id)
+        profileByLegacyOrId.set(String(row.legacy_id).trim(), row.id);
+      if (row.prn) profileByPrn.set(String(row.prn).trim(), row.id);
+    }
+
+    const legacyCandidateIds = [];
+    for (const p of roster) {
+      if (
+        p &&
+        p.id &&
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          String(p.id).trim(),
+        )
+      ) {
+        legacyCandidateIds.push(String(p.id).trim());
+      }
+    }
+
+    const mappingMap = new Map();
+    if (legacyCandidateIds.length > 0) {
+      const mappingRes = await db
+        .query(
+          `SELECT legacy_id, new_id FROM esf7_personnel_id_mapping WHERE legacy_id = ANY($1::varchar[])`,
+          [legacyCandidateIds],
+        )
+        .catch(() => ({ rows: [] }));
+      for (const m of mappingRes.rows) {
+        if (m.legacy_id && m.new_id) {
+          mappingMap.set(String(m.legacy_id).trim(), m.new_id);
+        }
+      }
     }
 
     const profileUpsertRows = [];
@@ -1897,38 +1963,19 @@ router.post("/sync-roster", async (req, res) => {
           );
         if (!isUuid) {
           legacyId = pId;
-          const mapped = await db
-            .query(
-              `SELECT id FROM esf7_personnel_profile WHERE legacy_id = $1 OR id = $1 LIMIT 1`,
-              [legacyId],
-            )
-            .catch(() => ({ rows: [] }));
-          if (mapped.rows.length > 0) {
-            pId = mapped.rows[0].id;
-          } else {
-            const mTable = await db
-              .query(
-                `SELECT new_id FROM esf7_personnel_id_mapping WHERE legacy_id = $1 LIMIT 1`,
-                [legacyId],
-              )
-              .catch(() => ({ rows: [] }));
-            if (mTable.rows.length > 0) {
-              pId = mTable.rows[0].new_id;
-            }
+          if (profileByLegacyOrId.has(legacyId)) {
+            pId = profileByLegacyOrId.get(legacyId);
+          } else if (mappingMap.has(legacyId)) {
+            pId = mappingMap.get(legacyId);
           }
         }
       }
 
       if (!pId || legacyId === pId) {
         if (p.prn) {
-          const existingPrn = await db
-            .query(
-              `SELECT id FROM esf7_personnel_profile WHERE (school_id = $1 OR school_id = $2) AND prn = $3 LIMIT 1`,
-              [cleanSchoolId, `SCH-${cleanSchoolId}`, String(p.prn).trim()],
-            )
-            .catch(() => ({ rows: [] }));
-          if (existingPrn.rows.length > 0) {
-            pId = existingPrn.rows[0].id;
+          const cleanPrn = String(p.prn).trim();
+          if (profileByPrn.has(cleanPrn)) {
+            pId = profileByPrn.get(cleanPrn);
           }
         }
         if (!pId || legacyId === pId) {
@@ -2411,13 +2458,12 @@ router.post("/sync-roster", async (req, res) => {
       syncedToNormalizedTables: true,
     });
   } catch (err) {
-    console.error("[Room Profiling Sync Roster Error]:", err);
-    return res.status(500).json({ error: err.message, detail: err.detail });
+    return handleControllerError(err, req, res, next);
   }
 });
 
 // GET /api/room-profiling/roster — Mobile device retrieves active School Head roster (Database-First)
-router.get("/roster", async (req, res) => {
+router.get("/roster", async (req, res, next) => {
   try {
     if (!isTableInitialized) await initQueueTable();
     const schoolId = req.query.schoolId || req.query.school_id || "502624";
@@ -2520,8 +2566,7 @@ router.get("/roster", async (req, res) => {
 
     res.json([]);
   } catch (err) {
-    console.error("[Room Profiling Get Roster Error]:", err);
-    res.status(500).json({ error: err.message });
+    return handleControllerError(err, req, res, next);
   }
 });
 
@@ -2563,7 +2608,7 @@ router.post(
   "/verify-passcode",
   passcodeLimiter,
   validateRequest(roomVerifyPasscodeSchema),
-  async (req, res) => {
+  async (req, res, next) => {
     try {
       if (!isTableInitialized) await initQueueTable();
       const { schoolId, school_id, passcode } = req.body;
@@ -2675,8 +2720,7 @@ router.post(
         message: "Invalid passcode for this school.",
       });
     } catch (err) {
-      console.error("[Room Profiling Verify Passcode Error]:", err);
-      res.status(500).json({ error: err.message });
+      return handleControllerError(err, req, res, next);
     }
   },
 );

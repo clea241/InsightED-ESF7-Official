@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 const db = require("../db");
 
 async function main() {

@@ -3545,9 +3545,9 @@ export const AppProvider = ({ children }) => {
 
   const isNodeUnlocked = (nodeId) => {
     if (bypassNodeLocks) return true;
-    if (nodeId === "overload") return false; // Node 10 (overload) is locked by default unless DEV locks are bypassed
+    // Nodes locked by default for DepEd review & alignment
+    if (["overload", "workload", "allowances"].includes(nodeId)) return false;
     if (!nodeId) return true;
-    if (ALWAYS_UNLOCKED_NODES.includes(nodeId)) return true;
     return true;
   };
 
@@ -3722,59 +3722,78 @@ export const AppProvider = ({ children }) => {
 
   // Set after a 401/403 so the poller stops; cleared at login and logout.
   const requestsBlockedRef = useRef(false);
+  const refreshInFlightRef = useRef(null);
 
   const refreshRequests = async (targetId = null) => {
-    try {
-      // The school always comes from the verified session, never from component state captured earlier.
-      const cleanId = resolveSchoolId(targetId);
-      if (!cleanId || requestsBlockedRef.current) return true;
-
-      // Each list loads independently: a failure in one (e.g. a 502 on history) keeps that list's last
-      // good data and never blocks the others. Transient 502/503/504 are retried with short backoff.
-      const withRetry = async (fn) => {
-        const delays = [500, 1500];
-        for (let attempt = 0; ; attempt++) {
-          try {
-            return await fn();
-          } catch (err) {
-            const st = /** @type {any} */ (err)?.status;
-            if (
-              ![502, 503, 504].includes(st) ||
-              attempt >= delays.length ||
-              requestsBlockedRef.current
-            )
-              throw err;
-            await new Promise((r) => setTimeout(r, delays[attempt]));
-          }
-        }
-      };
-      const results = await Promise.allSettled([
-        withRetry(() => api.getIncomingRequests(cleanId)),
-        withRetry(() => api.getOutgoingRequests(cleanId)),
-        withRetry(() => api.getRequestHistory(cleanId)),
-      ]);
-      const setters = [
-        setIncomingRequests,
-        setOutgoingRequests,
-        setRequestHistory,
-      ];
-      results.forEach((r, i) => {
-        if (r.status === "fulfilled" && Array.isArray(r.value))
-          setters[i](r.value);
-      });
-      const failed = /** @type {PromiseRejectedResult | undefined} */ (
-        results.find((r) => r.status === "rejected")
-      );
-      if (failed) throw failed.reason;
-      clearDraftError();
+    // The school always comes from the verified session, never from component state captured earlier.
+    const cleanId = resolveSchoolId(targetId);
+    if (
+      !cleanId ||
+      requestsBlockedRef.current ||
+      !localStorage.getItem("token")
+    )
       return true;
-    } catch (e) {
-      // 401/403 are access errors: retrying cannot fix them. Stop polling and show the shared notice once.
-      const status = /** @type {any} */ (e)?.status;
-      if (status === 401 || status === 403) requestsBlockedRef.current = true;
-      if (status !== 401) reportDraftError(DRAFT_ACTIONS.REQUESTS_REFRESH, e);
-      return false;
+
+    // Request deduplication: return existing active refresh promise if in-flight
+    if (refreshInFlightRef.current) {
+      return refreshInFlightRef.current;
     }
+
+    const run = async () => {
+      try {
+        // Each list loads independently: a failure in one (e.g. a 502 on history) keeps that list's last
+        // good data and never blocks the others. Transient 502/503/504 are retried with short backoff.
+        const withRetry = async (fn) => {
+          const delays = [500, 1500];
+          for (let attempt = 0; ; attempt++) {
+            try {
+              return await fn();
+            } catch (err) {
+              const st = /** @type {any} */ (err)?.status;
+              if (
+                ![502, 503, 504].includes(st) ||
+                attempt >= delays.length ||
+                requestsBlockedRef.current ||
+                !localStorage.getItem("token")
+              )
+                throw err;
+              await new Promise((r) => setTimeout(r, delays[attempt]));
+            }
+          }
+        };
+        const results = await Promise.allSettled([
+          withRetry(() => api.getIncomingRequests(cleanId)),
+          withRetry(() => api.getOutgoingRequests(cleanId)),
+          withRetry(() => api.getRequestHistory(cleanId)),
+        ]);
+        const setters = [
+          setIncomingRequests,
+          setOutgoingRequests,
+          setRequestHistory,
+        ];
+        results.forEach((r, i) => {
+          if (r.status === "fulfilled" && Array.isArray(r.value))
+            setters[i](r.value);
+        });
+        const failed = /** @type {PromiseRejectedResult | undefined} */ (
+          results.find((r) => r.status === "rejected")
+        );
+        if (failed) throw failed.reason;
+        clearDraftError();
+        return true;
+      } catch (e) {
+        // 401/403 are access errors: retrying cannot fix them. Stop polling and show the shared notice once.
+        const status = /** @type {any} */ (e)?.status;
+        if (status === 401 || status === 403) requestsBlockedRef.current = true;
+        if (status !== 401) reportDraftError(DRAFT_ACTIONS.REQUESTS_REFRESH, e);
+        return false;
+      } finally {
+        refreshInFlightRef.current = null;
+      }
+    };
+
+    refreshInFlightRef.current = run();
+    return refreshInFlightRef.current;
   };
 
   const loadDistrictSchools = async (
@@ -5825,15 +5844,24 @@ export const AppProvider = ({ children }) => {
   refreshRequestsRef.current = refreshRequests;
   useEffect(() => {
     requestsBlockedRef.current = false; // a new login (or logout) starts clean
-    if (!user) return undefined;
+    if (!user || !localStorage.getItem("token")) return undefined;
     let timer = null;
     let delay = 10000;
     let stopped = false;
     const tick = async () => {
-      if (stopped || requestsBlockedRef.current) return;
+      if (
+        stopped ||
+        requestsBlockedRef.current ||
+        !localStorage.getItem("token")
+      )
+        return;
       const ok = await refreshRequestsRef.current();
       delay = ok ? 10000 : Math.min(60000, delay * 2);
-      if (!stopped && !requestsBlockedRef.current)
+      if (
+        !stopped &&
+        !requestsBlockedRef.current &&
+        localStorage.getItem("token")
+      )
         timer = setTimeout(tick, delay);
     };
     timer = setTimeout(tick, delay);
@@ -6713,13 +6741,17 @@ export const AppProvider = ({ children }) => {
           }
 
           // Persist workload rows directly to PostgreSQL esf7_workload_rows in the background
-          // Callers that do their own awaited workload write (Workload page) pass skipWorkloadSync to avoid a racing duplicate write.
-          if (
+          // ONLY sync workload if options.syncWorkload === true or if updatedPerson specifically contains new workloadRows intended for sync
+          const shouldSyncWorkload =
             !options.skipWorkloadSync &&
+            (options.syncWorkload ||
+              (updatedPerson.workloadRows !== undefined &&
+                options.isWorkloadEdit)) &&
             Array.isArray(merged.workloadRows) &&
             typeof api !== "undefined" &&
-            api.saveWorkloadBatch
-          ) {
+            api.saveWorkloadBatch;
+
+          if (shouldSyncWorkload) {
             api
               .saveWorkloadBatch({
                 personnel_id: merged.id || p.id,

@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 // STEP 1 of 3 (expand) for esf7_workload_rows: add the slim `extras` JSONB column that replaces the whole-body copy in `raw_payload`.
 // Additive and idempotent: nothing is dropped or rewritten (adding a column with a constant default is metadata-only in PostgreSQL 11+).
 //

@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 // Run manually, off-peak, after a backup is confirmed. Nothing here runs automatically.
 //
 // Diagnostics on 2026-10-08 showed the esf7 tables used by GET /api/personnel already have the indexes

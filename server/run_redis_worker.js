@@ -7,6 +7,8 @@
  *   pm2 start server/run_redis_worker.js --name insighted-esf7-worker
  */
 const path = require("path");
+// Size this process's primary DB pool with PG_POOL_MAX_WORKER (read by db/poolConfig.js); must be set before db loads.
+process.env.DB_POOL_ROLE = process.env.DB_POOL_ROLE || "worker";
 require("./loadEnv");
 const redisQueue = require("./services/redisQueue");
 const {
@@ -31,6 +33,8 @@ async function main() {
   console.log(`• Group Name:  ${redisQueue.GROUP_NAME}`);
   console.log("----------------------------------------------------");
 
+  require("./queue_worker").logConsumerStatus();
+  await require("./queue_worker").verifyWorkerSchema();
   const initialized = await redisQueue.initRedisStream();
   if (!initialized) {
     console.warn(

@@ -1,3 +1,4 @@
+require("./db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 const { Pool } = require("pg");
 require("./loadEnv");
 const localDb = require("./db");

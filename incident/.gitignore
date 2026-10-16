@@ -1,0 +1,4 @@
+# Everything under incident/ is local-only evidence, except this file and the allowlist.
+*
+!.gitignore
+!allowed-remote-commands.json

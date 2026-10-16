@@ -78,7 +78,12 @@ export default function Sidebar() {
       items: [
         { view: "classes", label: "04. Organized Classes", Icon: FiGrid },
         { view: "designation", label: "05. Designations", Icon: FiBookmark },
-        { view: "workload", label: "06. Workload & Timetable", Icon: FiClock },
+        {
+          view: "workload",
+          label: "06. Workload & Timetable",
+          Icon: FiClock,
+          isLocked: !bypassNodeLocks,
+        },
       ],
     },
     {
@@ -91,7 +96,12 @@ export default function Sidebar() {
           Icon: FiDollarSign,
           isLocked: !bypassNodeLocks,
         },
-        { view: "overload", label: "08. Overload Center", Icon: FiRepeat },
+        {
+          view: "overload",
+          label: "08. Overload Center",
+          Icon: FiRepeat,
+          isLocked: !bypassNodeLocks,
+        },
         { view: "validation", label: "09. Validation Center", Icon: FiShield },
       ],
     },
@@ -157,12 +167,17 @@ export default function Sidebar() {
                       <button
                         key={item.view}
                         className={activeView === item.view ? "active" : ""}
-                        onClick={() => setActiveView(item.view)}
+                        onClick={() => {
+                          if (item.isLocked) return;
+                          setActiveView(item.view);
+                        }}
                         type="button"
                         style={{
                           display: "flex",
                           alignItems: "center",
                           gap: "10px",
+                          cursor: item.isLocked ? "not-allowed" : "pointer",
+                          opacity: item.isLocked ? 0.6 : 1,
                         }}
                       >
                         {IconComponent && (

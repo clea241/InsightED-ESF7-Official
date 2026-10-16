@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 const { stagingPool, prodPool } = require("../db");
 const { MCOC_ARCHETYPES } = require("../utils/divisionTestRegistry");
 const { codec } = require("../utils/payloadExtras");

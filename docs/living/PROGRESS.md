@@ -1,5 +1,15 @@
 # PROGRESS
 
+## 2026-10-15 (follow-up on branch feat/startup-schema-and-tenant-guards)
+- Done: startup DDL on a direct connection behind `RUN_STARTUP_SCHEMA_INIT`; root scripts on the direct-port helper; worker schema check, SQL and migration; school-from-login for both submit routes; boot schema warning. Unit 281 pass, queue/worker-schema integration 48 pass, lint at its cap; the 17 older drafts/workload integration failures are unchanged.
+- Not done: nothing applied; consumer still off; the 3 Redis stream tests need `TEST_REDIS_URL` (no Redis here). `GET /api/submissions/status/:job_id` does not check the job belongs to the caller's school; the step and queue status routes were out of scope.
+- Open: SHS workload rows are inserted inside `.catch(() => {})` in the worker, so a failure there is silent; columns arriving through the `...record` spread in the workload batches are not in the manifest.
+
+## 2026-10-15 (PgBouncer + Redis readiness, branch feat/pgbouncer-redis-readiness)
+- Done: steps 1, 3, 5 and 6 of `docs/pgbouncer-redis-plan.md` as code and templates; unit (269) and queue integration tests (36) pass; lint at its cap (342).
+- Not done: nothing applied anywhere. Migrations not run; PgBouncer not installed; `QUEUE_CONSUMER_ENABLED` is still `false` everywhere; client does not send `submissionId` yet; Redis cache/buffer split (plan step 7) not started.
+- Open: why the consumer was disabled is unknown beyond commit 8f0352c; `has_elem_inclusive` (and siblings) and `raw_payload` on several tables are written by the worker but not created by `schema.sql`, `server.js` or any migration; 17 older integration tests (drafts, workload) fail on `main` too.
+
 ## 2026-10-10 (payload change finished for all seven tables on esf7_local)
 - Done on `esf7_local`: backup of the six tables (restore-tested), expand, backfill, per-table verification PASS (2.5M keys, 0 unaccounted), old-vs-new response comparison (0 differences), write-route functional test before and after the drop (22 checks), drop + rewrite, post-drop proof against the backup PASS, unit tests 236 pass.
 - Not done: nothing has run on staging/production; follow the runbook in `docs/orm-optimizer/payload-six-tables.md` per table. Integration: 8 draft/startup tests fail with missing tables (`esf7_school_profile`, `esf7_deleted_personnel`) in their test fixture; they failed the same way before this change and relate to the uncommitted draft-persistence work in `schools/index.js`.

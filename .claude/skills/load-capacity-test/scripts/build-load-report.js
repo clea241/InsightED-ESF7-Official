@@ -16,7 +16,11 @@ const RAW = path.join(root, "load-test", "reports", "raw");
 const SCENARIOS = ["baseline", "peak", "spike", "stress", "soak"];
 const readJson = (f) => {
   try {
-    return JSON.parse(fs.readFileSync(f, "utf8"));
+    const p =
+      typeof f === "string" && /^\/[a-zA-Z]\//.test(f)
+        ? f.replace(/^\/([a-zA-Z])\//, "$1:/")
+        : f;
+    return JSON.parse(fs.readFileSync(p, "utf8"));
   } catch {
     return null;
   }
@@ -41,7 +45,11 @@ const fmt = (x, d = 0) =>
 function readCsv(file) {
   let t = "";
   try {
-    t = fs.readFileSync(file, "utf8").trim();
+    const p =
+      typeof file === "string" && /^\/[a-zA-Z]\//.test(file)
+        ? file.replace(/^\/([a-zA-Z])\//, "$1:/")
+        : file;
+    t = fs.readFileSync(p, "utf8").trim();
   } catch {
     return [];
   }

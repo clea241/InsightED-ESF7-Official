@@ -1,3 +1,4 @@
+require("../db/directPort"); // connect directly to Postgres (DB_DIRECT_PORT), not through PgBouncer
 // STEP 2 of the esf7_workload_rows payload change: copy what the legacy raw_payload holds beyond the typed columns into
 // `extras`, and fill typed columns that are empty while the payload has a value. raw_payload itself is never modified here.
 //

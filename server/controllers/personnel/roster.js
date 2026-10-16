@@ -9,6 +9,8 @@ const {
   formatPersonnelRecord,
   fetchMasterPersonnelFromInsightEd,
   formatCanonicalPrn,
+  safeCoerceDate,
+  sanitizeGradeArray,
 } = require("./common");
 
 router.get("/", async (req, res) => {
@@ -50,7 +52,9 @@ router.get("/", async (req, res) => {
       .catch(() => ({ rows: [] }));
     const trPromise = db
       .query(
-        `SELECT * FROM esf7_personnel_ld_trainings WHERE school_id = ANY($1) ORDER BY created_at ASC`,
+        `SELECT t.* FROM esf7_personnel_ld_trainings t
+         JOIN esf7_personnel_profile p ON p.id = t.personnel_id
+         WHERE p.school_id = ANY($1) ORDER BY t.created_at ASC`,
         [sidPair],
       )
       .catch(() => ({ rows: [] }));
@@ -60,34 +64,7 @@ router.get("/", async (req, res) => {
         [sidPair],
       )
       .catch(() => ({ rows: [] }));
-    const delPromise = Promise.all([
-      db
-        .query(
-          `SELECT * FROM esf7_deleted_personnel WHERE school_id = ANY($1)`,
-          [sidPair],
-        )
-        .catch(() => ({ rows: [] })),
-      db.getStagingPool
-        ? db
-            .getStagingPool()
-            .query(
-              `SELECT * FROM esf7_deleted_personnel WHERE school_id = ANY($1)`,
-              [sidPair],
-            )
-            .catch(() => ({ rows: [] }))
-        : Promise.resolve({ rows: [] }),
-    ]).then(([r1, r2]) => {
-      const combined = [...(r1?.rows || []), ...(r2?.rows || [])];
-      const seen = new Set();
-      const deduped = [];
-      for (const row of combined) {
-        if (!seen.has(row.id)) {
-          seen.add(row.id);
-          deduped.push(row);
-        }
-      }
-      return { rows: deduped };
-    });
+    const delPromise = Promise.resolve({ rows: [] });
 
     // 2. Fetch locally saved records from esf7_personnel_profile
     let result = await db.query(
@@ -98,6 +75,8 @@ router.get("/", async (req, res) => {
         e.position_category,
         e.position,
         e.step_increment,
+        e.actual_step,
+        e.school_reported_step,
         e.fund_source,
         e.nature_of_appointment,
         e.hiring_arrangement,
@@ -642,6 +621,8 @@ router.get("/", async (req, res) => {
         e.position_category,
         e.position,
         e.step_increment,
+        e.actual_step,
+        e.school_reported_step,
         e.fund_source,
         e.nature_of_appointment,
         e.hiring_arrangement,
@@ -1139,12 +1120,66 @@ router.post("/bulk", async (req, res) => {
       // Upsert into esf7_personnel_employment
       const pos =
         p.position || p.plantilla_position || p.position_title || "TEACHER I";
-      const posCat = p.positionCategory || p.position_category || "TEACHING";
+      const isCook = String(pos).toUpperCase().trim() === "COOK";
+      const posCat = isCook
+        ? "NON-TEACHING"
+        : p.positionCategory || p.position_category || "TEACHING";
       const step = sanitizeStepIncrement(p.stepIncrement || p.step_increment);
-      const fund = p.fundSource || p.fund_source || "NATIONAL";
-      const appt =
-        p.natureOfAppointment || p.nature_of_appointment || "REGULAR PERMANENT";
-      const hiring = p.hiringArrangement || p.hiring_arrangement || "REGULAR";
+      const actualStep = sanitizeStepIncrement(
+        p.actualStep || p.actual_step || step,
+      );
+      const schoolReportedStep = sanitizeStepIncrement(
+        p.schoolReportedStep || p.school_reported_step || step,
+      );
+      let fund = (
+        p.fundSource ||
+        p.fund_source ||
+        (isCook ? "SBFP" : "NATIONAL")
+      ).toUpperCase();
+      if (!isCook && fund === "SBFP") fund = "NATIONAL";
+      const appt = (
+        p.natureOfAppointment ||
+        p.nature_of_appointment ||
+        (isCook ? "CONTRACTUAL" : "REGULAR PERMANENT")
+      ).toUpperCase();
+      const hiring = (
+        p.hiringArrangement ||
+        p.hiring_arrangement ||
+        (isCook ? "CONTRACTUAL" : "REGULAR")
+      ).toUpperCase();
+      const deploy = (
+        p.deploymentStatus ||
+        p.deployment_status ||
+        "OWN STATION"
+      ).toUpperCase();
+      const assignedSchools = JSON.stringify(
+        p.assignedSchools || p.assigned_schools || [],
+      );
+      const gradeLevelsTaught = JSON.stringify(
+        sanitizeGradeArray(
+          p.assignedGradeLevels ||
+            p.assigned_grade_levels ||
+            p.gradeLevelsTaught ||
+            p.grade_levels_taught ||
+            [],
+        ),
+      );
+      const firstServiceDate = safeCoerceDate(
+        p.firstServiceDate || p.first_service_date,
+        "first_service_date",
+      );
+      const lastPromotionDate = safeCoerceDate(
+        p.lastPromotionDate || p.last_promotion_date,
+        "last_promotion_date",
+      );
+      const newStationDate = safeCoerceDate(
+        p.newStationDate || p.new_station_date,
+        "new_station_date",
+      );
+      const lastLateralMovementDate = safeCoerceDate(
+        p.lastLateralMovementDate || p.last_lateral_movement_date,
+        "last_lateral_movement_date",
+      );
 
       const crypto = require("crypto");
       const empId = crypto.randomUUID();
@@ -1153,21 +1188,61 @@ router.post("/bulk", async (req, res) => {
         `
         INSERT INTO esf7_personnel_employment (
           id, personnel_id, position_category, position, step_increment,
-          fund_source, nature_of_appointment, hiring_arrangement, updated_at
+          actual_step, school_reported_step, fund_source, nature_of_appointment,
+          hiring_arrangement, deployment_status, assigned_schools, grade_levels_taught,
+          first_service_date, last_promotion_date, new_station_date, last_lateral_movement_date,
+          updated_at
         )
         VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, NOW()
+          $1, $2, $3, $4, $5,
+          $6, $7, $8, $9,
+          $10, $11, $12::jsonb, $13::jsonb,
+          $14, $15, $16, $17,
+          NOW()
         )
         ON CONFLICT (personnel_id) DO UPDATE SET
           position_category = EXCLUDED.position_category,
           position = EXCLUDED.position,
           step_increment = EXCLUDED.step_increment,
+          actual_step = COALESCE(EXCLUDED.actual_step, esf7_personnel_employment.actual_step),
+          school_reported_step = COALESCE(EXCLUDED.school_reported_step, esf7_personnel_employment.school_reported_step),
           fund_source = EXCLUDED.fund_source,
           nature_of_appointment = EXCLUDED.nature_of_appointment,
           hiring_arrangement = EXCLUDED.hiring_arrangement,
+          deployment_status = COALESCE(EXCLUDED.deployment_status, esf7_personnel_employment.deployment_status),
+          assigned_schools = CASE 
+            WHEN EXCLUDED.assigned_schools::text != '[]' THEN EXCLUDED.assigned_schools 
+            ELSE esf7_personnel_employment.assigned_schools 
+          END,
+          grade_levels_taught = CASE 
+            WHEN EXCLUDED.grade_levels_taught::text != '[]' THEN EXCLUDED.grade_levels_taught 
+            ELSE esf7_personnel_employment.grade_levels_taught 
+          END,
+          first_service_date = COALESCE(EXCLUDED.first_service_date, esf7_personnel_employment.first_service_date),
+          last_promotion_date = COALESCE(EXCLUDED.last_promotion_date, esf7_personnel_employment.last_promotion_date),
+          new_station_date = COALESCE(EXCLUDED.new_station_date, esf7_personnel_employment.new_station_date),
+          last_lateral_movement_date = COALESCE(EXCLUDED.last_lateral_movement_date, esf7_personnel_employment.last_lateral_movement_date),
           updated_at = NOW();
       `,
-        [empId, pId, posCat, pos, step, fund, appt, hiring],
+        [
+          empId,
+          pId,
+          posCat,
+          pos,
+          step,
+          actualStep,
+          schoolReportedStep,
+          fund,
+          appt,
+          hiring,
+          deploy,
+          assignedSchools,
+          gradeLevelsTaught,
+          firstServiceDate,
+          lastPromotionDate,
+          newStationDate,
+          lastLateralMovementDate,
+        ],
       );
 
       savedCount++;
@@ -1460,85 +1535,6 @@ router.delete("/:id", async (req, res) => {
         ].filter(Boolean),
       ),
     );
-
-    // B. Record in esf7_deleted_personnel across BOTH pools
-    if (sid && (validTargetId || validPrn || validEmpNo || validName)) {
-      const tombstoneId = `DEL-${sid}-${String(validPrn || validTargetId || Math.random().toString(36).substring(2, 9)).replace(/[^a-zA-Z0-9_-]/g, "_")}`;
-      const recordTombstone = async (pool) => {
-        if (!pool || !pool.query) return;
-        await pool
-          .query(
-            `
-          INSERT INTO esf7_deleted_personnel (id, school_id, personnel_id, prn, employee_no, first_name, last_name, full_name_clean, deleted_by, deleted_at)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'SCHOOL_HEAD', NOW())
-          ON CONFLICT (id) DO UPDATE SET
-            personnel_id = EXCLUDED.personnel_id,
-            prn = EXCLUDED.prn,
-            employee_no = EXCLUDED.employee_no,
-            first_name = EXCLUDED.first_name,
-            last_name = EXCLUDED.last_name,
-            full_name_clean = EXCLUDED.full_name_clean,
-            deleted_at = NOW()
-        `,
-            [
-              tombstoneId,
-              sid,
-              validTargetId,
-              validPrn,
-              validEmpNo,
-              validName ? String(fName).toUpperCase() : null,
-              validName ? String(lName).toUpperCase() : null,
-              validName,
-            ],
-          )
-          .catch((e) => {
-            console.warn("[Tombstone Record Notice]:", e.message);
-          });
-      };
-
-      await recordTombstone(db);
-      if (db.getStagingPool) await recordTombstone(db.getStagingPool());
-      if (db.getProdPool) await recordTombstone(db.getProdPool());
-    }
-
-    // Flag deleted = true in esf7_database for old personnel
-    try {
-      const matchCriteria = [];
-      const matchParams = [sid];
-      let pCounter = 2;
-
-      if (validTargetId) {
-        matchCriteria.push(
-          "(id::text = $" + pCounter + " OR employee_no = $" + pCounter + ")",
-        );
-        matchParams.push(validTargetId);
-        pCounter++;
-      }
-      if (validEmpNo && validEmpNo !== validTargetId) {
-        matchCriteria.push("employee_no = $" + pCounter);
-        matchParams.push(validEmpNo);
-        pCounter++;
-      }
-      if (fName && lName) {
-        matchCriteria.push(
-          "(UPPER(TRIM(first)) = $" +
-            pCounter +
-            " AND UPPER(TRIM(last)) = $" +
-            (pCounter + 1) +
-            ")",
-        );
-        matchParams.push(
-          String(fName).trim().toUpperCase(),
-          String(lName).trim().toUpperCase(),
-        );
-        pCounter += 2;
-      }
-
-      // Note: Historical master records in insightEdPool are read-only per DepEd business rules.
-      // Deletions are canonically tombstoned in esf7_deleted_personnel.
-    } catch (e) {
-      console.warn("[Tombstone cleanup warning]:", e.message);
-    }
 
     // Execute cascade cleanups across ALL pools
     const executeCascadeDeletes = async (pool) => {

@@ -1,3 +1,4 @@
+       -> Snapshotting current build to /var/www/html/InsightED-ROSDO/insighted-esf7-prod.prev for instant rollback...
        - production npm install...
 
 > insighted-esf7-official-root@1.0.0 prepare
@@ -5,104 +6,19 @@
 
 sh: 1: husky: not found
 npm error code 127
-npm error path /mnt/insighted-esf7-staging
+npm error path /var/www/html/InsightED-ROSDO/insighted-esf7-prod
 npm error command failed
 npm error command sh -c husky
-npm error A complete log of this run can be found in: /home/Administrator1/.npm/_logs/2026-10-14T01_22_10_850Z-debug-0.log
+npm error A complete log of this run can be found in: /home/Administrator1/.npm/_logs/2026-10-15T10_16_46_327Z-debug-0.log
 
-up to date in 340ms
-[PM2] Flushing:
-[PM2] /mnt/insighted-esf7-staging/logs/out-418.log
-[PM2] /mnt/insighted-esf7-staging/logs/error-418.log
-[PM2] Flushing:
-[PM2] /mnt/insighted-esf7-staging/logs/out-419.log
-[PM2] /mnt/insighted-esf7-staging/logs/error-419.log
-[PM2] Logs flushed
-[PM2] Applying action deleteProcessId on app [insighted-esf7-staging-backend](ids: [ 418, 419 ])
-[PM2] [insighted-esf7-staging-backend](418) ✓
-[PM2] [insighted-esf7-staging-backend](419) ✓
-┌─────┬──────────────────────────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
-│ id  │ name                                     │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
-├─────┼──────────────────────────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
-│ 405 │ agap-hrmo-backend                        │ default     │ 1.0.0   │ fork    │ 1862715  │ 16h    │ 0    │ online    │ 0%       │ 671.8mb  │ Adminis… │ disabled │
-│ 342 │ agap-portal-backend                      │ default     │ 0.0.1   │ fork    │ 1255364  │ 4D     │ 2    │ online    │ 0%       │ 369.2mb  │ Adminis… │ disabled │
-│ 197 │ agap-staging-backend                     │ default     │ 0.0.1   │ fork    │ 1255306  │ 4D     │ 4    │ online    │ 0%       │ 90.8mb   │ Adminis… │ disabled │
-│ 401 │ insighted-deped-mgmnt-backend            │ default     │ 1.0.0   │ cluster │ 1831017  │ 18h    │ 0    │ online    │ 0%       │ 150.3mb  │ Adminis… │ disabled │
-│ 402 │ insighted-deped-mgmnt-backend            │ default     │ 1.0.0   │ cluster │ 1831024  │ 18h    │ 0    │ online    │ 4.5%     │ 160.2mb  │ Adminis… │ disabled │
-│ 383 │ insighted-deped-mgmnt-staging-backend    │ default     │ 1.0.0   │ cluster │ 1365329  │ 41h    │ 0    │ online    │ 0%       │ 121.9mb  │ Adminis… │ disabled │
-│ 384 │ insighted-deped-mgmnt-staging-backend    │ default     │ 1.0.0   │ cluster │ 1365336  │ 41h    │ 0    │ online    │ 0%       │ 130.6mb  │ Adminis… │ disabled │
-│ 391 │ insighted-dpa-backend                    │ default     │ 1.0.0   │ cluster │ 1680244  │ 25h    │ 0    │ online    │ 0%       │ 150.4mb  │ Adminis… │ disabled │
-│ 392 │ insighted-dpa-backend                    │ default     │ 1.0.0   │ cluster │ 1680251  │ 25h    │ 0    │ online    │ 0%       │ 144.4mb  │ Adminis… │ disabled │
-│ 363 │ insighted-esf7-prod-backend              │ default     │ 1.0.0   │ cluster │ 1277471  │ 4D     │ 89   │ online    │ 0%       │ 1.2gb    │ Adminis… │ disabled │
-│ 364 │ insighted-esf7-prod-backend              │ default     │ 1.0.0   │ cluster │ 1278135  │ 4D     │ 92   │ online    │ 0%       │ 767.2mb  │ Adminis… │ disabled │
-│ 365 │ insighted-esf7-prod-backend              │ default     │ 1.0.0   │ cluster │ 1277629  │ 4D     │ 89   │ online    │ 0%       │ 1.1gb    │ Adminis… │ disabled │
-│ 366 │ insighted-esf7-prod-backend              │ default     │ 1.0.0   │ cluster │ 1278327  │ 4D     │ 89   │ online    │ 0%       │ 617.7mb  │ Adminis… │ disabled │
-│ 370 │ insighted-esf7-prod-worker               │ default     │ 1.0.0   │ fork    │ 1256550  │ 4D     │ 10   │ online    │ 0%       │ 132.7mb  │ Adminis… │ disabled │
-│ 369 │ insighted-esf7-staging-worker            │ default     │ 1.0.0   │ fork    │ 1894333  │ 24m    │ 49   │ online    │ 0%       │ 67.5mb   │ Adminis… │ disabled │
-│ 410 │ insighted-hq-api                         │ default     │ 1.0.0   │ cluster │ 1872155  │ 15h    │ 3    │ online    │ 0%       │ 173.8mb  │ Adminis… │ disabled │
-│ 411 │ insighted-hq-api                         │ default     │ 1.0.0   │ cluster │ 1872169  │ 15h    │ 3    │ online    │ 0%       │ 146.5mb  │ Adminis… │ disabled │
-│ 61  │ insighted-infra-backend                  │ default     │ 1.0.71  │ cluster │ 1255193  │ 4D     │ 18   │ online    │ 0%       │ 325.1mb  │ Adminis… │ disabled │
-│ 62  │ insighted-infra-backend                  │ default     │ 1.0.71  │ cluster │ 1255199  │ 4D     │ 18   │ online    │ 0%       │ 322.8mb  │ Adminis… │ disabled │
-│ 83  │ insighted-schoolhead-backend             │ default     │ 1.0.0   │ cluster │ 1825351  │ 18h    │ 7    │ online    │ 4.5%     │ 258.6mb  │ Adminis… │ disabled │
-│ 85  │ insighted-schoolhead-backend             │ default     │ 1.0.0   │ cluster │ 1825364  │ 18h    │ 7    │ online    │ 18.2%    │ 219.8mb  │ Adminis… │ disabled │
-│ 394 │ insighted-schoolhead-staging-backend     │ default     │ 1.0.0   │ fork    │ 1704100  │ 24h    │ 0    │ online    │ 0%       │ 94.0mb   │ Adminis… │ disabled │
-│ 84  │ insighted-siif-backend                   │ default     │ 1.0.0   │ fork    │ 1825393  │ 18h    │ 6    │ online    │ 0%       │ 71.4mb   │ Adminis… │ disabled │
-│ 353 │ insighted-thirdlevel-backend             │ default     │ 1.0.0   │ cluster │ 1255356  │ 4D     │ 2    │ online    │ 0%       │ 197.9mb  │ Adminis… │ disabled │
-│ 354 │ insighted-thirdlevel-backend             │ default     │ 1.0.0   │ cluster │ 1255365  │ 4D     │ 2    │ online    │ 4.5%     │ 166.4mb  │ Adminis… │ disabled │
-│ 86  │ nosca-api                                │ default     │ 1.0.0   │ cluster │ 1255246  │ 4D     │ 4    │ online    │ 0%       │ 80.2mb   │ Adminis… │ disabled │
-│ 87  │ nosca-api                                │ default     │ 1.0.0   │ cluster │ 1255269  │ 4D     │ 4    │ online    │ 0%       │ 75.6mb   │ Adminis… │ disabled │
-│ 2   │ stride-dashboard                         │ default     │ 1.0.0   │ cluster │ 1255140  │ 4D     │ 11   │ online    │ 0%       │ 118.4mb  │ Adminis… │ disabled │
-│ 3   │ stride-dashboard                         │ default     │ 1.0.0   │ cluster │ 1846020  │ 17h    │ 12   │ online    │ 0%       │ 123.3mb  │ Adminis… │ disabled │
-└─────┴──────────────────────────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
-Module
-┌─────┬──────────────────────────────┬───────────────┬──────────┬──────────┬──────┬──────────┬──────────┬──────────┐
-│ id  │ module                       │ version       │ pid      │ status   │ ↺    │ cpu      │ mem      │ user     │
-├─────┼──────────────────────────────┼───────────────┼──────────┼──────────┼──────┼──────────┼──────────┼──────────┤
-│ 122 │ pm2-logrotate                │ 3.0.0         │ 935005   │ online   │ 3    │ 0%       │ 77.1mb   │ Adminis… │
-└─────┴──────────────────────────────┴───────────────┴──────────┴──────────┴──────┴──────────┴──────────┴──────────┘
-[PM2] Applying action restartProcessId on app [insighted-esf7-staging-worker](ids: [ 369 ])
-[PM2] [insighted-esf7-staging-worker](369) ✓
-[PM2][WARN] Applications insighted-esf7-staging-backend not running, starting...
-[PM2][WARN] App insighted-esf7-staging-backend has option 'wait_ready' set, waiting for app to be ready...
-[PM2] App [insighted-esf7-staging-backend] launched (2 instances)
-┌─────┬──────────────────────────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
-│ id  │ name                                     │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
-├─────┼──────────────────────────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
-│ 405 │ agap-hrmo-backend                        │ default     │ 1.0.0   │ fork    │ 1862715  │ 16h    │ 0    │ online    │ 0%       │ 676.0mb  │ Adminis… │ disabled │
-│ 342 │ agap-portal-backend                      │ default     │ 0.0.1   │ fork    │ 1255364  │ 4D     │ 2    │ online    │ 0.4%     │ 369.2mb  │ Adminis… │ disabled │
-│ 197 │ agap-staging-backend                     │ default     │ 0.0.1   │ fork    │ 1255306  │ 4D     │ 4    │ online    │ 0%       │ 90.7mb   │ Adminis… │ disabled │
-│ 401 │ insighted-deped-mgmnt-backend            │ default     │ 1.0.0   │ cluster │ 1831017  │ 18h    │ 0    │ online    │ 0.8%     │ 150.6mb  │ Adminis… │ disabled │
-│ 402 │ insighted-deped-mgmnt-backend            │ default     │ 1.0.0   │ cluster │ 1831024  │ 18h    │ 0    │ online    │ 0.4%     │ 160.4mb  │ Adminis… │ disabled │
-│ 383 │ insighted-deped-mgmnt-staging-backend    │ default     │ 1.0.0   │ cluster │ 1365329  │ 41h    │ 0    │ online    │ 0%       │ 121.9mb  │ Adminis… │ disabled │
-│ 384 │ insighted-deped-mgmnt-staging-backend    │ default     │ 1.0.0   │ cluster │ 1365336  │ 41h    │ 0    │ online    │ 0%       │ 130.6mb  │ Adminis… │ disabled │
-│ 391 │ insighted-dpa-backend                    │ default     │ 1.0.0   │ cluster │ 1680244  │ 25h    │ 0    │ online    │ 0%       │ 150.4mb  │ Adminis… │ disabled │
-│ 392 │ insighted-dpa-backend                    │ default     │ 1.0.0   │ cluster │ 1680251  │ 25h    │ 0    │ online    │ 0.4%     │ 144.9mb  │ Adminis… │ disabled │
-│ 363 │ insighted-esf7-prod-backend              │ default     │ 1.0.0   │ cluster │ 1277471  │ 4D     │ 89   │ online    │ 0%       │ 1.2gb    │ Adminis… │ disabled │
-│ 364 │ insighted-esf7-prod-backend              │ default     │ 1.0.0   │ cluster │ 1278135  │ 4D     │ 92   │ online    │ 0%       │ 767.6mb  │ Adminis… │ disabled │
-│ 365 │ insighted-esf7-prod-backend              │ default     │ 1.0.0   │ cluster │ 1277629  │ 4D     │ 89   │ online    │ 0%       │ 1.1gb    │ Adminis… │ disabled │
-│ 366 │ insighted-esf7-prod-backend              │ default     │ 1.0.0   │ cluster │ 1278327  │ 4D     │ 89   │ online    │ 0.4%     │ 617.3mb  │ Adminis… │ disabled │
-│ 370 │ insighted-esf7-prod-worker               │ default     │ 1.0.0   │ fork    │ 1256550  │ 4D     │ 10   │ online    │ 0%       │ 133.0mb  │ Adminis… │ disabled │
-│ 420 │ insighted-esf7-staging-backend           │ default     │ 1.0.0   │ cluster │ 1896122  │ 9s     │ 0    │ online    │ 5.6%     │ 105.1mb  │ Adminis… │ disabled │
-│ 421 │ insighted-esf7-staging-backend           │ default     │ 1.0.0   │ cluster │ 1896134  │ 4s     │ 0    │ online    │ 0%       │ 118.1mb  │ Adminis… │ disabled │
-│ 369 │ insighted-esf7-staging-worker            │ default     │ 1.0.0   │ fork    │ 1896111  │ 9s     │ 50   │ online    │ 2%       │ 60.6mb   │ Adminis… │ disabled │
-│ 410 │ insighted-hq-api                         │ default     │ 1.0.0   │ cluster │ 1872155  │ 15h    │ 3    │ online    │ 0.4%     │ 173.7mb  │ Adminis… │ disabled │
-│ 411 │ insighted-hq-api                         │ default     │ 1.0.0   │ cluster │ 1872169  │ 15h    │ 3    │ online    │ 0%       │ 146.0mb  │ Adminis… │ disabled │
-│ 61  │ insighted-infra-backend                  │ default     │ 1.0.71  │ cluster │ 1255193  │ 4D     │ 18   │ online    │ 0.4%     │ 325.7mb  │ Adminis… │ disabled │
-│ 62  │ insighted-infra-backend                  │ default     │ 1.0.71  │ cluster │ 1255199  │ 4D     │ 18   │ online    │ 0.4%     │ 322.7mb  │ Adminis… │ disabled │
-│ 83  │ insighted-schoolhead-backend             │ default     │ 1.0.0   │ cluster │ 1825351  │ 18h    │ 7    │ online    │ 14.1%    │ 258.9mb  │ Adminis… │ disabled │
-│ 85  │ insighted-schoolhead-backend             │ default     │ 1.0.0   │ cluster │ 1825364  │ 18h    │ 7    │ online    │ 17.7%    │ 229.6mb  │ Adminis… │ disabled │
-│ 394 │ insighted-schoolhead-staging-backend     │ default     │ 1.0.0   │ fork    │ 1704100  │ 24h    │ 0    │ online    │ 0.4%     │ 94.2mb   │ Adminis… │ disabled │
-│ 84  │ insighted-siif-backend                   │ default     │ 1.0.0   │ fork    │ 1825393  │ 18h    │ 6    │ online    │ 0%       │ 71.7mb   │ Adminis… │ disabled │
-│ 353 │ insighted-thirdlevel-backend             │ default     │ 1.0.0   │ cluster │ 1255356  │ 4D     │ 2    │ online    │ 0%       │ 197.5mb  │ Adminis… │ disabled │
-│ 354 │ insighted-thirdlevel-backend             │ default     │ 1.0.0   │ cluster │ 1255365  │ 4D     │ 2    │ online    │ 0%       │ 167.0mb  │ Adminis… │ disabled │
-│ 86  │ nosca-api                                │ default     │ 1.0.0   │ cluster │ 1255246  │ 4D     │ 4    │ online    │ 0.4%     │ 80.2mb   │ Adminis… │ disabled │
-│ 87  │ nosca-api                                │ default     │ 1.0.0   │ cluster │ 1255269  │ 4D     │ 4    │ online    │ 0%       │ 75.6mb   │ Adminis… │ disabled │
-│ 2   │ stride-dashboard                         │ default     │ 1.0.0   │ cluster │ 1255140  │ 4D     │ 11   │ online    │ 0.4%     │ 118.9mb  │ Adminis… │ disabled │
-│ 3   │ stride-dashboard                         │ default     │ 1.0.0   │ cluster │ 1846020  │ 17h    │ 12   │ online    │ 0.4%     │ 123.1mb  │ Adminis… │ disabled │
-└─────┴──────────────────────────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
-Module
-┌─────┬──────────────────────────────┬───────────────┬──────────┬──────────┬──────┬──────────┬──────────┬──────────┐
-│ id  │ module                       │ version       │ pid      │ status   │ ↺    │ cpu      │ mem      │ user     │
-├─────┼──────────────────────────────┼───────────────┼──────────┼──────────┼──────┼──────────┼──────────┼──────────┤
-│ 122 │ pm2-logrotate                │ 3.0.0         │ 935005   │ online   │ 3    │ 0%       │ 77.5mb   │ Adminis… │
-└─────┴──────────────────────────────┴───────────────┴──────────┴──────────┴──────┴──────────┴──────────┴──────────┘
+added 7 packages in 636ms
+       -> Reloading insighted-esf7-prod-backend cluster with zero downtime (--update-env)...
+[PM2] Applying action reloadProcessId on app [insighted-esf7-prod-backend](ids: [ 363, 364, 365, 366 ])
+[PM2] Applying action reloadProcessId on app [insighted-esf7-prod-worker](ids: [ 370 ])
+[PM2] [insighted-esf7-prod-worker](370) ✓
+[PM2] [insighted-esf7-prod-backend](363) ✓
+[PM2] [insighted-esf7-prod-backend](364) ✓
+[PM2] [insighted-esf7-prod-backend](366) ✓
+[PM2] [insighted-esf7-prod-backend](365) ✓
+[PM2] Saving current process list...
+[PM2] Successfully saved in /home/Administrator1/.pm2/dump.pm2

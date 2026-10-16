@@ -115,6 +115,10 @@ function formatEmploymentRecord(row) {
     position: row.position,
     stepIncrement: row.step_increment,
     step_increment: row.step_increment,
+    actualStep: row.actual_step || row.step_increment || 1,
+    actual_step: row.actual_step || row.step_increment || 1,
+    schoolReportedStep: row.school_reported_step || row.step_increment || 1,
+    school_reported_step: row.school_reported_step || row.step_increment || 1,
     fundSource: row.fund_source,
     fund_source: row.fund_source,
     natureOfAppointment: row.nature_of_appointment,
@@ -211,11 +215,15 @@ router.post("/:personnel_id", async (req, res) => {
 
     // Resolve canonical id from esf7_personnel_profile
     const personRes = await db.query(
-      `SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
+      `SELECT id FROM esf7_personnel_profile WHERE id = $1 OR legacy_id = $1 OR prn = $1 LIMIT 1`,
       [personnel_id],
     );
-    const resolvedPersonnelId =
-      personRes.rows.length > 0 ? personRes.rows[0].id : personnel_id;
+    if (personRes.rows.length === 0) {
+      return res.status(404).json({
+        error: `Cannot save employment record: Personnel profile '${personnel_id}' does not exist in esf7_personnel_profile.`,
+      });
+    }
+    const resolvedPersonnelId = personRes.rows[0].id;
 
     // Unique Primary Key id for esf7_personnel_employment (distinct from personnel_id)
     const crypto = require("crypto");
@@ -232,6 +240,12 @@ router.post("/:personnel_id", async (req, res) => {
 
     const pos = (position || "TEACHER I").toUpperCase();
     const step = Number(step_increment || stepIncrement || 1);
+    const actualStep = Number(
+      req.body.actual_step || req.body.actualStep || step,
+    );
+    const schoolReportedStep = Number(
+      req.body.school_reported_step || req.body.schoolReportedStep || step,
+    );
     const fund = (fund_source || fundSource || "NATIONAL").toUpperCase();
     const appt = (
       nature_of_appointment ||
@@ -262,15 +276,18 @@ router.post("/:personnel_id", async (req, res) => {
 
     const query = `
       INSERT INTO esf7_personnel_employment (
-        id, personnel_id, position_category, position, step_increment, fund_source, nature_of_appointment,
+        id, personnel_id, position_category, position, step_increment,
+        actual_step, school_reported_step, fund_source, nature_of_appointment,
         hiring_arrangement, deployment_status, assigned_schools, grade_levels_taught,
         first_service_date, last_promotion_date, new_station_date, last_lateral_movement_date
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13, $14, $15)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15, $16, $17)
       ON CONFLICT (personnel_id) DO UPDATE SET
         position_category = EXCLUDED.position_category,
         position = EXCLUDED.position,
         step_increment = EXCLUDED.step_increment,
+        actual_step = EXCLUDED.actual_step,
+        school_reported_step = EXCLUDED.school_reported_step,
         fund_source = EXCLUDED.fund_source,
         nature_of_appointment = EXCLUDED.nature_of_appointment,
         hiring_arrangement = EXCLUDED.hiring_arrangement,
@@ -291,6 +308,8 @@ router.post("/:personnel_id", async (req, res) => {
       cat,
       pos,
       step,
+      actualStep,
+      schoolReportedStep,
       fund,
       appt,
       hire,

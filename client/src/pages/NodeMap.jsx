@@ -143,12 +143,11 @@ export default function NodeMap() {
           id: "workload",
           nodeNumber: "06",
           title: "Workload & Timetable",
-          subtitle: "Teaching schedules, period durations & timetable",
+          subtitle: "Module temporarily locked for DepEd review & alignment",
           Icon: FiClock,
           view: "workload",
-          summary: !isInitialized
-            ? "Loading slots..."
-            : `${personnel.reduce((acc, p) => acc + (p.workloadRows?.length || 0), 0)} Workload Slots`,
+          isLockedNode: true,
+          summary: "Locked for DepEd Policy Review",
         },
       ],
     },
@@ -162,11 +161,11 @@ export default function NodeMap() {
           id: "allowances",
           nodeNumber: "07",
           title: "Allowances & Incentives",
-          subtitle:
-            "Special Hardship Allowances, Honorarium & DepEd Compensation Incentives",
+          subtitle: "Module temporarily locked for DepEd policy alignment",
           Icon: FiDollarSign,
           view: "allowances",
-          summary: "Special Hardship & DepEd Incentives",
+          isLockedNode: true,
+          summary: "Locked for DepEd Policy Review",
         },
         {
           id: "overload",
@@ -422,13 +421,12 @@ export default function NodeMap() {
                 "requests",
                 "classes",
                 "designation",
-                "workload",
-                "allowances",
                 "validation",
               ].includes(node.id);
               const isExplicitlyLocked =
                 !bypassNodeLocks &&
-                (node.id === "overload" || Boolean(node.isLockedNode));
+                (["overload", "workload", "allowances"].includes(node.id) ||
+                  Boolean(node.isLockedNode));
               const isUnlocked =
                 !isExplicitlyLocked &&
                 (isAlwaysUnlocked || isNodeUnlocked(node.id));

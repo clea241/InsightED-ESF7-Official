@@ -1,4 +1,3 @@
-/* eslint-disable no-unreachable */
 const db = require("./db");
 const redisQueue = require("./services/redisQueue");
 const { buildExtras: buildWorkloadExtras } = require("./utils/workloadPayload");
@@ -18,7 +17,10 @@ const payloadCodecs = Object.fromEntries(
 const {
   claimJob,
   recoverStaleJobs,
-  pickNextPendingJob,
+  claimNextPendingJob,
+  recordJobFailure,
+  isPermanentlyFailed,
+  isConsumerEnabled,
 } = require("./services/queueClaims");
 const {
   generatePersonnelId,
@@ -529,11 +531,32 @@ const MAX_CONCURRENT_WORKERS = 5;
 let isRedisWorkerActive = false;
 let currentProcessingJobId = null;
 
-async function processJobById(targetJobId, specificClient = null) {
+let consumerStatusLogged = false;
+// One startup line saying whether the queue consumer is on (QUEUE_CONSUMER_ENABLED), logged once per process.
+function logConsumerStatus() {
+  if (consumerStatusLogged) return;
+  consumerStatusLogged = true;
   console.log(
-    "ℹ️ [Queue Worker] processJobById bypassed: worker is deactivated.",
+    isConsumerEnabled()
+      ? "✅ [Queue Worker] Queue consumer ENABLED (QUEUE_CONSUMER_ENABLED=true)."
+      : "⏸️ [Queue Worker] Queue consumer DISABLED: submissions stay 'pending'. Set QUEUE_CONSUMER_ENABLED=true to process them.",
   );
-  return false;
+}
+
+// With the consumer on, warn at boot if the database lacks columns the worker writes (read-only check).
+async function verifyWorkerSchema() {
+  if (!isConsumerEnabled()) return false;
+  const { warnIfWorkerSchemaMismatch } = require("./db/workerSchemaCheck");
+  return warnIfWorkerSchemaMismatch(db.pool);
+}
+
+// options.alreadyClaimed: the caller already moved the row to 'processing' (claimNextPendingJob), so do not claim again.
+async function processJobById(
+  targetJobId,
+  specificClient = null,
+  options = {},
+) {
+  if (!isConsumerEnabled()) return false;
   let client = specificClient;
   let shouldRelease = false;
   let jobId = targetJobId;
@@ -623,7 +646,7 @@ async function processJobById(targetJobId, specificClient = null) {
     } else {
       // 2. Atomically claim the job: only one worker (stream delivery or PostgreSQL poll) can move it to 'processing'.
       // If another worker already claimed it, skip it; the stream entry stays unacknowledged until the job is completed.
-      const claimed = await claimJob(client, jobId);
+      const claimed = options.alreadyClaimed || (await claimJob(client, jobId));
       if (!claimed) {
         console.log(
           `[Queue Worker] Job #${jobId} is already being processed by another worker; skipping duplicate delivery.`,
@@ -829,7 +852,7 @@ async function processJobById(targetJobId, specificClient = null) {
          inclusive_programs,
          has_shifts, shifts_config,
          extras, created_at, updated_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, NOW(), NOW())
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, NOW(), NOW())
        ON CONFLICT (school_id, school_year) DO UPDATE SET
          has_elem_special_programs = EXCLUDED.has_elem_special_programs,
          elem_special_programs = EXCLUDED.elem_special_programs,
@@ -3206,9 +3229,11 @@ async function processJobById(targetJobId, specificClient = null) {
       }
       try {
         if (jobId) {
-          await client.query(
-            `UPDATE esf7_submission_queue SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2`,
-            [`${currentStage}: ${error.message}`, jobId],
+          // Retries with backoff until QUEUE_MAX_ATTEMPTS, then 'failed' (the row is never deleted).
+          await recordJobFailure(
+            client,
+            jobId,
+            `${currentStage}: ${error.message}`,
           );
         }
       } catch (uErr) {
@@ -3227,7 +3252,7 @@ async function processJobById(targetJobId, specificClient = null) {
 }
 
 async function processNextJob() {
-  return false;
+  if (!isConsumerEnabled()) return false;
   if (activeWorkersCount >= MAX_CONCURRENT_WORKERS) return false;
   activeWorkersCount++;
 
@@ -3239,7 +3264,7 @@ async function processNextJob() {
     await recoverStaleJobs(client).catch(() => {});
 
     // Fetch next pending job with row lock skipping already locked rows
-    const nextId = await pickNextPendingJob(client);
+    const nextId = await claimNextPendingJob(client);
 
     if (nextId === null) {
       if (db.stagingPool && db.stagingPool !== db.pool) {
@@ -3247,9 +3272,11 @@ async function processNextJob() {
         try {
           stagingClient = await db.stagingPool.connect();
           await recoverStaleJobs(stagingClient).catch(() => {});
-          const nextStagingId = await pickNextPendingJob(stagingClient);
+          const nextStagingId = await claimNextPendingJob(stagingClient);
           if (nextStagingId !== null) {
-            const res = await processJobById(nextStagingId, stagingClient);
+            const res = await processJobById(nextStagingId, stagingClient, {
+              alreadyClaimed: true,
+            });
             stagingClient.release();
             client.release();
             activeWorkersCount--;
@@ -3273,7 +3300,9 @@ async function processNextJob() {
       return false;
     }
 
-    const result = await processJobById(nextId, client);
+    const result = await processJobById(nextId, client, {
+      alreadyClaimed: true,
+    });
     client.release();
     activeWorkersCount--;
 
@@ -3299,6 +3328,16 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 // Claim and process everything left over: unacknowledged stream entries (XPENDING/XAUTOCLAIM) and queued
 // PostgreSQL rows. Each job is acknowledged only after processJobById returns true (i.e. after the DB commit),
 // and processJobById claims the row atomically, so a job delivered twice is still processed once.
+// A job that has used up QUEUE_MAX_ATTEMPTS stays in the table as 'failed' (alert + manual replay). Its stream pointer
+// is acknowledged so it is not redelivered forever; the durable copy is the Postgres row.
+async function ackableAfterFailure(jobId) {
+  try {
+    return await isPermanentlyFailed(db.pool, jobId);
+  } catch (e) {
+    return false;
+  }
+}
+
 async function drainBacklog(consumerName) {
   try {
     const entries = await redisQueue.drainPendingEntries({
@@ -3311,7 +3350,9 @@ async function drainBacklog(consumerName) {
       );
     for (const entry of entries) {
       const success = await processJobById(entry.jobId);
-      if (success) await redisQueue.ackJob(entry.messageId);
+      if (success || (await ackableAfterFailure(entry.jobId))) {
+        await redisQueue.ackJob(entry.messageId);
+      }
     }
   } catch (err) {
     if (err && err.name === "RedisConfigError") throw err;
@@ -3327,7 +3368,8 @@ async function drainBacklog(consumerName) {
 async function startRedisStreamWorker(
   consumerName = `worker-${process.pid || "1"}`,
 ) {
-  return;
+  logConsumerStatus();
+  if (!isConsumerEnabled()) return;
   if (isRedisWorkerActive) return;
   isRedisWorkerActive = true;
 
@@ -3396,6 +3438,8 @@ async function startRedisStreamWorker(
                 `⚠️ [Redis Queue Worker] Post-commit check failed: Job #${event.jobId} is not 'completed' in database. Retaining unacknowledged in stream.`,
               );
             }
+          } else if (await ackableAfterFailure(event.jobId)) {
+            await redisQueue.ackJob(event.messageId);
           }
         }
       } catch (err) {
@@ -3431,10 +3475,9 @@ function setPollInterval(ms) {
 }
 
 async function startWorker(intervalMs = 2000) {
-  console.log(
-    "ℹ️ [Queue Worker] Submissions queue worker is deactivated per user instructions.",
-  );
-  return;
+  logConsumerStatus();
+  if (!isConsumerEnabled()) return;
+  verifyWorkerSchema().catch(() => {});
   if (workerInterval || isRedisWorkerActive) return;
 
   console.log(
@@ -3514,4 +3557,6 @@ module.exports = {
   stopWorker,
   getCurrentProcessingJobId,
   requeueInFlightJob,
+  logConsumerStatus,
+  verifyWorkerSchema,
 };
