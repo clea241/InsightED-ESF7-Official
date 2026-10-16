@@ -21,21 +21,54 @@ function jitteredRetryAfterSeconds(random = Math.random) {
   return 1 + Math.floor(random() * 5);
 }
 
+let poolTimeoutCount = 0;
+
+function getPoolTimeoutCount() {
+  return poolTimeoutCount;
+}
+
+function resetPoolTimeoutCount() {
+  poolTimeoutCount = 0;
+}
+
 /** Express error middleware: pool-acquire timeouts answer 503 + jittered Retry-After; anything else is passed on untouched. */
 function poolTimeoutHandler(err, req, res, next) {
   if (res.headersSent || !isPoolAcquireTimeout(err)) return next(err);
+  poolTimeoutCount++;
+  const retrySecs = jitteredRetryAfterSeconds();
+  // Single-line summary with counter, no full stack trace
   console.error(
-    `[Error] ${req.method} ${req.originalUrl} -> 503 (database pool busy):`,
-    err.message,
+    `[DB Pool Timeout #${poolTimeoutCount}] ${req.method} ${req.originalUrl || req.url} -> 503 (database pool busy): ${err.message}`,
   );
-  res.set("Retry-After", String(jitteredRetryAfterSeconds()));
+  res.set("Retry-After", String(retrySecs));
   return res
     .status(503)
-    .json({ error: "The server is busy. Please try again in a moment." });
+    .json({
+      error: "The server is busy. Please try again in a moment.",
+      retryAfter: retrySecs,
+    });
+}
+
+/**
+ * Direct error handler for controller try/catch blocks:
+ * If err is a pool acquire timeout, fails fast with 503 + Retry-After and single-line log.
+ * Otherwise forwards to next(err) or falls back to standard 500 JSON.
+ */
+function handleControllerError(err, req, res, next) {
+  if (isPoolAcquireTimeout(err)) {
+    return poolTimeoutHandler(err, req, res, next);
+  }
+  if (typeof next === "function") {
+    return next(err);
+  }
+  return res.status(err.status || 500).json({ error: err.message });
 }
 
 module.exports = {
   isPoolAcquireTimeout,
   jitteredRetryAfterSeconds,
   poolTimeoutHandler,
+  handleControllerError,
+  getPoolTimeoutCount,
+  resetPoolTimeoutCount,
 };

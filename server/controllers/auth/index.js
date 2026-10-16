@@ -3,6 +3,8 @@ const router = express.Router();
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { resolveTestDivision } = require("../../utils/divisionTestRegistry");
+const cacheService = require("../../services/cacheService");
+const { handleControllerError } = require("../../utils/poolErrors");
 require("../../loadEnv");
 
 // ── Hardcoded Pilot School Credentials ────────────────────────────────────
@@ -54,92 +56,130 @@ function getUnregisteredSchoolError(inputSchoolId, isEmail) {
 }
 
 // GET /api/auth/me
-router.get("/me", async (req, res) => {
+router.get("/me", async (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "No token provided" });
 
   const token = authHeader.split(" ")[1];
   if (!token) return res.status(401).json({ error: "No token provided" });
 
+  let decoded;
   try {
-    const decoded = jwt.verify(token, getJwtSecret());
-    if (decoded.uid && decoded.uid.startsWith("divtest-")) {
-      const schId = decoded.school_id || decoded.uid.replace("divtest-", "");
-      const testDiv = resolveTestDivision(schId);
-      return res.json({
-        uid: decoded.uid,
-        role: "school",
-        email:
-          decoded.email ||
-          (testDiv ? testDiv.handle : `div-${schId}@esf7.test`),
-        school_id: schId,
-        region: testDiv ? testDiv.region : decoded.region || "REGION V",
-        division: testDiv
-          ? testDiv.division
-          : decoded.division || "DIVISION TEST",
-        account_category: "school",
-        first_name: "School Head",
-        last_name: testDiv ? testDiv.schoolName : `Demo School ${schId}`,
-      });
-    }
+    decoded = jwt.verify(token, getJwtSecret());
+  } catch (jwtErr) {
+    return res.status(401).json({ error: "Invalid or expired token" });
+  }
 
-    if (decoded.uid && decoded.uid.startsWith("pilot-")) {
-      const pilotId = decoded.uid.split("-")[1];
-      return res.json({
-        uid: decoded.uid,
-        role: "school",
-        email: decoded.email,
-        school_id: pilotId,
-        region: "PILOT",
-        division: "PILOT DIVISION",
-        first_name: "Pilot",
-        last_name: `School ${pilotId}`,
-      });
-    }
+  // 1. Division test and pilot shortcut accounts
+  if (decoded.uid && decoded.uid.startsWith("divtest-")) {
+    const schId = decoded.school_id || decoded.uid.replace("divtest-", "");
+    const testDiv = resolveTestDivision(schId);
+    return res.json({
+      uid: decoded.uid,
+      role: "school",
+      email:
+        decoded.email || (testDiv ? testDiv.handle : `div-${schId}@esf7.test`),
+      school_id: schId,
+      region: testDiv ? testDiv.region : decoded.region || "REGION V",
+      division: testDiv
+        ? testDiv.division
+        : decoded.division || "DIVISION TEST",
+      account_category: "school",
+      first_name: "School Head",
+      last_name: testDiv ? testDiv.schoolName : `Demo School ${schId}`,
+    });
+  }
 
-    // 1. Check user_schoolhead in users_database
-    let user = null;
+  if (decoded.uid && decoded.uid.startsWith("pilot-")) {
+    const pilotId = decoded.uid.split("-")[1];
+    return res.json({
+      uid: decoded.uid,
+      role: "school",
+      email: decoded.email,
+      school_id: pilotId,
+      region: "PILOT",
+      division: "PILOT DIVISION",
+      first_name: "Pilot",
+      last_name: `School ${pilotId}`,
+    });
+  }
+
+  // 2. Fast cache hit to protect DB connection pool from saturation
+  const sessionCacheKey = `auth:session:${decoded.uid}`;
+  try {
+    const cached = await cacheService.get(sessionCacheKey);
+    if (cached) return res.json(cached);
+  } catch (_e) {}
+
+  // 3. Database session validation with fallback to claims on pool timeout
+  let user = null;
+  let dbError = null;
+  try {
+    const shRes = await usersDatabasePool.query(
+      "SELECT uid, email, role, region, division, office, account_category, passcode, first_name, last_name, school_id FROM user_schoolhead WHERE uid = $1",
+      [decoded.uid],
+    );
+    if (shRes.rows.length > 0) user = shRes.rows[0];
+  } catch (e) {
+    dbError = e;
+  }
+
+  if (!user) {
     try {
-      const shRes = await usersDatabasePool.query(
-        "SELECT uid, email, role, region, division, office, account_category, passcode, first_name, last_name, school_id FROM user_schoolhead WHERE uid = $1",
+      const uRes = await insightEdPool.query(
+        "SELECT uid, email, role, region, division, office, account_category, passcode, first_name, last_name, school_id FROM users WHERE uid = $1",
         [decoded.uid],
       );
-      if (shRes.rows.length > 0) user = shRes.rows[0];
-    } catch (e) {}
-
-    // 2. Fallback to users table in insightEd
-    if (!user) {
-      const uRes = await insightEdPool
-        .query(
-          "SELECT uid, email, role, region, division, office, account_category, passcode, first_name, last_name, school_id FROM users WHERE uid = $1",
-          [decoded.uid],
-        )
-        .catch(() => ({ rows: [] }));
       if (uRes.rows.length > 0) user = uRes.rows[0];
+    } catch (e) {
+      if (!dbError) dbError = e;
     }
-
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    res.json({
-      uid: user.uid,
-      role: user.role,
-      email: user.email,
-      school_id: user.school_id,
-      region: user.region,
-      division: user.division,
-      account_category: user.account_category || user.role,
-      first_name: user.first_name,
-      last_name: user.last_name,
-    });
-  } catch (err) {
-    res.status(401).json({ error: "Invalid or expired token" });
   }
+
+  if (!user) {
+    // If user is absent because the DB pool was exhausted, DO NOT log the user out with 401!
+    if (dbError) {
+      // If we have verified claims, use them gracefully
+      if (decoded.school_id || decoded.role) {
+        const fallbackObj = {
+          uid: decoded.uid,
+          role: decoded.role || "school",
+          email: decoded.email || "",
+          school_id: decoded.school_id || "",
+          region: decoded.region || "",
+          division: decoded.division || "",
+          account_category:
+            decoded.account_category || decoded.role || "school",
+          first_name: decoded.first_name || "School Head",
+          last_name: decoded.last_name || "",
+        };
+        await cacheService.set(sessionCacheKey, fallbackObj, 120);
+        return res.json(fallbackObj);
+      }
+      return handleControllerError(dbError, req, res, next);
+    }
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  const sessionObj = {
+    uid: user.uid,
+    role: user.role,
+    email: user.email,
+    school_id: user.school_id,
+    region: user.region,
+    division: user.division,
+    account_category: user.account_category || user.role,
+    first_name: user.first_name,
+    last_name: user.last_name,
+  };
+
+  // Cache valid session for 5 minutes
+  await cacheService.set(sessionCacheKey, sessionObj, 300);
+  return res.json(sessionObj);
 });
 
 // ── POST /api/auth/migrate-login and /api/auth/master-login (Password Sign-In) ──
-const handlePasswordLogin = async (req, res) => {
+const handlePasswordLogin = async (req, res, next) => {
   const { identifier, password, school_id } = req.body;
   const inputSchoolId = (school_id || identifier || "")
     .replace(/^SCH-/i, "")
@@ -303,28 +343,31 @@ const handlePasswordLogin = async (req, res) => {
       { expiresIn: "30d" },
     );
 
+    const userObj = {
+      uid: user.uid,
+      email: user.email,
+      role: user.role,
+      region: user.region,
+      division: user.division,
+      account_category: user.account_category || user.role,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      school_id: user.school_id,
+    };
+    await cacheService.set(`auth:session:${user.uid}`, userObj, 300);
+
     res.json({
       success: true,
       token,
-      user: {
-        uid: user.uid,
-        email: user.email,
-        role: user.role,
-        region: user.region,
-        division: user.division,
-        account_category: user.account_category || user.role,
-        first_name: user.first_name,
-        last_name: user.last_name,
-        school_id: user.school_id,
-      },
+      user: userObj,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return handleControllerError(err, req, res, next);
   }
 };
 
 // ── POST /api/auth/passcode-login and /api/auth/pin-login (Passcode Sign-In) ──
-const handlePasscodeLogin = async (req, res) => {
+const handlePasscodeLogin = async (req, res, next) => {
   const { passcode, pin, school_id, email, identifier } = req.body;
   const inputSchoolId = (school_id || identifier || email || "")
     .replace(/^SCH-/i, "")
@@ -493,23 +536,26 @@ const handlePasscodeLogin = async (req, res) => {
       { expiresIn: "30d" },
     );
 
+    const userObj = {
+      uid: user.uid,
+      email: user.email,
+      role: user.role,
+      region: user.region,
+      division: user.division,
+      account_category: user.account_category || user.role,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      school_id: user.school_id,
+    };
+    await cacheService.set(`auth:session:${user.uid}`, userObj, 300);
+
     res.json({
       success: true,
       token,
-      user: {
-        uid: user.uid,
-        email: user.email,
-        role: user.role,
-        region: user.region,
-        division: user.division,
-        account_category: user.account_category || user.role,
-        first_name: user.first_name,
-        last_name: user.last_name,
-        school_id: user.school_id,
-      },
+      user: userObj,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return handleControllerError(err, req, res, next);
   }
 };
 

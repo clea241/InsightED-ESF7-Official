@@ -119,9 +119,9 @@ export default [
     },
   },
 
-  // ---------- Server (Node, CommonJS) ----------
+  // ---------- Server & Load-test scripts (Node, CommonJS) ----------
   {
-    files: ["server/**/*.js"],
+    files: ["server/**/*.js", "load-test/**/*.js"],
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "commonjs",

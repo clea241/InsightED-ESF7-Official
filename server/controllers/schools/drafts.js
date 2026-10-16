@@ -2056,7 +2056,7 @@ const handleSaveDraft = async (req, res) => {
     const withVersion = await hasDraftVersionColumn();
 
     try {
-      await client.query("BEGIN");
+      await client.query("BEGIN; SET LOCAL lock_timeout = '2500ms';");
 
       try {
         if (process.env.DISABLE_BLOB_DRAFT_WRITES === "true") {
@@ -2164,6 +2164,16 @@ const handleSaveDraft = async (req, res) => {
       }
     } catch (txErr) {
       await client.query("ROLLBACK").catch(() => {});
+      if (txErr.code === "55P03") {
+        console.warn(
+          `[DraftSave][LOCK_TIMEOUT] school=${schoolId} lock contention on concurrent save`,
+        );
+        return res.status(409).json({
+          conflict: true,
+          error:
+            "Another save for this school is currently in progress. Please retry shortly.",
+        });
+      }
       throw txErr;
     } finally {
       if (typeof client.release === "function") {

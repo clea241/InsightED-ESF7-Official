@@ -7,7 +7,9 @@ const rootEnvPath = path.resolve(__dirname, "../.env");
 const serverEnvPath = path.resolve(__dirname, ".env");
 
 const isTest =
-  process.env.NODE_ENV === "test" || Boolean(process.env.TEST_DATABASE_URL);
+  process.env.NODE_ENV === "test" ||
+  process.env.NODE_ENV === "load-test" ||
+  Boolean(process.env.TEST_DATABASE_URL);
 if (fs.existsSync(rootEnvPath)) {
   dotenv.config({ path: rootEnvPath, override: !isTest });
 } else if (fs.existsSync(serverEnvPath)) {

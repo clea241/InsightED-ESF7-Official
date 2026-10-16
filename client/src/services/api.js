@@ -48,14 +48,6 @@ const REQUEST_TIMEOUT_MS = 60000;
 export const fetchWithAuth = async (url, options = {}) => {
   // While the server-health lock is on, new calls wait instead of firing and failing.
   await waitUntilHealthy();
-  const token = localStorage.getItem("token");
-  const activeSchoolId = resolveSchoolId(null);
-
-  const headers = {
-    ...options.headers,
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...(activeSchoolId ? { "x-school-id": activeSchoolId } : {}),
-  };
 
   // What was requested (method + payload field names + ids; never the token) - attached to any failure for the error report.
   const reqMethod = String(options.method || "GET").toUpperCase();
@@ -71,6 +63,15 @@ export const fetchWithAuth = async (url, options = {}) => {
     if (reqMethod !== "GET" && !String(url).includes("/health"))
       noteApiError(e);
     return e;
+  };
+
+  const token = localStorage.getItem("token");
+  const activeSchoolId = resolveSchoolId(null);
+
+  const headers = {
+    ...options.headers,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(activeSchoolId ? { "x-school-id": activeSchoolId } : {}),
   };
   // Own controller so we can tell a timeout apart from a caller-initiated abort.
   const controller = new AbortController();
@@ -103,7 +104,7 @@ export const fetchWithAuth = async (url, options = {}) => {
     }
     if (res.ok) noteApiSuccess(reqMethod, url);
     // 401 on an authenticated call = the session is no longer valid (expired token, rotated secret). Not a server failure.
-    if (res.status === 401 && token && !String(url).includes("/auth/"))
+    if (res.status === 401 && !String(url).includes("/auth/"))
       reportUnauthorized({ url: String(url) });
     if (isServerFailureStatus(res.status)) {
       recordServerFailure({

@@ -187,15 +187,33 @@ const checkPostgres = async () => {
   }
 };
 
+let reqCountWindow = 0;
+let error5xxCountWindow = 0;
+setInterval(() => {
+  if (reqCountWindow > 20) {
+    const errorRate = error5xxCountWindow / reqCountWindow;
+    if (errorRate > 0.1) {
+      console.warn(
+        `🚨 [High 5xx Rate Alert] ${(errorRate * 100).toFixed(1)}% of requests failed with 5xx (${error5xxCountWindow}/${reqCountWindow} in last 30s)`,
+      );
+    }
+  }
+  reqCountWindow = 0;
+  error5xxCountWindow = 0;
+}, 30000).unref();
+
 const checkReadiness = async (req, res) => {
   res.set("Cache-Control", "no-store");
   const pg = await checkPostgres();
   const queue = publicQueueStatus();
+  const pool =
+    typeof db.getPoolMetrics === "function" ? db.getPoolMetrics() : undefined;
   return res.status(pg.up ? 200 : 503).json({
     status: pg.up ? (queue.redisReachable ? "ok" : "degraded") : "down",
     db: pg.up ? "up" : "down",
     redis: queue.redisReachable ? "up" : "degraded",
     queue,
+    pool,
     error: pg.up ? undefined : pg.error,
     time: new Date().toISOString(),
   });
@@ -363,7 +381,20 @@ app.get("/api/salary-matrix", async (req, res) => {
   }
 });
 
-const { poolTimeoutHandler } = require("./utils/poolErrors");
+app.use((req, res, next) => {
+  reqCountWindow++;
+  res.on("finish", () => {
+    if (res.statusCode >= 500) {
+      error5xxCountWindow++;
+    }
+  });
+  next();
+});
+
+const {
+  poolTimeoutHandler,
+  isPoolAcquireTimeout,
+} = require("./utils/poolErrors");
 // Global error handler: never sends stack traces or file paths to the client; full detail is logged server-side only.
 const stripServerPaths = (msg) =>
   String(msg || "")
@@ -373,6 +404,9 @@ const stripServerPaths = (msg) =>
 app.use(poolTimeoutHandler);
 app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
+  if (isPoolAcquireTimeout(err)) {
+    return poolTimeoutHandler(err, req, res, next);
+  }
   let status = Number(err.status || err.statusCode) || 500;
   if (err.message && err.message.includes("CORS blocked")) {
     status = 403;

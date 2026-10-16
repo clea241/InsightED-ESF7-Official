@@ -188,6 +188,26 @@ try {
   );
   check(row.rows[0]?.note === "smoke", "the row is really in the database");
 
+  // Verify shared scheduleRules loads and room-profiling endpoint works without 500 ERR_MODULE_NOT_FOUND
+  const verifyPasscodeRes = await fetch(
+    `http://127.0.0.1:${serverPort}/api/room-profiling/verify-passcode`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        passcode: "SMOKE_TEST_PASSCODE",
+        schoolId: "302261",
+      }),
+    },
+  );
+  const verifyPasscodeBody = await verifyPasscodeRes.json().catch(() => ({}));
+  check(
+    verifyPasscodeRes.status !== 500 &&
+      verifyPasscodeBody &&
+      verifyPasscodeBody.success === false,
+    "verify-passcode loads shared scheduleRules without 500 ERR_MODULE_NOT_FOUND",
+  );
+
   const html = await (await fetch(`http://127.0.0.1:${clientPort}/`)).text();
   check(/<div id="root">/.test(html), "built index.html loads");
   const assets = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map(

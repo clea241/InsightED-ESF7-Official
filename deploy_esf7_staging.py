@@ -129,7 +129,7 @@ def main():
 
     # 2. Archive essential files (skipping node_modules and sample uploads)
     print(f"\n{YELLOW}📦 [2/5] ARCHIVING deployment payload -> {ARCHIVE_NAME}...{NC}")
-    files_to_include = ["server", "client/dist", "package.json", "package-lock.json", ECOSYSTEM_CONFIG]
+    files_to_include = ["server", "shared", "client/dist", "package.json", "package-lock.json", ECOSYSTEM_CONFIG]
     
     def exclude_node_modules(tarinfo):
         name = tarinfo.name.lower()

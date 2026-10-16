@@ -4,6 +4,7 @@ const db = require("../../db");
 const { insightEdPool, usersDbPool } = require("../../db");
 const { getSchoolIdFromRequest } = require("../../utils/auth");
 const cacheService = require("../../services/cacheService");
+const { handleControllerError } = require("../../utils/poolErrors");
 const { codec } = require("../../utils/payloadExtras");
 
 // esf7_requests keeps typed columns plus a slim `extras` JSONB (keys without a typed column), not a copy of the request body.
@@ -50,14 +51,22 @@ async function resolveSchoolId(input) {
   const cleaned = str.replace(/^SCH-/i, "").trim();
   if (/^\d{5,}$/.test(cleaned)) return cleaned;
 
-  // Non-numeric name passed: look up against users_database.schools_iern
+  // Non-numeric name passed: look up with fast cache
   const upperName = cleaned.toUpperCase();
+  const cacheKey = `resolve_sch_name:${upperName}`;
+  const cached = await cacheService.get(cacheKey);
+  if (cached) return cached;
+
   try {
     const res1 = await usersDbPool.query(
       `SELECT school_id FROM schools_iern WHERE UPPER(TRIM(school_name)) = $1 LIMIT 1`,
       [upperName],
     );
-    if (res1.rows.length > 0) return String(res1.rows[0].school_id).trim();
+    if (res1.rows.length > 0) {
+      const found = String(res1.rows[0].school_id).trim();
+      await cacheService.set(cacheKey, found, 3600);
+      return found;
+    }
 
     const normalized = upperName
       .replace(/\bNHS\b/g, "NATIONAL HIGH SCHOOL")
@@ -70,13 +79,21 @@ async function resolveSchoolId(input) {
       `SELECT school_id FROM schools_iern WHERE UPPER(TRIM(school_name)) = $1 OR school_name ILIKE $2 LIMIT 1`,
       [normalized, `%${normalized}%`],
     );
-    if (res2.rows.length > 0) return String(res2.rows[0].school_id).trim();
+    if (res2.rows.length > 0) {
+      const found = String(res2.rows[0].school_id).trim();
+      await cacheService.set(cacheKey, found, 3600);
+      return found;
+    }
 
     const res3 = await insightEdPool.query(
       `SELECT school_id FROM unit1_school_identity WHERE UPPER(TRIM(school_name)) = $1 OR school_name ILIKE $2 LIMIT 1`,
       [upperName, `%${upperName}%`],
     );
-    if (res3.rows.length > 0) return String(res3.rows[0].school_id).trim();
+    if (res3.rows.length > 0) {
+      const found = String(res3.rows[0].school_id).trim();
+      await cacheService.set(cacheKey, found, 3600);
+      return found;
+    }
   } catch (e) {
     console.warn("[resolveSchoolId lookup error]:", e.message);
   }
@@ -85,7 +102,7 @@ async function resolveSchoolId(input) {
 }
 
 // GET /api/requests/incoming
-router.get("/incoming", async (req, res) => {
+router.get("/incoming", async (req, res, next) => {
   try {
     const schoolId =
       req.query.schoolId ||
@@ -98,17 +115,25 @@ router.get("/incoming", async (req, res) => {
     const cached = await cacheService.get(cacheKey);
     if (cached) return res.json(cached);
 
-    // Also look up current school name to catch any name-based requests
+    // Also look up current school name to catch any name-based requests (cached for 1 hour)
     let schoolNames = [];
-    try {
-      const sRes = await usersDbPool.query(
-        `SELECT school_name FROM schools_iern WHERE CAST(school_id AS TEXT) = $1 LIMIT 1`,
-        [cleanSchoolId],
-      );
-      if (sRes.rows.length > 0 && sRes.rows[0].school_name) {
-        schoolNames.push(sRes.rows[0].school_name.trim().toUpperCase());
-      }
-    } catch (e) {}
+    const nameCacheKey = `school_name_byId:${cleanSchoolId}`;
+    let cachedName = await cacheService.get(nameCacheKey);
+    if (cachedName) {
+      schoolNames.push(cachedName);
+    } else {
+      try {
+        const sRes = await usersDbPool.query(
+          `SELECT school_name FROM schools_iern WHERE CAST(school_id AS TEXT) = $1 LIMIT 1`,
+          [cleanSchoolId],
+        );
+        if (sRes.rows.length > 0 && sRes.rows[0].school_name) {
+          const nm = sRes.rows[0].school_name.trim().toUpperCase();
+          schoolNames.push(nm);
+          await cacheService.set(nameCacheKey, nm, 3600);
+        }
+      } catch (e) {}
+    }
 
     const queryText = `
       SELECT * FROM esf7_requests 
@@ -151,13 +176,12 @@ router.get("/incoming", async (req, res) => {
     await cacheService.set(cacheKey, formatted, 5);
     res.json(formatted);
   } catch (err) {
-    console.error("[Requests Incoming GET Error]:", err.message);
-    res.status(500).json({ error: err.message });
+    return handleControllerError(err, req, res, next);
   }
 });
 
 // GET /api/requests/outgoing
-router.get("/outgoing", async (req, res) => {
+router.get("/outgoing", async (req, res, next) => {
   try {
     const schoolId =
       req.query.schoolId ||
@@ -201,13 +225,12 @@ router.get("/outgoing", async (req, res) => {
     await cacheService.set(cacheKey, formatted, 5);
     res.json(formatted);
   } catch (err) {
-    console.error("[Requests Outgoing GET Error]:", err.message);
-    res.status(500).json({ error: err.message });
+    return handleControllerError(err, req, res, next);
   }
 });
 
 // GET /api/requests/history
-router.get("/history", async (req, res) => {
+router.get("/history", async (req, res, next) => {
   try {
     const schoolId =
       req.query.schoolId ||
@@ -248,13 +271,12 @@ router.get("/history", async (req, res) => {
     await cacheService.set(cacheKey, formatted, 5);
     res.json(formatted);
   } catch (err) {
-    console.error("[Requests History GET Error]:", err.message);
-    res.status(500).json({ error: err.message });
+    return handleControllerError(err, req, res, next);
   }
 });
 
 // GET /api/requests/district-schools
-router.get("/district-schools", async (req, res) => {
+router.get("/district-schools", async (req, res, next) => {
   try {
     const schoolId =
       req.query.schoolId ||
@@ -482,13 +504,12 @@ router.get("/district-schools", async (req, res) => {
 
     res.json(districtList);
   } catch (err) {
-    console.error("[District Schools Error]:", err.message);
-    res.status(500).json({ error: err.message, schools: [] });
+    return handleControllerError(err, req, res, next);
   }
 });
 
 // POST /api/requests/create
-router.post("/create", async (req, res) => {
+router.post("/create", async (req, res, next) => {
   try {
     const {
       targetSchoolId,
@@ -657,13 +678,12 @@ router.post("/create", async (req, res) => {
       request: formatRequestRecord(insertRes.rows[0]),
     });
   } catch (err) {
-    console.error("[Requests Create Error]:", err.message);
-    res.status(500).json({ error: err.message });
+    return handleControllerError(err, req, res, next);
   }
 });
 
 // POST /api/requests/:id/respond
-router.post("/:id/respond", async (req, res) => {
+router.post("/:id/respond", async (req, res, next) => {
   const { id } = req.params;
   const { action, remarks } = req.body; // 'approved' or 'rejected'
 
@@ -688,8 +708,7 @@ router.post("/:id/respond", async (req, res) => {
       request: formatRequestRecord(result.rows[0]),
     });
   } catch (err) {
-    console.error("[Requests Respond Error]:", err.message);
-    res.status(500).json({ error: err.message });
+    return handleControllerError(err, req, res, next);
   }
 });
 
@@ -780,7 +799,7 @@ async function resolveCanonicalRoomKey(rawKey) {
 
 // GET /api/requests/clustered/:prn/sync
 // Fetch active ghost slots from partner schools for a clustered teacher
-router.get("/clustered/:prn/sync", async (req, res) => {
+router.get("/clustered/:prn/sync", async (req, res, next) => {
   const { prn } = req.params;
   const requestingSchoolId = String(
     getSchoolIdFromRequest(req) ||
@@ -873,14 +892,13 @@ router.get("/clustered/:prn/sync", async (req, res) => {
       count: sharedSlots.length,
     });
   } catch (err) {
-    console.error("[Clustered Sync GET Error]:", err.message);
-    res.status(500).json({ error: err.message });
+    return handleControllerError(err, req, res, next);
   }
 });
 
 // POST /api/requests/clustered/:prn/sync
 // Broadcast or update active school timetable slots for a clustered teacher
-router.post("/clustered/:prn/sync", async (req, res) => {
+router.post("/clustered/:prn/sync", async (req, res, next) => {
   const { prn } = req.params;
   const { authorSchoolId, authorSchoolName, slots } = req.body;
 
@@ -947,8 +965,7 @@ router.post("/clustered/:prn/sync", async (req, res) => {
       sharedSlots,
     });
   } catch (err) {
-    console.error("[Clustered Sync POST Error]:", err.message);
-    res.status(500).json({ error: err.message });
+    return handleControllerError(err, req, res, next);
   }
 });
 
