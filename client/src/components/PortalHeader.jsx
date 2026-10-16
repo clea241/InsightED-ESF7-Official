@@ -10,6 +10,7 @@ import { useAuth } from "../context/AuthContext";
 import { useApp } from "../context/AppContext";
 import { checkBeforeLeave, isAnyScreenDirty } from "../services/dirtyGuard";
 import LogoutPasscodeModal from "./LogoutPasscodeModal";
+import { isStagingEnvironment } from "../utils/environment";
 
 export default function PortalHeader({
   departmentText = "DEPARTMENT OF EDUCATION",
@@ -148,6 +149,34 @@ export default function PortalHeader({
             >
               {dynamicBureauText}
             </span>
+            {isStagingEnvironment() && (
+              <>
+                <span
+                  style={{
+                    color: "#CBD5E1",
+                    fontSize: "11px",
+                    fontWeight: "600",
+                  }}
+                >
+                  |
+                </span>
+                <span
+                  style={{
+                    fontSize: "10px",
+                    fontWeight: "800",
+                    letterSpacing: "0.08em",
+                    background: "#FEF3C7",
+                    color: "#92400E",
+                    border: "1px solid #F59E0B",
+                    padding: "1px 6px",
+                    borderRadius: "4px",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  TESTING SITE
+                </span>
+              </>
+            )}
           </div>
 
           {/* H1 Main Title */}

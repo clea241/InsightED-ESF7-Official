@@ -547,7 +547,7 @@ router.post("/create", async (req, res, next) => {
        WHERE (requester_school_id = $1 OR requester_school_id = $2 OR REPLACE(requester_school_id, 'SCH-', '') = $1)
          AND (target_school_id = $3 OR target_school_id = $4 OR REPLACE(target_school_id, 'SCH-', '') = $3)
          AND request_type = $5 
-         AND (personnel_id = $6 OR extras->>'personnelId' = $6 OR personnel_name ILIKE $7)
+         AND (personnel_id = $6 OR ($7 <> '' AND personnel_name ILIKE $7))
          AND LOWER(status) = 'pending'`,
       [
         requesterId,
@@ -637,38 +637,21 @@ router.post("/create", async (req, res, next) => {
     const reqId =
       req.body.id ||
       `REQ-${requesterId}-${seq}-${Math.floor(Math.random() * 1000)}`;
+    const schoolYear =
+      req.body.schoolYear || req.body.school_year || "SY 26-27";
 
     const insertRes = await db.query(
-      `INSERT INTO esf7_requests (id, requester_school_id, target_school_id, request_type, personnel_id, personnel_name, remarks, extras)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb) RETURNING *`,
+      `INSERT INTO esf7_requests (id, requester_school_id, target_school_id, school_year, request_type, personnel_id, personnel_name, status, remarks, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, NOW(), NOW()) RETURNING *`,
       [
         reqId,
         requesterId,
         tSchoolId,
+        schoolYear,
         rType,
         targetPersonnelId,
         pName || null,
         remarks || null,
-        JSON.stringify(
-          payload.buildExtras(
-            {
-              ...req.body,
-              requesterId,
-              targetSchoolId: tSchoolId,
-              personnelId: targetPersonnelId,
-              personnelName: pName,
-            },
-            {
-              id: reqId,
-              requester_school_id: requesterId,
-              target_school_id: tSchoolId,
-              request_type: rType,
-              personnel_id: targetPersonnelId,
-              personnel_name: pName || null,
-              remarks: remarks || null,
-            },
-          ),
-        ),
       ],
     );
 

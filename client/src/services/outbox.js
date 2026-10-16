@@ -834,50 +834,6 @@ export async function runOneTimeLegacyCleanup({
         key.startsWith("draft_learning_areas_");
 
       if (matches) {
-        const raw = localStorage.getItem(key);
-        if (raw) {
-          try {
-            const parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === "object") {
-              let mod = "recovered_legacy";
-              let endpoint = "/api/school/draft";
-              if (key.includes("curricular_config")) {
-                mod = "school_profile";
-                endpoint = "/api/school/curricular-config";
-              } else if (key.includes("personnel")) {
-                mod = "personnel_profile";
-                endpoint = "/api/personnel";
-              } else if (key.includes("workload")) {
-                mod = "workload";
-                endpoint = "/api/workloads/batch";
-              } else if (key.includes("sections")) {
-                mod = "organized_classes";
-                endpoint = "/api/sections/bulk";
-              }
-
-              // Check if differs from DB baseline
-              const dbSection = dbBaseline[mod];
-              const differs =
-                !dbSection ||
-                JSON.stringify(parsed) !== JSON.stringify(dbSection);
-
-              if (differs) {
-                await upsertOutboxEntry({
-                  kind: "unsaved",
-                  schoolId,
-                  user,
-                  schoolYear,
-                  module: mod,
-                  endpoint,
-                  payload: parsed,
-                  lastError: "Recovered from legacy local backup",
-                });
-              }
-            }
-          } catch (e) {
-            // Not valid JSON, skip
-          }
-        }
         localStorage.removeItem(key);
       }
     }
@@ -888,70 +844,35 @@ export async function runOneTimeLegacyCleanup({
 }
 
 /**
- * When opening a section that has a queued outbox entry, prompt the user:
- * "You have unsent changes for this section. Load them?"
- * If declined, DB baseline stays on screen and entry remains queued.
- * If accepted, calls onLoadPayload(entry.payload) and marks dirty.
+ * Always keep the database version without prompting the user with an "Unsent Changes Available" modal.
+ * Any stale non-offline outbox entries for this section are automatically purged so the database remains authoritative.
  */
 export async function checkAndPromptOutboxOnSectionOpen({
   schoolId,
   user,
   module,
   term = null,
-  onLoadPayload,
 }) {
-  if (!schoolId || !user || !module || typeof onLoadPayload !== "function")
-    return false;
-
-  const entries = await getOutboxEntries({ schoolId, user, module });
-  const entry = entries.find((e) => (term ? e.term === term : true));
-  if (!entry || !entry.payload) return false;
+  if (!schoolId || !module) return false;
 
   try {
-    const [{ default: Swal }] = await Promise.all([
-      import("sweetalert2"),
-      import("sweetalert2/dist/sweetalert2.min.css"),
-    ]);
-
-    const isFailed = entry.kind === "failed";
-    const statusText = isFailed ? "previously failed to save" : "unsaved draft";
-
-    const result = await Swal.fire({
-      title: "Unsent Changes Available",
-      text: `You have an ${statusText} for this section from ${new Date(entry.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. Would you like to load your unsent changes into the form?`,
-      icon: "question",
-      iconColor: "#2563EB",
-      showCancelButton: true,
-      confirmButtonText: "Load Unsent Changes",
-      cancelButtonText: "Keep Database Version",
-      confirmButtonColor: "#2563EB",
-      cancelButtonColor: "#64748B",
-      reverseButtons: true,
-      customClass: {
-        popup: "insighted-swal-modal",
-        title: "insighted-swal-title",
-        htmlContainer: "insighted-swal-text",
-        confirmButton: "insighted-swal-save-btn",
-        cancelButton: "insighted-swal-discard-btn",
-      },
-    });
-
-    if (result.isConfirmed) {
-      onLoadPayload(entry.payload);
-      return true;
+    const entries = await getOutboxEntries({ schoolId, user, module });
+    for (const e of entries) {
+      if (!term || e.term === term) {
+        if (e.kind !== "offline") {
+          await removeOutboxEntry(e.id).catch(() => {});
+        }
+      }
     }
-    return false;
   } catch (err) {
-    console.warn("[Outbox] Error prompting on section open:", err);
-    return false;
+    console.warn("[Outbox] Error cleaning stale outbox on section open:", err);
   }
+  return false;
 }
 
 /**
- * Automatically applies and syncs an un-synced outbox entry when opening a section.
- * - When online: Overlays payload into form state, pushes to the server in the background,
- *   and deletes the outbox entry immediately upon confirmation.
- * - Shows a gentle toast notification instead of a disruptive blocking modal.
+ * Automatically applies and syncs a genuine offline outbox entry when opening a section.
+ * Stale "unsaved" or "failed" entries (or entries older than dbUpdatedAt) are discarded so the database version always wins.
  */
 export async function autoSyncOutboxOnSectionOpen({
   schoolId,
@@ -959,6 +880,7 @@ export async function autoSyncOutboxOnSectionOpen({
   module,
   personnelId = null,
   term = null,
+  dbUpdatedAt = null,
   onLoadPayload,
   onSynced,
   showNotice = true,
@@ -973,8 +895,17 @@ export async function autoSyncOutboxOnSectionOpen({
   const entry = entries.find((e) => (term ? e.term === term : true));
   if (!entry || !entry.payload) return false;
 
+  // Always keep database version if entry is not a genuine offline queue item
+  // or if the database timestamp is newer than or equal to the queued entry.
+  const dbTime = dbUpdatedAt ? new Date(dbUpdatedAt).getTime() : 0;
+  const entryTime = entry.updatedAt || entry.createdAt || 0;
+  if (entry.kind !== "offline" || (dbTime > 0 && dbTime >= entryTime)) {
+    await removeOutboxEntry(entry.id).catch(() => {});
+    return false;
+  }
+
   try {
-    // 1. Immediately apply the offline/unsent payload to the form state if callback provided
+    // 1. Immediately apply the offline payload to the form state if callback provided
     if (typeof onLoadPayload === "function") {
       onLoadPayload(entry.payload);
     }

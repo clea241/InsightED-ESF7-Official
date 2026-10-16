@@ -223,12 +223,13 @@ export default function ValidationCenter() {
       resolved?.person ||
       (personnel || []).find((p) => {
         const pos = (p.position || "").toUpperCase();
+        if (pos.includes("ASSISTANT") || pos.includes("HEAD TEACHER"))
+          return false;
         return (
           pos.includes("PRINCIPAL") ||
-          pos.includes("HEAD TEACHER") ||
           pos.includes("TEACHER-IN-CHARGE") ||
-          pos.includes("TIC") ||
-          pos.includes("OIC")
+          pos.includes("OFFICER-IN-CHARGE") ||
+          /\b(TIC|OIC)\b/.test(pos)
         );
       });
 

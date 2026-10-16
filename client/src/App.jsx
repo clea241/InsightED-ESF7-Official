@@ -22,10 +22,16 @@ import SchoolHeadChatWidget from "./components/SchoolHeadChatWidget";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Login from "./pages/Login";
 import Landing from "./pages/Landing";
+import StagingHeader from "./components/StagingHeader";
 import LoadingScreen from "./components/LoadingScreen";
 import ServerHealthModal from "./components/ServerHealthModal";
 import { subscribeHealth } from "./services/serverHealth";
-import { FiAlertTriangle, FiCheckCircle, FiLock } from "react-icons/fi";
+import {
+  FiAlertTriangle,
+  FiCheckCircle,
+  FiLock,
+  FiAlertCircle,
+} from "react-icons/fi";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { setErrorAlertContext } from "./services/errorAlert";
 import {
@@ -303,11 +309,108 @@ function MainAppContent() {
               {(activeView === "classes" ||
                 activeView === "organized_classes" ||
                 activeView === "organized-classes") && <OrganizedClasses />}
-              {/* DepEd Locked Modules: Workload, Allowances, Overload */}
+              {/* Workload & Timetable Under Maintenance Screen */}
+              {activeView === "workload" && (
+                <div
+                  style={{
+                    padding: "60px 20px",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    minHeight: "65vh",
+                    textAlign: "center",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "76px",
+                      height: "76px",
+                      borderRadius: "22px",
+                      background: "#FFFBEB",
+                      border: "1.5px solid #FDE68A",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#D97706",
+                      fontSize: "34px",
+                      marginBottom: "20px",
+                      boxShadow: "0 6px 16px rgba(217, 119, 6, 0.12)",
+                    }}
+                  >
+                    <FiLock />
+                  </div>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: "800",
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                      color: "#B45309",
+                      background: "#FEF3C7",
+                      border: "1px solid #FCD34D",
+                      padding: "4px 12px",
+                      borderRadius: "6px",
+                      marginBottom: "12px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <FiAlertCircle size={12} /> Under Maintenance
+                  </span>
+                  <h2
+                    style={{
+                      fontSize: "24px",
+                      fontWeight: "800",
+                      color: "#0F172A",
+                      margin: "0 0 10px",
+                      letterSpacing: "-0.02em",
+                    }}
+                  >
+                    Workload & Timetable Under Maintenance
+                  </h2>
+                  <p
+                    style={{
+                      fontSize: "14px",
+                      color: "#64748B",
+                      maxWidth: "480px",
+                      margin: "0 0 24px",
+                      lineHeight: "1.6",
+                    }}
+                  >
+                    Teaching schedule optimization, period duration settings,
+                    and timetable conflict resolution are currently undergoing
+                    scheduled maintenance. Please proceed with other active eSF7
+                    milestones.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setActiveView("nodemap")}
+                    style={{
+                      background:
+                        "linear-gradient(135deg, #1E40AF 0%, #2563EB 100%)",
+                      color: "#FFFFFF",
+                      border: "none",
+                      borderRadius: "10px",
+                      padding: "11px 24px",
+                      fontSize: "13px",
+                      fontWeight: "700",
+                      cursor: "pointer",
+                      boxShadow: "0 4px 14px rgba(37, 99, 235, 0.25)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      transition: "transform 0.15s ease",
+                    }}
+                  >
+                    Return to Process Map
+                  </button>
+                </div>
+              )}
+              {/* DepEd Locked Modules: Allowances, Overload */}
               {!appState.bypassNodeLocks &&
-              (activeView === "workload" ||
-                activeView === "allowances" ||
-                activeView === "overload") ? (
+              (activeView === "allowances" || activeView === "overload") ? (
                 <div
                   style={{
                     padding: "60px 20px",
@@ -395,7 +498,6 @@ function MainAppContent() {
                 </div>
               ) : (
                 <>
-                  {activeView === "workload" && <Workload />}
                   {activeView === "overload" && <Overload />}
                   {activeView === "allowances" && <Allowances />}
                 </>
@@ -531,6 +633,7 @@ export default function App() {
   return (
     <AuthProvider>
       <AppProvider>
+        <StagingHeader />
         <MainAppContent />
         <ServerHealthModal />
       </AppProvider>

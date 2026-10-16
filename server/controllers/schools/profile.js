@@ -55,6 +55,7 @@ router.put("/curricular-config", async (req, res) => {
       has_jhs_iped,
       has_jhs_mad,
       has_shs_sned,
+      has_shs_als,
       has_shs_iped,
       has_shs_mad,
       // Array tags support for backward compatibility with frontend selectors
@@ -145,6 +146,9 @@ router.put("/curricular-config", async (req, res) => {
     const final_has_shs_sned = Boolean(
       has_shs_sned ?? shsIncList.includes("SNED-SHS"),
     );
+    const final_has_shs_als = Boolean(
+      has_shs_als ?? shsIncList.includes("ALS-SHS"),
+    );
     const final_has_shs_iped = Boolean(
       has_shs_iped ?? shsIncList.includes("IPED-SHS"),
     );
@@ -155,7 +159,8 @@ router.put("/curricular-config", async (req, res) => {
     // Roll-up summary booleans
     const final_has_sned =
       final_has_es_sned || final_has_jhs_sned || final_has_shs_sned;
-    const final_has_als = final_has_es_als || final_has_jhs_als;
+    const final_has_als =
+      final_has_es_als || final_has_jhs_als || final_has_shs_als;
     const final_has_iped =
       final_has_es_iped || final_has_jhs_iped || final_has_shs_iped;
     const final_has_madrasah =
@@ -174,6 +179,7 @@ router.put("/curricular-config", async (req, res) => {
     if (final_has_jhs_mad) inclusiveProgs.push("MADRASAH-JHS");
 
     if (final_has_shs_sned) inclusiveProgs.push("SNED-SHS");
+    if (final_has_shs_als) inclusiveProgs.push("ALS-SHS");
     if (final_has_shs_iped) inclusiveProgs.push("IPED-SHS");
     if (final_has_shs_mad) inclusiveProgs.push("MADRASAH-SHS");
 
@@ -185,7 +191,7 @@ router.put("/curricular-config", async (req, res) => {
         shs_curriculum_model,
         has_es_sned, has_es_als, has_es_iped, has_es_mad,
         has_jhs_sned, has_jhs_als, has_jhs_iped, has_jhs_mad,
-        has_shs_sned, has_shs_iped, has_shs_mad,
+        has_shs_sned, has_shs_als, has_shs_iped, has_shs_mad,
         has_sned, has_als, has_iped, has_madrasah,
         inclusive_programs,
         has_shifts, shifts_config,
@@ -198,10 +204,10 @@ router.put("/curricular-config", async (req, res) => {
         $9,
         $10, $11, $12, $13,
         $14, $15, $16, $17,
-        $18, $19, $20,
-        $21, $22, $23, $24,
-        $25::jsonb,
-        $26, $27::jsonb,
+        $18, $19, $20, $21,
+        $22, $23, $24, $25,
+        $26::jsonb,
+        $27, $28::jsonb,
         NOW()
       )
       ON CONFLICT (school_id, school_year) DO UPDATE
@@ -221,6 +227,7 @@ router.put("/curricular-config", async (req, res) => {
         has_jhs_iped = EXCLUDED.has_jhs_iped,
         has_jhs_mad = EXCLUDED.has_jhs_mad,
         has_shs_sned = EXCLUDED.has_shs_sned,
+        has_shs_als = EXCLUDED.has_shs_als,
         has_shs_iped = EXCLUDED.has_shs_iped,
         has_shs_mad = EXCLUDED.has_shs_mad,
         has_sned = EXCLUDED.has_sned,
@@ -253,6 +260,7 @@ router.put("/curricular-config", async (req, res) => {
       final_has_jhs_iped,
       final_has_jhs_mad,
       final_has_shs_sned,
+      final_has_shs_als,
       final_has_shs_iped,
       final_has_shs_mad,
       final_has_sned,
@@ -287,6 +295,7 @@ router.put("/curricular-config", async (req, res) => {
         has_jhs_iped: row.has_jhs_iped,
         has_jhs_mad: row.has_jhs_mad,
         has_shs_sned: row.has_shs_sned,
+        has_shs_als: row.has_shs_als,
         has_shs_iped: row.has_shs_iped,
         has_shs_mad: row.has_shs_mad,
         hasSned: row.has_sned,

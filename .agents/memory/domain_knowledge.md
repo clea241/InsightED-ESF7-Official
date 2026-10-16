@@ -16,6 +16,76 @@
 ## System Architecture
 - Client: React with Vite/Webpack, Topbar, Blueprint backgrounds, Custom CSS modules.
 - Server: Node.js Express server running background jobs, worker threads for report processing, PostgreSQL / SQLite database controllers.
+### Added 2026-10-16 (Staging Environment Header: Testing Purposes Only)
+- **Staging Detection Architecture (`client/src/utils/environment.js`)**:
+  - Dynamically evaluates build-time flags (`VITE_APP_ENV === 'staging'`, `VITE_IS_STAGING === 'true'`, `VITE_BASE_PATH.includes('staging')`) and runtime parameters (pathname includes `/insighted-esf7-staging`, host includes `staging`, port `5035`, or URL query `?staging=1`).
+  - Returns `false` in production deployments (`/insighted-esf7-prod/` or `/insighted/Insighted-esf7/`), completely suppressing testing banners in live production.
+- **Global Staging Alert Header (`client/src/components/StagingHeader.jsx`)**:
+  - Prominent sticky top bar with high-contrast amber alert styling (`linear-gradient(90deg, #78350F, #B45309, #78350F)`), warning icon, and clear message: `"THIS SITE IS FOR TESTING PURPOSES ONLY"`.
+  - Explains data isolation: `"Data is isolated in the staging database and will not affect official DepEd eSF7 records."`
+  - Shows database isolation indicator: `DB: insighted_esf7_staging`.
+  - Collapsible into a compact floating pill on small screens if desired.
+  - Rendered at the top of `App.jsx` so it covers Login, Landing, and all module views.
+- **PortalHeader Staging Badge (`client/src/components/PortalHeader.jsx`)**:
+  - In addition to the top banner, `PortalHeader` renders an amber `TESTING SITE` pill badge within the header eyebrow line.
+- **Deployment Script Integration (`deploy_esf7_staging.py`)**:
+  - Staging deployment script sets `VITE_APP_ENV = "staging"` and `VITE_IS_STAGING = "true"` during client build.
+
+### Added 2026-10-16 (School Head Designation Persistence Architecture: is_school_head & is_main_sh)
+- **Database Canonical Storage**:
+  - `esf7_personnel_profile`: Holds `is_school_head` (BOOLEAN), `is_main_sh` (BOOLEAN), and `school_head_level` (TEXT).
+  - `esf7_personnel_node_status`: Holds `is_school_head` (BOOLEAN) synchronized with the profile table.
+  - `uq_personnel_one_school_head`: Unique partial index on `esf7_personnel_profile ((REPLACE(school_id, 'SCH-', ''))) WHERE is_school_head = TRUE` enforces single-head rule unless configured for multi-level head governance.
+- **Atomic Head Designation (`POST /api/personnel/school-heads/config`)**:
+  - Resets `is_school_head = FALSE, is_main_sh = FALSE, school_head_level = NULL` for all personnel in the school across both `esf7_personnel_profile` and `esf7_personnel_node_status` in an ACID transaction.
+  - Sets `is_school_head = TRUE, is_main_sh = isMain` ONLY for the assigned head(s).
+- **Draft & Cache Overwrite Protection**:
+  - `AppContext.jsx` (`designateSchoolHeadsConfig` & `toggleSchoolHead`): Immediately updates `latestDraftRef.current` and IndexedDB draft cache upon designation to prevent background draft auto-saves from reverting DB flags.
+  - `AppContext.jsx` (`mergePersonnelByStableKey`): Authoritative database flags from PostgreSQL always take precedence over stale cached local personnel items.
+  - `drafts.js` and `roster.js`: Do not auto-default `is_main_sh = true` unless explicitly assigned as main school head.
+
+### Added 2026-10-16 (Personnel Deployment Status Persistence & Draft Overwrite Protection)
+- **Deployment Status Choices**:
+  - DepEd canonical options: `OWN STATION`, `CLUSTERED`, `REASSIGNED`, `BORROWED`.
+  - All occurrences of legacy strings (`"Stationed"`, `"Stationed (Own Station)"`) are normalized to `"OWN STATION"`.
+- **Database Persistence (`esf7_personnel_employment.deployment_status`)**:
+  - `PUT /api/personnel/:id`: Normalized `empDeploy` is stored directly into `esf7_personnel_employment` on `ON CONFLICT (personnel_id) DO UPDATE SET deployment_status = EXCLUDED.deployment_status`.
+  - Profile resolution query includes `ORDER BY updated_at DESC NULLS LAST, created_at DESC LIMIT 1` so the newest active profile is updated.
+- **Draft Overwrite Protection**:
+  - `persistNormalizedDraft` in `server/controllers/schools/drafts.js` uses a conditional `CASE` statement on conflict so background draft auto-saves do not overwrite non-default deployment statuses (`CLUSTERED`, `REASSIGNED`, `BORROWED`) with stale default `'OWN STATION'`.
+  - `AppContext.jsx` (`savePersonnelChanges`): Normalizes `deploymentStatus` and immediately synchronizes `latestDraftRef.current.data.personnel` and the IndexedDB local draft so background debounced auto-saves and flushes always carry the latest deployment status.
+- **Roster & Personnel Loading Order**:
+  - `roster.js` sorts `esf7_personnel_profile` with `ORDER BY p.updated_at DESC NULLS LAST, p.created_at DESC, p.id ASC` ensuring updated records take precedence during deduplication.
+  - `mergedRecord` in `roster.js` and `fetchAndNormalizePersonnel` in `AppContext.jsx` explicitly normalize `deploymentStatus` and `deployment_status`.
+### Added 2026-10-16 (Scoped Personnel Add/Delete & Batched Bulk Upsert Architecture)
+- **Scoped Single Operations for Add and Delete**:
+  - `addPersonnel` persists directly to `POST /api/personnel`, returns canonical record, and calls `syncCleanRosterSnapshot` without flagging the roster dirty or triggering a full-roster resave.
+  - `deletePersonnel` resolves all ID aliases (`targetId`, `prn`, `employeeNo`, legacy IDs, bare digits, and `PRN-` variants) in a single server-side `DELETE /api/personnel/:id` transaction. Redundant second client-side call removed.
+  - On delete, `handleGulpComplete` calls `syncCleanRosterSnapshot(nextPersonnel)` immediately so `isDirty` remains `false`.
+  - If deleted person was the School Head or Main Signatory, clears `mainHeadId = null`, removes their level assignment, and unlinks `esf7_school_profile.school_head_id = NULL`. Non-school-head deletions leave School Head data completely untouched.
+- **Batched Bulk Upsert (`POST /api/personnel/bulk`)**:
+  - Replaced loop of ~237 queries (3 queries x 79 iterations) with a single existing-personnel lookup query and batched multi-row parameterized `INSERT ... ON CONFLICT DO UPDATE` queries in chunks of 40 rows.
+  - Reduced bulk execution time from ~9s to ~30ms, completely eliminating DB pool connection starvation.
+  - Bulk upsert preserves existing `is_school_head` and `is_main_sh` unless explicitly designated (`req.body.isExplicitHeadDesignation === true`).
+  - Client-side `runRosterSave` diffs against `savedRosterSnapshotRef.current`, only sends changed rows, and strips school head fields from outgoing rows.
+- **Server-Side Automatic `node_02_roster` Computation**:
+  - `DELETE /:id`, `POST /api/personnel` (add), and `POST /api/personnel/bulk` all recompute `total_personnel`, `teaching`, `related_teaching`, and `non_teaching` counts in SQL and update `esf7_school_node_status.node_02_roster` directly inside their respective transactions.
+- **Master Deduplication & Tombstone Hardening**:
+  - `fetchMasterPersonnelFromInsightEd` in `common.js` deduplicates master rows by bare numeric PRN and normalized clean name.
+  - `isRecordTombstoned` in `roster.js` checks full name matching against `deletedNameSet` and matches all PRN and employee number prefix/padding variants, ensuring deleted records from `esf7_database` are never resurrected into the roster.
+
+### Added 2026-10-16 (Personnel Profiling N/A Field Persistence Architecture: Dates, Email, TIN, PhilSys)
+- **Employment Dates N/A Persistence**:
+  - Columns: `last_promotion_date`, `new_station_date`, `last_lateral_movement_date` in `esf7_personnel_employment` are PostgreSQL `DATE` types.
+  - When a user checks `[x] N/A`, the frontend sets the value to `"N/A"`.
+  - On the backend, `coerceDateField` / `safeCoerceDate` converts `"N/A"` to `NULL` for PostgreSQL storage.
+  - `formatPersonnelRecord` (`common.js`) returns `"N/A"` when the DB column is `NULL` (it must NEVER fall back to `first_service_date`, which previously caused the checkbox to uncheck and revert to the appointment date on reload).
+  - Bulk upsert (`roster.js`) directly writes `EXCLUDED.last_promotion_date`, `EXCLUDED.new_station_date`, `EXCLUDED.last_lateral_movement_date` so setting dates to `NULL` (N/A) is never blocked by `COALESCE`.
+- **DepEd Email N/A Persistence**:
+  - `no_deped_email` in `esf7_personnel_profile` stores whether official email has not yet been issued.
+  - Staff (including regular permanent awaiting ITO issuance) can toggle `[x] No DepEd Email Issued (N/A)`.
+  - `AppContext.jsx` and `roster.js` synchronize `noDepedEmail = true` and `depedEmail = 'N/A'`.
+  - `formatPersonnelRecord` returns `depedEmail: "N/A"` and `noDepedEmail: true` when `no_deped_email` is `true`.
 
 ### Added 2026-10-13 (Personnel Profiling Direct 1-by-1 Database Persistence Architecture)
 - **1-by-1 Atomic Save**:

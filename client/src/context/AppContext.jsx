@@ -3546,7 +3546,7 @@ export const AppProvider = ({ children }) => {
   const isNodeUnlocked = (nodeId) => {
     if (bypassNodeLocks) return true;
     // Nodes locked by default for DepEd review & alignment
-    if (["overload", "workload", "allowances"].includes(nodeId)) return false;
+    if (["overload", "allowances"].includes(nodeId)) return false;
     if (!nodeId) return true;
     return true;
   };
@@ -4285,6 +4285,22 @@ export const AppProvider = ({ children }) => {
         prcSpecialization: cleanPrc,
         prc_specialization: cleanPrc,
         assignedGradeLevels: p.assignedGradeLevels || p.gradeLevelsTaught || [],
+        deploymentStatus: (() => {
+          const raw =
+            p.deploymentStatus || p.deployment_status || "OWN STATION";
+          const s = String(raw).trim().toUpperCase();
+          return s === "STATIONED" || s === "STATIONED (OWN STATION)"
+            ? "OWN STATION"
+            : s;
+        })(),
+        deployment_status: (() => {
+          const raw =
+            p.deployment_status || p.deploymentStatus || "OWN STATION";
+          const s = String(raw).trim().toUpperCase();
+          return s === "STATIONED" || s === "STATIONED (OWN STATION)"
+            ? "OWN STATION"
+            : s;
+        })(),
         workloadRows: (p.workloadRows || []).map((r) => ({
           ...r,
           category: r.category || gradeToCategory[r.gradeLevel] || "Elementary",
@@ -4823,8 +4839,9 @@ export const AppProvider = ({ children }) => {
               .filter(isNonGenericKey),
           );
 
-          // If a personnel is actively loaded from the official database (dbList),
-          // ensure stale tombstone keys (especially name or recycled ID) do not suppress them.
+          // All records returned by the backend API are authoritative active records.
+          // Prune all their identifiers and names from the client's deletedSet so stale local draft
+          // tombstones can never suppress active personnel on reload or login.
           if (Array.isArray(dbList) && dbList.length > 0) {
             dbList.forEach((p) => {
               const pId = String(p.id || "")
@@ -4833,15 +4850,29 @@ export const AppProvider = ({ children }) => {
               const pPrn = String(p.prn || "")
                 .trim()
                 .toLowerCase();
+              const pEmp = String(p.employeeNo || p.employee_no || "")
+                .trim()
+                .toLowerCase();
+              const pLegacy = String(p.legacyId || p.legacy_id || "")
+                .trim()
+                .toLowerCase();
               const pName =
                 `${String(p.firstName || p.first_name || "").trim()} ${String(p.lastName || p.last_name || "").trim()}`.toLowerCase();
+
+              if (pId) {
+                deletedSet.delete(pId);
+                const stripId = pId.replace(/^per-/, "").replace(/^prn-/, "");
+                if (stripId) deletedSet.delete(stripId);
+              }
+              if (pPrn) {
+                deletedSet.delete(pPrn);
+                const stripPrn = pPrn.replace(/^prn-/, "");
+                if (stripPrn) deletedSet.delete(stripPrn);
+              }
+              if (pEmp) deletedSet.delete(pEmp);
+              if (pLegacy) deletedSet.delete(pLegacy);
               if (pName && pName !== "teacher staff") {
                 deletedSet.delete(pName);
-              }
-              // If actively saved in esf7_personnel_profile, prune from deletedSet
-              if (p.is_db_saved || p.plantilla_position || p.position) {
-                if (pId) deletedSet.delete(pId);
-                if (pPrn) deletedSet.delete(pPrn);
               }
             });
           }
@@ -4853,7 +4884,7 @@ export const AppProvider = ({ children }) => {
             [];
           setDeletedSectionIds(rawDeletedSecs);
 
-          // Check if person matches any tombstone key
+          // Check if an unsaved draft person matches any tombstone key
           const checkIfTombstoned = (p) => {
             if (!p) return false;
             const idKey = String(p.id || "")
@@ -4870,7 +4901,7 @@ export const AppProvider = ({ children }) => {
             const stripId = idKey.replace(/^per-/, "").replace(/^prn-/, "");
             const stripPrn = prnKey.replace(/^prn-/, "");
 
-            // Explicit unique ID or PRN match takes precedence
+            // Explicit unique ID or PRN match
             if (isNonGenericKey(idKey) && deletedSet.has(idKey)) return true;
             if (isNonGenericKey(prnKey) && deletedSet.has(prnKey)) return true;
             if (isNonGenericKey(empKey) && deletedSet.has(empKey)) return true;
@@ -4884,9 +4915,9 @@ export const AppProvider = ({ children }) => {
               return true;
 
             // Only match nameKey if record has NO unique ID or PRN in deletedSet
-            // (prevents duplicate deletions or re-added teachers from wiping out canonical teachers)
             if (
               !idKey &&
+              !prnKey &&
               isNonGenericKey(nameKey) &&
               nameKey !== "teacher staff" &&
               deletedSet.has(nameKey)
@@ -4897,19 +4928,59 @@ export const AppProvider = ({ children }) => {
             return false;
           };
 
-          // Filter out deleted teachers from DB list
-          const filteredDbList = dbList.filter((p) => !checkIfTombstoned(p));
+          // The DB list is authoritative from the backend; never drop active DB records on the client
+          const filteredDbList = Array.isArray(dbList) ? dbList : [];
 
-          let draftPersonnel = (activeDraft.personnel || []).filter(
+          // For draft personnel, filter out tombstoned items
+          const draftPersonnelList = Array.isArray(activeDraft.personnel)
+            ? activeDraft.personnel
+            : [];
+          const filteredDraftPersonnel = draftPersonnelList.filter(
             (p) => !checkIfTombstoned(p),
           );
 
-          // Database is the authoritative source of truth: load personnel directly from database tables
+          // Base active personnel on the authoritative DB list
+          let draftPersonnel =
+            filteredDbList.length > 0 ? filteredDbList : filteredDraftPersonnel;
+
+          // If there are unsaved local-first draft additions that don't exist in dbList yet, preserve them!
+          if (filteredDbList.length > 0 && filteredDraftPersonnel.length > 0) {
+            const dbIds = new Set(
+              filteredDbList.map((p) =>
+                String(p.id || "")
+                  .trim()
+                  .toLowerCase(),
+              ),
+            );
+            const dbPrns = new Set(
+              filteredDbList
+                .map((p) =>
+                  String(p.prn || "")
+                    .trim()
+                    .toLowerCase(),
+                )
+                .filter(Boolean),
+            );
+            const unsavedDraftAdditions = filteredDraftPersonnel.filter(
+              (dp) => {
+                const dpId = String(dp.id || "")
+                  .trim()
+                  .toLowerCase();
+                const dpPrn = String(dp.prn || "")
+                  .trim()
+                  .toLowerCase();
+                return !dbIds.has(dpId) && (!dpPrn || !dbPrns.has(dpPrn));
+              },
+            );
+            if (unsavedDraftAdditions.length > 0) {
+              draftPersonnel = [...filteredDbList, ...unsavedDraftAdditions];
+            }
+          }
+
           if (filteredDbList.length > 0) {
             console.log(
-              `[Personnel Load] Loaded ${filteredDbList.length} personnel directly from database table...`,
+              `[Personnel Load] Loaded ${draftPersonnel.length} personnel directly from database table...`,
             );
-            draftPersonnel = filteredDbList;
             activeDraft.personnel = draftPersonnel;
           }
 
@@ -4930,7 +5001,8 @@ export const AppProvider = ({ children }) => {
                   .trim()
                   .toLowerCase();
                 return (
-                  (dpId && pId === dpId) || (dpPrn && pPrn && pPrn === dpPrn)
+                  (dpId && isNonGenericKey(dpId) && pId === dpId) ||
+                  (dpPrn && isNonGenericKey(dpPrn) && pPrn === dpPrn)
                 );
               });
               if (!dbMatch) return dp;
@@ -5030,21 +5102,24 @@ export const AppProvider = ({ children }) => {
                 const key = String(k || "")
                   .trim()
                   .toLowerCase();
-                if (key) dbWorkloadByKey.set(key, p.workloadRows);
+                if (key && isNonGenericKey(key))
+                  dbWorkloadByKey.set(key, p.workloadRows);
               });
             });
             draftPersonnel = draftPersonnel.map((dp) => {
+              const dpIdKey = String(dp.id || "")
+                .trim()
+                .toLowerCase();
+              const dpPrnKey = String(dp.prn || "")
+                .trim()
+                .toLowerCase();
               const dbRows =
-                dbWorkloadByKey.get(
-                  String(dp.id || "")
-                    .trim()
-                    .toLowerCase(),
-                ) ||
-                dbWorkloadByKey.get(
-                  String(dp.prn || "")
-                    .trim()
-                    .toLowerCase(),
-                );
+                (dpIdKey && isNonGenericKey(dpIdKey)
+                  ? dbWorkloadByKey.get(dpIdKey)
+                  : null) ||
+                (dpPrnKey && isNonGenericKey(dpPrnKey)
+                  ? dbWorkloadByKey.get(dpPrnKey)
+                  : null);
               if (!dbRows) return dp;
               let unsaved = false;
               try {
@@ -5118,74 +5193,29 @@ export const AppProvider = ({ children }) => {
             ).merged;
             setSectionsBaseline(baseline);
             setSectionsLoadError(null);
-            const m = mergeSectionsByKey(
-              baseline,
-              inSchoolYear(activeDraft.classSections || [], secYear),
-              {
-                deletedIds: activeDraft.deletedSectionIds || [],
-                draftUpdatedAt: activeDraft.lastUpdated || cloudUpdatedAt,
-              },
-            );
             loadedDraftSecs = baseline;
-            if (m.hasDifferences && !m.draftIsOlder) {
-              const bits = [];
-              if (m.added.length) bits.push(m.added.length + " new");
-              if (m.edited.length) bits.push(m.edited.length + " edited");
-              if (m.removed.length) bits.push(m.removed.length + " removed");
-              const apply = await showConfirm(
-                "Restore unsaved section changes?",
-                "Your saved draft has section changes that are not in the database yet (" +
-                  bits.join(", ") +
-                  "). Confirm = bring them back (you still need to press Save). Cancel = discard them and show what is saved in the database.",
+            if (baseline.length > 0) {
+              // Database already has saved sections in esf7_regular_sections (+ sibling tables):
+              // treat the database as the sole source of truth and align the draft cache.
+              setSectionsOverlayApplied(false);
+              if (activeDraft) {
+                activeDraft.classSections = baseline;
+                activeDraft.sections = baseline;
+                activeDraft.deletedSectionIds = [];
+                activeDraft.deleted_section_ids = [];
+              }
+            } else {
+              const m = mergeSectionsByKey(
+                baseline,
+                inSchoolYear(activeDraft.classSections || [], secYear),
+                {
+                  deletedIds: activeDraft.deletedSectionIds || [],
+                  draftUpdatedAt: activeDraft.lastUpdated || cloudUpdatedAt,
+                },
               );
-              if (apply) {
+              if (m.hasDifferences && !m.draftIsOlder) {
                 loadedDraftSecs = m.merged;
                 setSectionsOverlayApplied(true);
-                userEditedRef.current = true; // restored work is the user's: let auto-save keep the draft
-              } else {
-                // User chose Cancel: discard stale section changes and show official database version
-                loadedDraftSecs = baseline;
-                setSectionsOverlayApplied(false);
-                userEditedRef.current = false;
-                if (activeDraft) {
-                  activeDraft.classSections = baseline;
-                  activeDraft.sections = baseline;
-                  activeDraft.deletedSectionIds = [];
-                  activeDraft.deleted_section_ids = [];
-                }
-                try {
-                  // Purge persisted draft keys from localStorage and sessionStorage without mutating database records
-                  localStorage.removeItem("draft_sections");
-                  sessionStorage.removeItem("draft_sections");
-                  localStorage.removeItem(canonicalDraftKey);
-                  legacyDraftKeys.forEach((lk) => {
-                    if (lk) {
-                      localStorage.removeItem(lk);
-                      deleteLocalDraft(lk).catch(() => {});
-                    }
-                  });
-                  if (currentSchoolInfo?.schoolId) {
-                    const sid = currentSchoolInfo.schoolId;
-                    const cleanSid = cleanSchoolId(sid);
-                    const sy = currentSchoolInfo.schoolYear;
-                    localStorage.removeItem(`draft_sections_${sid}`);
-                    localStorage.removeItem(`draft_sections_${cleanSid}`);
-                    localStorage.removeItem(`draft_sections_${sid}_${sy}`);
-                    localStorage.removeItem(`draft_sections_${cleanSid}_${sy}`);
-                    localStorage.removeItem(`draft_${sid}`);
-                    localStorage.removeItem(`draft_${cleanSid}`);
-                    localStorage.removeItem(`draft_${sid}_${sy}`);
-                    localStorage.removeItem(`draft_${cleanSid}_${sy}`);
-                  }
-                  if (canonicalDraftKey && activeDraft) {
-                    await setLocalDraft(canonicalDraftKey, activeDraft);
-                  }
-                } catch (err) {
-                  console.warn(
-                    "[Draft Sync] Failed to purge discarded draft keys:",
-                    err,
-                  );
-                }
               }
             }
           } else {
@@ -5906,7 +5936,26 @@ export const AppProvider = ({ children }) => {
         matchedKey = prnMap.get(prnKey);
       }
       if (map.has(matchedKey)) {
-        map.set(matchedKey, { ...map.get(matchedKey), ...p });
+        const srv = map.get(matchedKey);
+        map.set(matchedKey, {
+          ...srv,
+          ...p,
+          isSchoolHead: Boolean(srv.isSchoolHead || srv.is_school_head),
+          is_school_head: Boolean(srv.isSchoolHead || srv.is_school_head),
+          isMainSchoolHead: Boolean(srv.isMainSchoolHead || srv.is_main_sh),
+          is_main_school_head: Boolean(srv.isMainSchoolHead || srv.is_main_sh),
+          is_main_sh: Boolean(srv.isMainSchoolHead || srv.is_main_sh),
+          schoolHeadLevel:
+            srv.schoolHeadLevel ||
+            srv.school_head_level ||
+            p.schoolHeadLevel ||
+            null,
+          school_head_level:
+            srv.school_head_level ||
+            srv.schoolHeadLevel ||
+            p.school_head_level ||
+            null,
+        });
       } else {
         map.set(key, { ...p });
       }
@@ -6393,10 +6442,19 @@ export const AppProvider = ({ children }) => {
           if (merged.fundSource) merged.fund_source = merged.fundSource;
           if (merged.fund_source && !merged.fundSource)
             merged.fundSource = merged.fund_source;
-          if (merged.deploymentStatus)
-            merged.deployment_status = merged.deploymentStatus;
-          if (merged.deployment_status && !merged.deploymentStatus)
-            merged.deploymentStatus = merged.deployment_status;
+          const rawDeploy =
+            updatedPerson.deploymentStatus !== undefined
+              ? updatedPerson.deploymentStatus
+              : updatedPerson.deployment_status !== undefined
+                ? updatedPerson.deployment_status
+                : merged.deploymentStatus || merged.deployment_status;
+          if (rawDeploy !== undefined) {
+            let dep = String(rawDeploy).trim().toUpperCase();
+            if (dep === "STATIONED" || dep === "STATIONED (OWN STATION)")
+              dep = "OWN STATION";
+            merged.deploymentStatus = dep;
+            merged.deployment_status = dep;
+          }
           if (merged.soloParent !== undefined)
             merged.solo_parent = merged.soloParent;
           if (
@@ -6472,64 +6530,39 @@ export const AppProvider = ({ children }) => {
             merged.stepIncrementConfirmed = merged.step_increment_confirmed;
 
           // Email & IDs
-          const isPermAppt =
-            String(
-              merged.natureOfAppointment || merged.nature_of_appointment || "",
-            ).toUpperCase() === "REGULAR PERMANENT";
-
-          if (isPermAppt) {
-            merged.noDepedEmail = false;
-            merged.no_deped_email = false;
-            if (
-              merged.depedEmail === "N/A" ||
-              merged.deped_email === "N/A" ||
-              merged.email === "N/A"
-            ) {
-              merged.depedEmail = "";
-              merged.deped_email = "";
-              merged.email = "";
-            } else if (merged.depedEmail) {
-              merged.deped_email = merged.depedEmail;
-              merged.email = merged.depedEmail;
-            } else if (merged.deped_email) {
-              merged.depedEmail = merged.deped_email;
-              merged.email = merged.deped_email;
-            }
-          } else {
-            if (
-              updatedPerson.noDepedEmail !== undefined ||
-              updatedPerson.no_deped_email !== undefined
-            ) {
-              const isNoEmail = !!(
-                updatedPerson.noDepedEmail || updatedPerson.no_deped_email
-              );
-              merged.noDepedEmail = isNoEmail;
-              merged.no_deped_email = isNoEmail;
-              if (isNoEmail) {
-                merged.depedEmail = "N/A";
-                merged.deped_email = "N/A";
-                merged.email = "N/A";
-              }
-            } else if (
-              merged.depedEmail === "N/A" ||
-              merged.deped_email === "N/A"
-            ) {
-              merged.noDepedEmail = true;
-              merged.no_deped_email = true;
+          if (
+            updatedPerson.noDepedEmail !== undefined ||
+            updatedPerson.no_deped_email !== undefined
+          ) {
+            const isNoEmail = !!(
+              updatedPerson.noDepedEmail || updatedPerson.no_deped_email
+            );
+            merged.noDepedEmail = isNoEmail;
+            merged.no_deped_email = isNoEmail;
+            if (isNoEmail) {
               merged.depedEmail = "N/A";
               merged.deped_email = "N/A";
               merged.email = "N/A";
-            } else if (merged.depedEmail) {
-              merged.deped_email = merged.depedEmail;
-              merged.email = merged.depedEmail;
-              merged.noDepedEmail = false;
-              merged.no_deped_email = false;
-            } else if (merged.deped_email) {
-              merged.depedEmail = merged.deped_email;
-              merged.email = merged.deped_email;
-              merged.noDepedEmail = false;
-              merged.no_deped_email = false;
             }
+          } else if (
+            merged.depedEmail === "N/A" ||
+            merged.deped_email === "N/A"
+          ) {
+            merged.noDepedEmail = true;
+            merged.no_deped_email = true;
+            merged.depedEmail = "N/A";
+            merged.deped_email = "N/A";
+            merged.email = "N/A";
+          } else if (merged.depedEmail) {
+            merged.deped_email = merged.depedEmail;
+            merged.email = merged.depedEmail;
+            merged.noDepedEmail = false;
+            merged.no_deped_email = false;
+          } else if (merged.deped_email) {
+            merged.depedEmail = merged.deped_email;
+            merged.email = merged.deped_email;
+            merged.noDepedEmail = false;
+            merged.no_deped_email = false;
           }
 
           // PhilSys & TIN N/A Handling
@@ -6858,6 +6891,40 @@ export const AppProvider = ({ children }) => {
       });
     });
 
+    // Keep draft ref and local draft synchronized so background autosaves don't send stale personnel
+    if (latestDraftRef.current && latestDraftRef.current.data) {
+      const curData = latestDraftRef.current.data;
+      if (Array.isArray(curData.personnel)) {
+        const isExplicitHead = Boolean(options.isExplicitHeadDesignation);
+        curData.personnel = curData.personnel.map((p) => {
+          const pId = String(p.id || "")
+            .trim()
+            .toLowerCase();
+          const pPrn = String(p.prn || "").trim();
+          const isMatch =
+            (targetId && pId === targetId) ||
+            (targetPrn && pPrn && pPrn === targetPrn);
+          if (isMatch) {
+            return { ...p, ...(mergedSnapshot || updatedPerson) };
+          }
+          if (isExplicitHead) {
+            return {
+              ...p,
+              isSchoolHead: false,
+              is_school_head: false,
+              isMainSchoolHead: false,
+              is_main_school_head: false,
+              is_main_sh: false,
+            };
+          }
+          return p;
+        });
+        if (latestDraftRef.current.key) {
+          setLocalDraft(latestDraftRef.current.key, curData).catch(() => {});
+        }
+      }
+    }
+
     // Write through to PostgreSQL relational database (esf7_personnel_profile, educ, employment)
     if (
       !options.skipApiUpdate &&
@@ -6869,9 +6936,19 @@ export const AppProvider = ({ children }) => {
       // The database write is NOT optional: a rejected request throws (with the server's own message) so the caller can
       // keep its dialog open and its draft. Transient failures (502/timeout) are retried; 4xx validation answers are final.
       // Placeholder dates ("N/A", "-") are sent as null. The local state above is already updated either way.
-      const payloadToPersist = cleanPersonnelDates(
-        mergedSnapshot || updatedPerson,
-      );
+      const rawPayload = cleanPersonnelDates(mergedSnapshot || updatedPerson);
+      // Decouple: Strip school head fields from regular personnel profile updates
+      // to avoid re-saving or overwriting school head designations unless explicitly intended.
+      const payloadToPersist = { ...rawPayload };
+      if (!options.isExplicitHeadDesignation) {
+        delete payloadToPersist.isSchoolHead;
+        delete payloadToPersist.is_school_head;
+        delete payloadToPersist.isMainSchoolHead;
+        delete payloadToPersist.is_main_school_head;
+        delete payloadToPersist.is_main_sh;
+        delete payloadToPersist.schoolHeadLevel;
+        delete payloadToPersist.school_head_level;
+      }
       try {
         await retryTransient(() =>
           api.updatePersonnel(rawTargetId, {
@@ -6934,18 +7011,25 @@ export const AppProvider = ({ children }) => {
   };
 
   const addPersonnel = async (newPerson) => {
+    const cleanFirstName = String(newPerson.firstName || "")
+      .toUpperCase()
+      .trim();
+    const cleanLastName = String(newPerson.lastName || "")
+      .toUpperCase()
+      .trim();
+    const cleanMiddleName = newPerson.middleName
+      ? String(newPerson.middleName).toUpperCase().trim()
+      : "";
+    const cleanExt = newPerson.nameExtension
+      ? String(newPerson.nameExtension).toUpperCase().trim()
+      : "";
+
     const existing = (personnel || []).find(
       (p) =>
         p.firstName &&
         p.lastName &&
-        p.firstName.toUpperCase().trim() ===
-          String(newPerson.firstName || "")
-            .toUpperCase()
-            .trim() &&
-        p.lastName.toUpperCase().trim() ===
-          String(newPerson.lastName || "")
-            .toUpperCase()
-            .trim(),
+        p.firstName.toUpperCase().trim() === cleanFirstName &&
+        p.lastName.toUpperCase().trim() === cleanLastName,
     );
     if (existing) {
       setActivePersonnelId(existing.id);
@@ -6953,114 +7037,122 @@ export const AppProvider = ({ children }) => {
       return existing.id;
     }
 
-    // Generate sequential numeric ID matching all existing personnel in the school
-    const maxExistingId = (personnel || []).reduce((max, p) => {
-      const num = parseInt(p.id, 10);
-      return !isNaN(num) && num > max ? num : max;
-    }, 0);
-    const newId = String(maxExistingId > 0 ? maxExistingId + 1 : 843141);
+    const targetSchoolId =
+      schoolInfo?.schoolId || getSessionSchoolId() || "108348";
+    const targetSchoolYear = schoolInfo?.schoolYear || "SY 26-27";
+    const isCook =
+      String(newPerson.position || "")
+        .trim()
+        .toUpperCase() === "COOK";
 
-    const nextSeq = (personnel || []).length + 1;
-    const newPrn = `PRN-${nextSeq}`;
-
-    const newRecord = {
-      id: newId,
-      status: "canonical",
-      legacyId: newId,
-      prn: newPerson.prn || newPrn,
-      school_id: schoolInfo.schoolId,
-      school_year: schoolInfo.schoolYear,
-      type: newPerson.type,
-      salutation: newPerson.salutation,
-      firstName: newPerson.firstName,
-      middleName: newPerson.middleName || "",
-      lastName: newPerson.lastName,
-      nameExtension: newPerson.nameExtension || "",
-      sexAtBirth: newPerson.sexAtBirth,
-      civilStatus: newPerson.civilStatus,
-      soloParent:
-        newPerson.soloParent === true ||
-        newPerson.soloParent === "Yes" ||
-        newPerson.soloParent === "YES"
-          ? "YES"
-          : "NO",
-      religion: newPerson.religion || "",
-      ethnicGroup: newPerson.ethnicGroup || "",
-      birthdate: newPerson.birthdate || "",
-      philsysNo: newPerson.philsysNo || "",
-      noPhilsys: newPerson.noPhilsys === true || newPerson.no_philsys === true,
-      tin: newPerson.tin || "",
-      noTin: newPerson.noTin === true,
-      employeeNo: newPerson.employeeNo || "",
-      depedEmail: newPerson.depedEmail || "",
-      noDepedEmail:
-        newPerson.noDepedEmail === true ||
-        newPerson.no_deped_email === true ||
-        newPerson.depedEmail === "N/A",
-      no_deped_email:
-        newPerson.noDepedEmail === true ||
-        newPerson.no_deped_email === true ||
-        newPerson.depedEmail === "N/A",
+    const payloadToSave = {
+      school_id: targetSchoolId,
+      schoolId: targetSchoolId,
+      school_year: targetSchoolYear,
+      schoolYear: targetSchoolYear,
+      type: newPerson.type || (isCook ? "non-teaching" : "teaching"),
+      salutation: newPerson.salutation || "MR.",
+      firstName: cleanFirstName,
+      first_name: cleanFirstName,
+      middleName: cleanMiddleName || null,
+      middle_name: cleanMiddleName || null,
+      lastName: cleanLastName,
+      last_name: cleanLastName,
+      nameExtension: cleanExt || null,
+      name_extension: cleanExt || null,
+      birthdate: newPerson.birthdate || null,
+      position: newPerson.position || (isCook ? "COOK" : "TEACHER I"),
+      position_category: isCook
+        ? "NON-TEACHING"
+        : newPerson.positionCategory ||
+          (newPerson.type === "teaching" ? "TEACHING" : "NON-TEACHING"),
+      natureOfAppointment: isCook
+        ? "CONTRACTUAL"
+        : newPerson.natureOfAppointment || "REGULAR PERMANENT",
+      hiringArrangement: isCook
+        ? "CONTRACTUAL"
+        : newPerson.hiringArrangement || "REGULAR",
+      fundSource: isCook ? "SBFP" : newPerson.fundSource || "NATIONAL",
       deploymentStatus: newPerson.deploymentStatus || "OWN STATION",
       stepIncrement: newPerson.stepIncrement || 1,
-      position: newPerson.position || "",
-      designation: newPerson.designation || "",
-      fundSource:
-        newPerson.fundSource ||
-        (newPerson.position === "COOK" ? "SBFP" : "NATIONAL"),
-      natureOfAppointment:
-        newPerson.natureOfAppointment ||
-        (newPerson.position === "COOK" ? "CONTRACTUAL" : "REGULAR PERMANENT"),
-      hiringArrangement:
-        newPerson.hiringArrangement ||
-        (newPerson.position === "COOK" ? "CONTRACTUAL" : "REGULAR"),
-      assignedSchools: newPerson.assignedSchools || [],
-      assignedGradeLevels:
-        newPerson.assignedGradeLevels || newPerson.gradeLevelsTaught || [],
-      assigned_grade_levels:
-        newPerson.assignedGradeLevels || newPerson.gradeLevelsTaught || [],
-      gradeLevelsTaught:
-        newPerson.assignedGradeLevels || newPerson.gradeLevelsTaught || [],
-      grade_levels_taught:
-        newPerson.assignedGradeLevels || newPerson.gradeLevelsTaught || [],
-      firstServiceDate: newPerson.firstServiceDate || "",
-      lastPromotionDate: newPerson.lastPromotionDate || "",
-      newStationDate: newPerson.newStationDate || "",
-      lastLateralMovementDate: newPerson.lastLateralMovementDate || "",
-      collegeDegree: newPerson.collegeDegree || "",
-      major: newPerson.major || "",
-      minor: newPerson.minor || "",
-      degreeRows: newPerson.degreeRows || [],
-      postGraduateDegree: newPerson.postGraduateDegree || "N/A",
-      postGraduateDiscipline:
-        newPerson.postGraduateDiscipline || '{"masters":[],"doctorate":[]}',
-      post_graduate_discipline:
-        newPerson.post_graduate_discipline || '{"masters":[],"doctorate":[]}',
-      mastersDisciplines: newPerson.mastersDisciplines || [],
-      doctorateDisciplines: newPerson.doctorateDisciplines || [],
-      mastersDiscipline: newPerson.mastersDiscipline || "",
-      doctorateDiscipline: newPerson.doctorateDiscipline || "",
-      discipline: newPerson.discipline || "",
-      eligibility: newPerson.eligibility || "",
-      prcSpecialization: newPerson.prcSpecialization || "",
-      prcLicenseNo: newPerson.prcLicenseNo || "",
-      prcExpiryDate: newPerson.prcExpiryDate || "",
-      neapTrainingRows: [],
+      civilStatus: newPerson.civilStatus || "SINGLE",
+      sexAtBirth: newPerson.sexAtBirth || "MALE",
+      soloParent:
+        newPerson.soloParent === true || newPerson.soloParent === "YES",
+      religion: newPerson.religion || "",
+      ethnicGroup: newPerson.ethnicGroup || "",
+      depedEmail: newPerson.depedEmail || "",
+      noDepedEmail: Boolean(
+        newPerson.noDepedEmail ||
+        newPerson.no_deped_email ||
+        newPerson.depedEmail === "N/A",
+      ),
+      prn: newPerson.prn || null,
+      // Explicitly decoupled: new personnel never hold School Head status
+      is_school_head: false,
+      isSchoolHead: false,
+      is_main_sh: false,
+      isMainSchoolHead: false,
+      school_head_level: null,
+      schoolHeadLevel: null,
+    };
+
+    let savedRecord = null;
+    try {
+      savedRecord = await api.addPersonnel(payloadToSave);
+    } catch (apiErr) {
+      console.error(
+        "[addPersonnel] Backend real-time persistence failed:",
+        apiErr,
+      );
+      reportError(apiErr, {
+        action: "Adding new personnel to database",
+        handler: "addPersonnel",
+        userMessage:
+          "Failed to save newly added personnel to the server database: " +
+          (apiErr.message || "Unknown error"),
+      });
+      throw apiErr;
+    }
+
+    if (!savedRecord || !savedRecord.id) {
+      throw new Error("Server did not return a valid personnel record");
+    }
+
+    const canonicalRecord = {
+      ...savedRecord,
+      id: String(savedRecord.id),
+      prn: savedRecord.prn || `PRN-${(personnel || []).length + 1}`,
+      status: "canonical",
+      isSchoolHead: false,
+      is_school_head: false,
+      isMainSchoolHead: false,
+      is_main_school_head: false,
+      is_main_sh: false,
+      schoolHeadLevel: null,
+      school_head_level: null,
+      degreeRows: savedRecord.degreeRows || [],
+      neapTrainingRows: savedRecord.trainings || [],
       certificationRows: [],
       otherTrainingRows: [],
-      workloadRows: [],
+      workloadRows: savedRecord.workloadRows || [],
       teachingRelatedRows: [],
       administrativeRows: [],
     };
 
-    setPersonnel((prev) => [...prev, newRecord]);
-    setActivePersonnelId(newId);
+    setPersonnel((prev) => {
+      const filtered = prev.filter(
+        (p) => String(p.id) !== String(canonicalRecord.id),
+      );
+      return [...filtered, canonicalRecord];
+    });
+    setActivePersonnelId(canonicalRecord.id);
 
     // Un-tombstone newly added personnel so stale deletion keys never hide them
     const addedKeys = [
-      String(newId).toLowerCase(),
-      newRecord.prn ? String(newRecord.prn).toLowerCase() : "",
-      `${newRecord.firstName || ""} ${newRecord.lastName || ""}`
+      String(canonicalRecord.id).toLowerCase(),
+      canonicalRecord.prn ? String(canonicalRecord.prn).toLowerCase() : "",
+      `${canonicalRecord.firstName || ""} ${canonicalRecord.lastName || ""}`
         .trim()
         .toLowerCase(),
     ].filter(Boolean);
@@ -7070,8 +7162,27 @@ export const AppProvider = ({ children }) => {
       ),
     );
 
-    showToast("Personnel added to draft locally.");
-    return newId;
+    // Persist to local IndexedDB draft
+    try {
+      const draftKey = `draft_${targetSchoolId}_${targetSchoolYear}`;
+      const currentDraft = (await getLocalDraft(draftKey)) || {};
+      const updatedList = [
+        ...(currentDraft.personnel || []).filter(
+          (p) => String(p.id) !== String(canonicalRecord.id),
+        ),
+        canonicalRecord,
+      ];
+      await setLocalDraft(draftKey, {
+        ...currentDraft,
+        personnel: updatedList,
+        lastUpdated: new Date().toISOString(),
+      });
+    } catch (draftErr) {
+      console.warn("[addPersonnel] Draft cache update notice:", draftErr);
+    }
+
+    showToast("Personnel successfully added and saved to database.");
+    return canonicalRecord.id;
   };
 
   const deletePersonnel = async (id) => {
@@ -7122,15 +7233,31 @@ export const AppProvider = ({ children }) => {
     });
     setClassSections(updatedSections);
 
-    // Clean up School Head config if deleted personnel was assigned as School Head
+    // Clean up School Head config ONLY if the deleted personnel was assigned as School Head or Main Signatory
     let updatedSchoolInfo = schoolInfo;
-    if (schoolInfo?.schoolHeadConfig) {
+    const wasSchoolHead = Boolean(
+      target?.isSchoolHead ||
+      target?.is_school_head ||
+      allTargetKeys.includes(
+        String(schoolInfo?.schoolHeadConfig?.mainHeadId),
+      ) ||
+      (schoolInfo?.schoolHeadConfig?.assignments &&
+        Object.values(schoolInfo.schoolHeadConfig.assignments).some((aid) =>
+          allTargetKeys.includes(String(aid)),
+        )),
+    );
+
+    if (wasSchoolHead && schoolInfo?.schoolHeadConfig) {
       const shc = { ...schoolInfo.schoolHeadConfig };
       let shChanged = false;
+
+      // 1. If deleted personnel was the Main Signatory, clear it deliberately
       if (allTargetKeys.includes(String(shc.mainHeadId))) {
         shc.mainHeadId = null;
         shChanged = true;
       }
+
+      // 2. Clear level assignments held by this personnel
       if (shc.assignments && typeof shc.assignments === "object") {
         const nextAssign = { ...shc.assignments };
         for (const [lvl, assignedId] of Object.entries(nextAssign)) {
@@ -7140,7 +7267,13 @@ export const AppProvider = ({ children }) => {
           }
         }
         shc.assignments = nextAssign;
+
+        // If no assignments remain, reset hasMultipleHeads
+        if (Object.keys(nextAssign).length === 0) {
+          shc.hasMultipleHeads = false;
+        }
       }
+
       if (shChanged) {
         updatedSchoolInfo = { ...schoolInfo, schoolHeadConfig: shc };
         setSchoolInfo(updatedSchoolInfo);
@@ -7193,21 +7326,17 @@ export const AppProvider = ({ children }) => {
       const deleteMeta = {
         schoolId: schoolInfo?.schoolId || getSessionSchoolId() || "",
         prn: targetPrn || targetId,
-        firstName: target?.firstName || "",
-        lastName: target?.lastName || "",
+        firstName:
+          target?.firstName ||
+          target?.first_name ||
+          (target?.name ? target.name.trim().split(/\s+/)[0] : ""),
+        lastName:
+          target?.lastName ||
+          target?.last_name ||
+          (target?.name ? target.name.trim().split(/\s+/).slice(-1)[0] : ""),
         employeeNo: targetEmpNo,
       };
       await api.deletePersonnel(targetId, deleteMeta);
-      if (targetPrn && targetPrn !== targetId) {
-        await api.deletePersonnel(targetPrn, deleteMeta).catch((e) =>
-          reportError(e, {
-            action: `Deleting personnel record ${targetPrn}`,
-            handler: "deletePersonnel",
-            ids: { prn: String(targetPrn) },
-            expectedStatuses: [404],
-          }),
-        );
-      }
     } catch (err) {
       console.warn("Backend deletePersonnel notice:", err.message);
     }
@@ -7315,6 +7444,56 @@ export const AppProvider = ({ children }) => {
       setHasUnsavedChanges(false);
     }
 
+    try {
+      const canonicalDraftKey = getSchoolDraftKey(
+        schoolInfo?.schoolId,
+        schoolInfo?.schoolYear,
+      );
+      const activeDraft = (await getLocalDraft(canonicalDraftKey)) || {};
+      const updatedDraftPersonnel = (
+        activeDraft.personnel ||
+        personnel ||
+        []
+      ).map((p) => {
+        const isTarget = String(p.id) === String(id);
+        if (isTarget) {
+          return {
+            ...p,
+            isSchoolHead: Boolean(isSchoolHead),
+            is_school_head: Boolean(isSchoolHead),
+            isMainSchoolHead: Boolean(isMainSh),
+            is_main_school_head: Boolean(isMainSh),
+            is_main_sh: Boolean(isMainSh),
+          };
+        }
+        if (isSchoolHead) {
+          return {
+            ...p,
+            isSchoolHead: false,
+            is_school_head: false,
+            isMainSchoolHead: false,
+            is_main_school_head: false,
+            is_main_sh: false,
+          };
+        }
+        return p;
+      });
+      const newDraftData = {
+        ...activeDraft,
+        personnel: updatedDraftPersonnel,
+        lastUpdated: new Date().toISOString(),
+      };
+      await setLocalDraft(canonicalDraftKey, newDraftData);
+      userEditedRef.current = true;
+      latestDraftRef.current = {
+        key: canonicalDraftKey,
+        schoolYear: schoolInfo?.schoolYear || "SY 26-27",
+        data: newDraftData,
+      };
+    } catch (draftErr) {
+      console.warn("[toggleSchoolHead] Could not sync local draft:", draftErr);
+    }
+
     showToast(
       isSchoolHead
         ? "School Head designated."
@@ -7361,8 +7540,10 @@ export const AppProvider = ({ children }) => {
         const itemId = String(item.id);
         const isAssigned = assignedIds.has(itemId);
         if (isAssigned) {
-          const isMain = String(mainHeadId) === itemId;
-          const assignedLevel = idToLevelMap[itemId] || null;
+          const isMain = !hasMultipleHeads || String(mainHeadId) === itemId;
+          const assignedLevel = hasMultipleHeads
+            ? idToLevelMap[itemId] || null
+            : null;
           return {
             ...item,
             isSchoolHead: true,
@@ -7399,53 +7580,129 @@ export const AppProvider = ({ children }) => {
 
     const targetSchoolId = schoolInfo?.schoolId || schoolInfo?.school_id;
 
-    const previouslyAssigned = (personnel || []).filter(
-      (p) => p.isSchoolHead || p.is_school_head,
-    );
-    const removedHeads = previouslyAssigned.filter(
-      (p) =>
-        !assignedIds.has(String(p.id)) &&
-        !assignedIds.has(String(p.prn)) &&
-        !assignedIds.has(String(p.legacy_id || p.legacyId)),
-    );
-
-    // 1. Toggle off all removed heads across backend
-    for (const p of removedHeads) {
-      if (typeof api !== "undefined" && api.toggleSchoolHead) {
-        await api
-          .toggleSchoolHead(p.id, false, false, {
-            hasMultipleHeads: Boolean(hasMultipleHeads),
-            schoolId: targetSchoolId,
-          })
-          .catch((err) =>
-            console.error(
-              "[designateSchoolHeadsConfig] Remove error for",
-              p.id,
-              err,
-            ),
-          );
+    let apiSuccess = false;
+    if (typeof api !== "undefined" && api.saveSchoolHeadConfig) {
+      try {
+        await api.saveSchoolHeadConfig({
+          schoolId: targetSchoolId,
+          hasMultipleHeads: Boolean(hasMultipleHeads),
+          mainHeadId: mainHeadId ? String(mainHeadId) : null,
+          assignments: assignments || {},
+        });
+        apiSuccess = true;
+      } catch (err) {
+        console.error(
+          "[designateSchoolHeadsConfig] saveSchoolHeadConfig error, falling back to individual toggles:",
+          err,
+        );
       }
     }
 
-    // 2. Toggle on all newly assigned heads across backend
-    for (const pId of assignedIds) {
-      if (typeof api !== "undefined" && api.toggleSchoolHead) {
-        const isMain = String(mainHeadId) === String(pId);
-        await api
-          .toggleSchoolHead(pId, true, isMain, {
-            hasMultipleHeads: Boolean(hasMultipleHeads),
-            schoolId: targetSchoolId,
-            schoolHeadLevel: idToLevelMap[String(pId)] || null,
-            school_head_level: idToLevelMap[String(pId)] || null,
-          })
-          .catch((err) =>
-            console.error(
-              "[designateSchoolHeadsConfig] Assign error for",
-              pId,
-              err,
-            ),
-          );
+    if (!apiSuccess) {
+      const previouslyAssigned = (personnel || []).filter(
+        (p) => p.isSchoolHead || p.is_school_head,
+      );
+      const removedHeads = previouslyAssigned.filter(
+        (p) =>
+          !assignedIds.has(String(p.id)) &&
+          !assignedIds.has(String(p.prn)) &&
+          !assignedIds.has(String(p.legacy_id || p.legacyId)),
+      );
+
+      // 1. Toggle off all removed heads across backend
+      for (const p of removedHeads) {
+        if (typeof api !== "undefined" && api.toggleSchoolHead) {
+          await api
+            .toggleSchoolHead(p.id, false, false, {
+              hasMultipleHeads: Boolean(hasMultipleHeads),
+              schoolId: targetSchoolId,
+            })
+            .catch((err) =>
+              console.error(
+                "[designateSchoolHeadsConfig] Remove error for",
+                p.id,
+                err,
+              ),
+            );
+        }
       }
+
+      // 2. Toggle on all newly assigned heads across backend
+      for (const pId of assignedIds) {
+        if (typeof api !== "undefined" && api.toggleSchoolHead) {
+          const isMain = String(mainHeadId) === String(pId);
+          await api
+            .toggleSchoolHead(pId, true, isMain, {
+              hasMultipleHeads: Boolean(hasMultipleHeads),
+              schoolId: targetSchoolId,
+              schoolHeadLevel: idToLevelMap[String(pId)] || null,
+              school_head_level: idToLevelMap[String(pId)] || null,
+            })
+            .catch((err) =>
+              console.error(
+                "[designateSchoolHeadsConfig] Assign error for",
+                pId,
+                err,
+              ),
+            );
+        }
+      }
+    }
+
+    // 3. Persist updated personnel & schoolHeadConfig directly to local IndexedDB draft cache
+    try {
+      const canonicalDraftKey = getSchoolDraftKey(
+        schoolInfo?.schoolId,
+        schoolInfo?.schoolYear,
+      );
+      const activeDraft = (await getLocalDraft(canonicalDraftKey)) || {};
+      const updatedDraftPersonnel = (
+        activeDraft.personnel ||
+        personnel ||
+        []
+      ).map((p) => {
+        const pIdStr = String(p.id);
+        const isAssigned = assignedIds.has(pIdStr);
+        const isMain = !hasMultipleHeads || String(mainHeadId) === pIdStr;
+        const assignedLevel = hasMultipleHeads
+          ? idToLevelMap[pIdStr] || null
+          : null;
+        return {
+          ...p,
+          isSchoolHead: isAssigned,
+          is_school_head: isAssigned,
+          isMainSchoolHead: isAssigned ? isMain : false,
+          is_main_school_head: isAssigned ? isMain : false,
+          is_main_sh: isAssigned ? isMain : false,
+          schoolHeadLevel: isAssigned ? assignedLevel : null,
+          school_head_level: isAssigned ? assignedLevel : null,
+        };
+      });
+      const newDraftData = {
+        ...activeDraft,
+        personnel: updatedDraftPersonnel,
+        schoolInfo: {
+          ...(activeDraft.schoolInfo || schoolInfo || {}),
+          schoolHeadConfig: {
+            hasMultipleHeads: Boolean(hasMultipleHeads),
+            mainHeadId: mainHeadId ? String(mainHeadId) : null,
+            assignments: assignments || {},
+          },
+        },
+        lastUpdated: new Date().toISOString(),
+      };
+      await setLocalDraft(canonicalDraftKey, newDraftData);
+      userEditedRef.current = true;
+      latestDraftRef.current = {
+        key: canonicalDraftKey,
+        schoolYear: schoolInfo?.schoolYear || "SY 26-27",
+        data: newDraftData,
+      };
+    } catch (draftErr) {
+      console.warn(
+        "[designateSchoolHeadsConfig] Could not sync local draft:",
+        draftErr,
+      );
     }
 
     setHasUnsavedChanges(false);
@@ -8061,6 +8318,14 @@ export const AppProvider = ({ children }) => {
             maleLearners: calcMale !== null ? calcMale : s.maleLearners,
             femaleLearners: calcFemale !== null ? calcFemale : s.femaleLearners,
             advisorId: strAdvisorId !== undefined ? strAdvisorId : s.advisorId,
+            adviserId:
+              strAdvisorId !== undefined
+                ? strAdvisorId
+                : s.adviserId || s.advisorId,
+            tutorId:
+              strAdvisorId !== undefined
+                ? strAdvisorId
+                : s.tutorId || s.advisorId,
             adviserRemarks:
               adviserRemarks !== undefined
                 ? adviserRemarks
@@ -8514,6 +8779,47 @@ export const AppProvider = ({ children }) => {
       });
     }
 
+    if (
+      targetSec &&
+      !String(targetSec.id).startsWith("local-") &&
+      !String(targetSec.id).startsWith("sec-new-")
+    ) {
+      const dbPayload = {
+        ...targetSec,
+        schoolId: schoolInfo?.schoolId,
+        schoolYear: schoolInfo?.schoolYear || "SY 26-27",
+        advisorId:
+          strAdvisorId !== undefined ? strAdvisorId : targetSec.advisorId,
+        adviserId:
+          strAdvisorId !== undefined ? strAdvisorId : targetSec.adviserId,
+        tutorId: strAdvisorId !== undefined ? strAdvisorId : targetSec.tutorId,
+        assignedTeacherId:
+          strAdvisorId !== undefined ? strAdvisorId : targetSec.advisorId,
+      };
+      if (api && typeof api.addSection === "function") {
+        api
+          .addSection(dbPayload)
+          .then((saved) => {
+            if (saved && (saved.advisorId || saved.adviserId)) {
+              const canonicalAdv = saved.advisorId || saved.adviserId;
+              setClassSections((prev) =>
+                prev.map((s) =>
+                  String(s.id) === String(sectionId)
+                    ? { ...s, advisorId: canonicalAdv, adviserId: canonicalAdv }
+                    : s,
+                ),
+              );
+            }
+          })
+          .catch((err) => {
+            console.warn(
+              "[updateSectionDetails] Real-time DB sync warning:",
+              err,
+            );
+          });
+      }
+    }
+
     setHasUnsavedChanges(true);
     showToast("Section details updated.");
   };
@@ -8525,7 +8831,12 @@ export const AppProvider = ({ children }) => {
     hgpMinutes = 60,
     numberOfLearners = null,
   ) => {
-    return updateSectionDetails(sectionId, { advisorId, numberOfLearners });
+    return updateSectionDetails(sectionId, {
+      advisorId,
+      adviserId: advisorId,
+      tutorId: advisorId,
+      numberOfLearners,
+    });
   };
 
   const updateSectionLearners = async (
@@ -9023,11 +9334,20 @@ export const AppProvider = ({ children }) => {
       p.isSchoolHead === "true"
     )
       return true;
+    if (
+      p.isSchoolHead === false ||
+      p.is_school_head === false ||
+      p.is_school_head === "false" ||
+      p.isSchoolHead === "false"
+    )
+      return false;
     const roleText =
       `${p.position || ""} ${p.plantilla_position || ""} ${p.position_title || ""} ${p.designation || ""}`.toLowerCase();
     if (
       roleText.includes("assistant principal") ||
-      roleText.includes("assistant school principal")
+      roleText.includes("assistant school principal") ||
+      roleText.includes("head teacher") ||
+      roleText.includes("department head")
     )
       return false;
     return (
@@ -9774,7 +10094,21 @@ export const AppProvider = ({ children }) => {
       {
         id: "guidance_designate",
         name: "Guidance Designate",
-        keys: ["GUIDANCE DESIGNATE"],
+        keys: [
+          "GUIDANCE DESIGNATE",
+          "GUIDANCE AND COUNSELLING SCHOOL COORDINATOR",
+          "GUIDANCE AND COUNSELING SCHOOL COORDINATOR",
+          "GUIDANCE COUNSELOR",
+          "GUIDANCE COORDINATOR",
+          "GUIDANCE COUNSELOR DESIGNATE",
+          "GUIDANCE & COUNSELING SCHOOL COORDINATOR",
+          "GUIDANCE & COUNSELLING SCHOOL COORDINATOR",
+          "GUIDANCE & COUNSELING",
+          "GUIDANCE AND COUNSELING",
+          "GUIDANCE TEACHER",
+          "SCHOOL GUIDANCE COORDINATOR",
+          "GUIDANCE",
+        ],
       },
       {
         id: "learner_information_officer",

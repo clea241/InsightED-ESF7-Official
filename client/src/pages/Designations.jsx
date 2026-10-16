@@ -1,10 +1,4 @@
-import React, {
-  useState,
-  useMemo,
-  useRef,
-  useEffect,
-  useCallback,
-} from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import useDirtyGuard from "../hooks/useDirtyGuard";
 import { confirmServerDraftSaved } from "../services/screenSave";
 import {
@@ -12,13 +6,13 @@ import {
   OFFICIAL_DESIGNATIONS,
   DESIGNATION_GRADE_LEVELS,
   SHS_TRACKS,
-  SUBJECT_OPTIONS,
   PRIMARY_LEARNING_AREAS,
   getRegularSectionsEnrollment,
 } from "../context/AppContext";
 import SearchableDropdown from "../components/SearchableDropdown";
 import PortalHeader from "../components/PortalHeader";
 import { requiresDepartmentHead } from "@shared/schoolLevel.js";
+import { api } from "../services/api";
 import {
   FiCheckCircle,
   FiAlertCircle,
@@ -33,13 +27,11 @@ import {
   FiBook,
   FiGrid,
   FiList,
-  FiTrash2,
   FiX,
   FiPlus,
   FiBookmark,
   FiAward,
   FiLayers,
-  FiChevronRight,
   FiCheckSquare,
   FiSquare,
   FiGlobe,
@@ -204,6 +196,32 @@ export const KS4_TRACKS_LIST = [
   },
 ];
 
+export const extractDesigString = (item) => {
+  if (!item) return "";
+  if (typeof item === "string") {
+    const s = item.replace(/::APPROVED_SDS/gi, "").trim();
+    if (!s || s === "[object Object]" || s.startsWith("[object")) return "";
+    return s;
+  }
+  if (typeof item === "object") {
+    const candidate =
+      item.serializedKey ||
+      item.serialized_key ||
+      item.name ||
+      item.designation ||
+      item.designationName ||
+      item.designation_name ||
+      item.title ||
+      "";
+    if (typeof candidate === "string") {
+      const s = candidate.replace(/::APPROVED_SDS/gi, "").trim();
+      if (!s || s === "[object Object]" || s.startsWith("[object")) return "";
+      return s;
+    }
+  }
+  return "";
+};
+
 export const parseKS1GradesFromKey = (keyStr) => {
   if (!keyStr) return [];
   const upper = String(keyStr).toUpperCase();
@@ -238,7 +256,6 @@ export default function Designations() {
     personnel,
     setPersonnel,
     savePersonnelChanges,
-    schoolEdited,
     schoolInfo,
     setSchoolInfo,
     classSections,
@@ -269,23 +286,20 @@ export default function Designations() {
   });
 
   const getDesignationsSnapshot = useCallback(
-    () => ({
-      personnel: (personnel || []).map((p) => ({
+    (customPersonnel, customNa) => ({
+      personnel: (
+        (customPersonnel !== undefined ? customPersonnel : personnel) || []
+      ).map((p) => ({
         id: p.id,
         prn: p.prn,
-        designation:
-          typeof p.designation === "string"
-            ? p.designation
-            : p.designation?.name || p.designation?.designation || "",
+        designation: extractDesigString(p.designation),
         designations: Array.isArray(p.designations)
-          ? p.designations.map((d) =>
-              typeof d === "string"
-                ? d
-                : d?.name || d?.designation || d?.title || "",
-            )
+          ? p.designations.map(extractDesigString).filter(Boolean)
           : [],
       })),
-      naMap: { ...(designationsNaMap || {}) },
+      naMap: {
+        ...((customNa !== undefined ? customNa : designationsNaMap) || {}),
+      },
     }),
     [personnel, designationsNaMap],
   );
@@ -549,59 +563,36 @@ export default function Designations() {
   // Check if a person is assigned to targetKey (matching with or without ::APPROVED_SDS suffix)
   const isAssignedToKey = (personDesignation, targetKey) => {
     if (!personDesignation || !targetKey) return false;
-    const pStr =
-      typeof personDesignation === "string"
-        ? personDesignation
-        : personDesignation?.name ||
-          personDesignation?.designation ||
-          personDesignation?.title ||
-          String(personDesignation || "");
-    const tStr =
-      typeof targetKey === "string"
-        ? targetKey
-        : targetKey?.name ||
-          targetKey?.designation ||
-          targetKey?.title ||
-          String(targetKey || "");
-    const cleanPerson = String(pStr)
-      .replace(/::APPROVED_SDS/gi, "")
-      .trim()
-      .toUpperCase();
-    const cleanTarget = String(tStr)
-      .replace(/::APPROVED_SDS/gi, "")
-      .trim()
-      .toUpperCase();
+    const cleanPerson = extractDesigString(personDesignation).toUpperCase();
+    const cleanTarget = extractDesigString(targetKey).toUpperCase();
+    if (!cleanPerson || !cleanTarget) return false;
     return cleanPerson === cleanTarget;
+  };
+
+  // Check if person has targetKey as primary OR in their secondary designations list
+  const personHasKey = (p, targetKey) => {
+    if (!p || !targetKey) return false;
+    const primary = extractDesigString(p.designation);
+    if (isAssignedToKey(primary, targetKey)) return true;
+    if (Array.isArray(p.designations)) {
+      return p.designations.some((d) =>
+        isAssignedToKey(extractDesigString(d), targetKey),
+      );
+    }
+    return false;
   };
 
   // Helper to find all personnel assigned to a specific canonical key or list of alternative keys (strictly deduplicated)
   const getAssignedPersonnelForKey = (canonicalKey, altKeys = []) => {
-    const allKeys = [
-      canonicalKey,
-      ...(Array.isArray(altKeys) ? altKeys : []),
-    ].map((k) => String(k).toUpperCase());
+    const allKeys = [canonicalKey, ...(Array.isArray(altKeys) ? altKeys : [])]
+      .map((k) => extractDesigString(k).toUpperCase())
+      .filter(Boolean);
     const matched = activePersonnel.filter((p) => {
-      const pDesigStr =
-        typeof p.designation === "string"
-          ? p.designation
-          : p.designation?.name ||
-            p.designation?.designation ||
-            String(p.designation || "");
-      const clean = String(pDesigStr || "")
-        .replace(/::APPROVED_SDS/gi, "")
-        .trim()
-        .toUpperCase();
+      const clean = extractDesigString(p.designation).toUpperCase();
       const desigsList = Array.isArray(p.designations)
-        ? p.designations.map((d) => {
-            const str =
-              typeof d === "string"
-                ? d
-                : d?.name || d?.designation || d?.title || String(d || "");
-            return str
-              .replace(/::APPROVED_SDS/gi, "")
-              .trim()
-              .toUpperCase();
-          })
+        ? p.designations
+            .map((d) => extractDesigString(d).toUpperCase())
+            .filter(Boolean)
         : [];
       return allKeys.some(
         (k) =>
@@ -639,16 +630,9 @@ export default function Designations() {
     );
     if (!person) return;
 
-    const currentPrimary =
-      typeof person.designation === "string"
-        ? person.designation
-        : person.designation?.name || person.designation?.designation || "";
+    const currentPrimary = extractDesigString(person.designation);
     const currentDesigs = Array.isArray(person.designations)
-      ? person.designations.map((d) =>
-          typeof d === "string"
-            ? d
-            : d?.name || d?.designation || d?.title || String(d || ""),
-        )
+      ? person.designations.map(extractDesigString).filter(Boolean)
       : [];
 
     let updatedPrimary = currentPrimary;
@@ -672,50 +656,111 @@ export default function Designations() {
       designation: updatedPrimary,
       designations: uniqueDesigs,
     };
-    setPersonnel((prev) =>
-      prev.map((p) => {
-        const isCurrentPerson =
-          String(p.id) === String(person.id) ||
-          (p.prn && person.prn && String(p.prn) === String(person.prn));
-        if (isCurrentPerson) {
-          return updatedPerson;
-        }
 
-        const pDesigStr =
-          typeof p.designation === "string"
-            ? p.designation
-            : p.designation?.name || p.designation?.designation || "";
-        const pDesigsList = Array.isArray(p.designations)
-          ? p.designations.map((d) =>
-              typeof d === "string"
-                ? d
-                : d?.name || d?.designation || d?.title || String(d || ""),
-            )
-          : [];
+    const displacedPersons = [];
+    const nextPersonnel = (personnel || []).map((p) => {
+      const isCurrentPerson =
+        String(p.id) === String(person.id) ||
+        (p.prn && person.prn && String(p.prn) === String(person.prn));
+      if (isCurrentPerson) {
+        return updatedPerson;
+      }
 
-        const hasTarget =
-          isAssignedToKey(pDesigStr, targetKey) ||
-          pDesigsList.some((d) => isAssignedToKey(d, targetKey));
-        if (!hasTarget) return p;
+      const pDesigStr = extractDesigString(p.designation);
+      const pDesigsList = Array.isArray(p.designations)
+        ? p.designations.map(extractDesigString).filter(Boolean)
+        : [];
 
-        const newDesigs = pDesigsList.filter(
-          (d) => !isAssignedToKey(d, targetKey),
-        );
-        let newPrimary = pDesigStr;
-        if (isAssignedToKey(newPrimary, targetKey)) {
-          newPrimary = newDesigs.length > 0 ? newDesigs[0] : "";
-        }
-        const cleanedList = Array.from(
-          new Set(newDesigs.map((d) => String(d).trim())),
-        ).filter((d) => Boolean(d) && !isAssignedToKey(d, newPrimary));
+      const hasTarget =
+        isAssignedToKey(pDesigStr, targetKey) ||
+        pDesigsList.some((d) => isAssignedToKey(d, targetKey));
+      if (!hasTarget) return p;
 
-        return {
-          ...p,
-          designation: newPrimary,
-          designations: cleanedList,
-        };
-      }),
+      const newDesigs = pDesigsList.filter(
+        (d) => !isAssignedToKey(d, targetKey),
+      );
+      let newPrimary = pDesigStr;
+      if (isAssignedToKey(newPrimary, targetKey)) {
+        newPrimary = newDesigs.length > 0 ? newDesigs[0] : "";
+      }
+      const cleanedList = Array.from(
+        new Set(newDesigs.map((d) => String(d).trim())),
+      ).filter((d) => Boolean(d) && !isAssignedToKey(d, newPrimary));
+
+      const displacedObj = {
+        ...p,
+        designation: newPrimary,
+        designations: cleanedList,
+      };
+      displacedPersons.push(displacedObj);
+      return displacedObj;
+    });
+
+    setPersonnel(nextPersonnel);
+    savedDesignationsSnapshotRef.current = JSON.stringify(
+      getDesignationsSnapshot(nextPersonnel),
     );
+
+    const activeSchoolId =
+      schoolInfo?.schoolId || updatedPerson.schoolId || updatedPerson.school_id;
+
+    // Real-time write-through to PostgreSQL
+    api
+      .syncPersonnelDesignations(updatedPerson.id, {
+        designation: updatedPrimary,
+        designations: uniqueDesigs,
+        school_id: activeSchoolId,
+        prn: updatedPerson.prn,
+        first_name: updatedPerson.firstName || updatedPerson.first_name,
+        last_name: updatedPerson.lastName || updatedPerson.last_name,
+        type: updatedPerson.type,
+      })
+      .catch((err) => {
+        console.error("[Designations] Real-time assignment sync failed:", err);
+        if (showToast) {
+          showToast(
+            `Could not sync designation to database: ${err.message}`,
+            "error",
+          );
+        }
+      });
+    if (savePersonnelChanges) {
+      savePersonnelChanges(updatedPerson.id, updatedPerson, {
+        silent: true,
+        silentToast: true,
+        markSaved: true,
+      });
+    }
+    try {
+      localStorage.removeItem(`draft_personnel_${updatedPerson.id}`);
+    } catch (e) {}
+
+    for (const displaced of displacedPersons) {
+      api
+        .syncPersonnelDesignations(displaced.id, {
+          designation: displaced.designation,
+          designations: displaced.designations,
+          school_id: activeSchoolId,
+          prn: displaced.prn,
+          first_name: displaced.firstName || displaced.first_name,
+          last_name: displaced.lastName || displaced.last_name,
+          type: displaced.type,
+        })
+        .catch((err) => {
+          console.error("[Designations] Real-time displaced sync failed:", err);
+        });
+      if (savePersonnelChanges) {
+        savePersonnelChanges(displaced.id, displaced, {
+          silent: true,
+          silentToast: true,
+          markSaved: true,
+        });
+      }
+      try {
+        localStorage.removeItem(`draft_personnel_${displaced.id}`);
+      } catch (e) {}
+    }
+
     showToast(
       `✓ Assigned ${person.firstName} ${person.lastName} as ${targetKey}`,
       "success",
@@ -733,20 +778,13 @@ export default function Designations() {
     if (!person) return;
 
     const currentDesigs = Array.isArray(person.designations)
-      ? person.designations.map((d) =>
-          typeof d === "string"
-            ? d
-            : d?.name || d?.designation || d?.title || String(d || ""),
-        )
+      ? person.designations.map(extractDesigString).filter(Boolean)
       : [];
     const remainingDesigs = currentDesigs.filter(
       (d) => !isAssignedToKey(d, desigName),
     );
 
-    let updatedPrimary =
-      typeof person.designation === "string"
-        ? person.designation
-        : person.designation?.name || person.designation?.designation || "";
+    let updatedPrimary = extractDesigString(person.designation);
     if (isAssignedToKey(updatedPrimary, desigName)) {
       updatedPrimary = remainingDesigs.length > 0 ? remainingDesigs[0] : "";
     }
@@ -760,14 +798,51 @@ export default function Designations() {
       designation: updatedPrimary,
       designations: uniqueRemaining,
     };
-    setPersonnel((prev) =>
-      prev.map((p) =>
-        String(p.id) === String(person.id) ||
-        (p.prn && person.prn && String(p.prn) === String(person.prn))
-          ? updatedPerson
-          : p,
-      ),
+    const nextPersonnel = (personnel || []).map((p) =>
+      String(p.id) === String(person.id) ||
+      (p.prn && person.prn && String(p.prn) === String(person.prn))
+        ? updatedPerson
+        : p,
     );
+    setPersonnel(nextPersonnel);
+    savedDesignationsSnapshotRef.current = JSON.stringify(
+      getDesignationsSnapshot(nextPersonnel),
+    );
+
+    const activeSchoolId =
+      schoolInfo?.schoolId || person.schoolId || person.school_id;
+
+    // Real-time write-through to PostgreSQL
+    api
+      .syncPersonnelDesignations(person.id, {
+        designation: updatedPrimary,
+        designations: uniqueRemaining,
+        school_id: activeSchoolId,
+        prn: person.prn,
+        first_name: person.firstName || person.first_name,
+        last_name: person.lastName || person.last_name,
+        type: person.type,
+      })
+      .catch((err) => {
+        console.error("[Designations] Real-time remove sync failed:", err);
+        if (showToast) {
+          showToast(
+            `Could not remove designation in database: ${err.message}`,
+            "error",
+          );
+        }
+      });
+    if (savePersonnelChanges) {
+      savePersonnelChanges(person.id, updatedPerson, {
+        silent: true,
+        silentToast: true,
+        markSaved: true,
+      });
+    }
+    try {
+      localStorage.removeItem(`draft_personnel_${person.id}`);
+    } catch (e) {}
+
     showToast(
       `Unassigned ${person.firstName} ${person.lastName} from ${desigName}`,
       "info",
@@ -785,18 +860,18 @@ export default function Designations() {
       const pFullName = `${p.firstName || ""} ${p.lastName || ""}`.trim();
       const pNormalizedName = pFullName.toLowerCase();
       const keysToCheck = [];
-      if (p.designation) keysToCheck.push(p.designation);
-      if (Array.isArray(p.designations)) keysToCheck.push(...p.designations);
+      const primaryStr = extractDesigString(p.designation);
+      if (primaryStr) keysToCheck.push(primaryStr);
+      if (Array.isArray(p.designations)) {
+        p.designations.forEach((d) => {
+          const dStr = extractDesigString(d);
+          if (dStr && !keysToCheck.includes(dStr)) keysToCheck.push(dStr);
+        });
+      }
 
       keysToCheck.forEach((rawKey) => {
-        const fullKey =
-          typeof rawKey === "string"
-            ? rawKey
-            : rawKey?.name || rawKey?.designation || String(rawKey || "");
-        const clean = String(fullKey || "")
-          .replace(/::APPROVED_SDS/gi, "")
-          .trim()
-          .toUpperCase();
+        const clean = extractDesigString(rawKey).toUpperCase();
+        if (!clean) return;
         if (
           clean.startsWith("DEPARTMENT HEAD") &&
           (clean.includes("KEY STAGE 1") ||
@@ -864,7 +939,7 @@ export default function Designations() {
                 person: p,
                 personName: pFullName,
                 normalizedName: pNormalizedName,
-                fullKey,
+                fullKey: rawKey,
                 cleanKey: clean,
                 keys: [clean],
                 grades: [...validGrades],
@@ -919,10 +994,8 @@ export default function Designations() {
   // Helper to check if a designation is a KS1 designation string
   const isKS1DesignationKey = (keyStr) => {
     if (!keyStr) return false;
-    const clean = String(keyStr)
-      .replace(/::APPROVED_SDS/gi, "")
-      .trim()
-      .toUpperCase();
+    const clean = extractDesigString(keyStr).toUpperCase();
+    if (!clean) return false;
     return (
       clean.startsWith("DEPARTMENT HEAD") &&
       (clean.includes("KEY STAGE 1") ||
@@ -952,25 +1025,69 @@ export default function Designations() {
     if (!person) return;
 
     const currentDesigs = Array.isArray(person.designations)
-      ? person.designations
+      ? person.designations.map(extractDesigString).filter(Boolean)
       : [];
     const remainingDesigs = currentDesigs.filter(
       (d) => !isKS1DesignationKey(d),
     );
 
-    let updatedPrimary = person.designation;
-    if (isKS1DesignationKey(person.designation)) {
+    let updatedPrimary = extractDesigString(person.designation);
+    if (isKS1DesignationKey(updatedPrimary)) {
       updatedPrimary = remainingDesigs.length > 0 ? remainingDesigs[0] : "";
     }
+
+    const uniqueRemaining = remainingDesigs.filter((d) => d !== updatedPrimary);
 
     const updatedPerson = {
       ...person,
       designation: updatedPrimary,
-      designations: remainingDesigs.filter((d) => d !== updatedPrimary),
+      designations: uniqueRemaining,
     };
-    setPersonnel((prev) =>
-      prev.map((p) => (String(p.id) === String(person.id) ? updatedPerson : p)),
+    const nextPersonnel = (personnel || []).map((p) =>
+      String(p.id) === String(person.id) ||
+      (p.prn && person.prn && String(p.prn) === String(person.prn))
+        ? updatedPerson
+        : p,
     );
+    setPersonnel(nextPersonnel);
+    savedDesignationsSnapshotRef.current = JSON.stringify(
+      getDesignationsSnapshot(nextPersonnel),
+    );
+
+    const activeSchoolId =
+      schoolInfo?.schoolId || person.schoolId || person.school_id;
+
+    // Real-time write-through to PostgreSQL
+    api
+      .syncPersonnelDesignations(person.id, {
+        designation: updatedPrimary,
+        designations: uniqueRemaining,
+        school_id: activeSchoolId,
+        prn: person.prn,
+        first_name: person.firstName || person.first_name,
+        last_name: person.lastName || person.last_name,
+        type: person.type,
+      })
+      .catch((err) => {
+        console.error("[Designations] Real-time remove KS1 sync failed:", err);
+        if (showToast) {
+          showToast(
+            `Could not remove KS1 designation in database: ${err.message}`,
+            "error",
+          );
+        }
+      });
+    if (savePersonnelChanges) {
+      savePersonnelChanges(person.id, updatedPerson, {
+        silent: true,
+        silentToast: true,
+        markSaved: true,
+      });
+    }
+    try {
+      localStorage.removeItem(`draft_personnel_${person.id}`);
+    } catch (e) {}
+
     showToast(
       `Unassigned ${person.firstName} ${person.lastName} from Key Stage 1`,
       "info",
@@ -1043,9 +1160,9 @@ export default function Designations() {
       targetKey = `DEPARTMENT HEAD - KEY STAGE 1 (${sortedGrades.map((g) => g.toUpperCase()).join(", ")})`;
     }
 
-    const currentPrimary = person.designation || "";
+    const currentPrimary = extractDesigString(person.designation);
     const currentDesigs = Array.isArray(person.designations)
-      ? [...person.designations]
+      ? person.designations.map(extractDesigString).filter(Boolean)
       : [];
 
     // Strip any previous KS1 keys to ensure clean single assignment
@@ -1060,14 +1177,57 @@ export default function Designations() {
       remainingDesigs.push(targetKey);
     }
 
+    const finalSecondary = remainingDesigs.filter((d) => d !== updatedPrimary);
     const updatedPerson = {
       ...person,
       designation: updatedPrimary,
-      designations: remainingDesigs.filter((d) => d !== updatedPrimary),
+      designations: finalSecondary,
     };
-    setPersonnel((prev) =>
-      prev.map((p) => (String(p.id) === String(person.id) ? updatedPerson : p)),
+    const nextPersonnel = (personnel || []).map((p) =>
+      String(p.id) === String(person.id) ||
+      (p.prn && person.prn && String(p.prn) === String(person.prn))
+        ? updatedPerson
+        : p,
     );
+    setPersonnel(nextPersonnel);
+    savedDesignationsSnapshotRef.current = JSON.stringify(
+      getDesignationsSnapshot(nextPersonnel),
+    );
+
+    const activeSchoolId =
+      schoolInfo?.schoolId || person.schoolId || person.school_id;
+
+    // Real-time write-through to PostgreSQL
+    api
+      .syncPersonnelDesignations(person.id, {
+        designation: updatedPrimary,
+        designations: finalSecondary,
+        school_id: activeSchoolId,
+        prn: person.prn,
+        first_name: person.firstName || person.first_name,
+        last_name: person.lastName || person.last_name,
+        type: person.type,
+      })
+      .catch((err) => {
+        console.error("[Designations] Real-time assign KS1 sync failed:", err);
+        if (showToast) {
+          showToast(
+            `Could not save KS1 designation to database: ${err.message}`,
+            "error",
+          );
+        }
+      });
+    if (savePersonnelChanges) {
+      savePersonnelChanges(person.id, updatedPerson, {
+        silent: true,
+        silentToast: true,
+        markSaved: true,
+      });
+    }
+    try {
+      localStorage.removeItem(`draft_personnel_${person.id}`);
+    } catch (e) {}
+
     showToast(
       `✓ Assigned ${person.firstName} ${person.lastName} as Key Stage 1 Head (${ks1CheckedGrades.join(", ")})`,
       "success",
@@ -1084,7 +1244,21 @@ export default function Designations() {
         id: "guidance_designate",
         name: "Guidance Designate",
         canonicalKey: "GUIDANCE DESIGNATE",
-        altKeys: ["GUIDANCE DESIGNATE"],
+        altKeys: [
+          "GUIDANCE DESIGNATE",
+          "GUIDANCE AND COUNSELLING SCHOOL COORDINATOR",
+          "GUIDANCE AND COUNSELING SCHOOL COORDINATOR",
+          "GUIDANCE COUNSELOR",
+          "GUIDANCE COORDINATOR",
+          "GUIDANCE COUNSELOR DESIGNATE",
+          "GUIDANCE & COUNSELING SCHOOL COORDINATOR",
+          "GUIDANCE & COUNSELLING SCHOOL COORDINATOR",
+          "GUIDANCE & COUNSELING",
+          "GUIDANCE AND COUNSELING",
+          "GUIDANCE TEACHER",
+          "SCHOOL GUIDANCE COORDINATOR",
+          "GUIDANCE",
+        ],
         icon: <FiShield size={20} color="#0284C7" />,
         badgeColor: "#0284C7",
         description:
@@ -1128,7 +1302,7 @@ export default function Designations() {
       .trim()
       .toUpperCase();
     if (
-      cleanUpper.startsWith("GUIDANCE DESIGNATE") ||
+      cleanUpper.includes("GUIDANCE") ||
       cleanUpper.startsWith("LEARNER INFORMATION OFFICER") ||
       cleanUpper.startsWith("LEARNER FORMATION OFFICER") ||
       cleanUpper.startsWith("ASSISTANT SCHOOL HEAD") ||
@@ -1144,60 +1318,36 @@ export default function Designations() {
     const list = [];
     activePersonnel.forEach((p) => {
       const keysToCheck = [];
-      if (p.designation) {
-        const dStr =
-          typeof p.designation === "string"
-            ? p.designation
-            : p.designation?.name ||
-              p.designation?.designation ||
-              String(p.designation || "");
-        if (dStr && dStr !== "[object Object]") keysToCheck.push(dStr);
-      }
+      const primaryStr = extractDesigString(p.designation);
+      if (primaryStr) keysToCheck.push(primaryStr);
       if (Array.isArray(p.designations)) {
         p.designations.forEach((d) => {
-          if (!d) return;
-          const dStr =
-            typeof d === "string"
-              ? d
-              : d?.name || d?.designation || d?.title || String(d || "");
-          if (dStr && dStr !== "[object Object]" && !keysToCheck.includes(dStr))
-            keysToCheck.push(dStr);
+          const dStr = extractDesigString(d);
+          if (dStr && !keysToCheck.includes(dStr)) keysToCheck.push(dStr);
         });
       }
 
-      keysToCheck.forEach((rawFullKey) => {
-        const fullKey =
-          typeof rawFullKey === "string"
-            ? rawFullKey
-            : rawFullKey?.name ||
-              rawFullKey?.designation ||
-              String(rawFullKey || "");
-        if (!fullKey || fullKey === "[object Object]") return;
-        const isApproved = String(fullKey).includes("::APPROVED_SDS");
-        const clean = String(fullKey)
-          .replace(/::APPROVED_SDS/gi, "")
-          .trim();
+      keysToCheck.forEach((clean) => {
+        if (!clean || isSpecialSectionKey(clean)) return;
 
-        if (clean && !isSpecialSectionKey(clean)) {
-          let category = clean;
-          let parameter = null;
+        let category = clean;
+        let parameter = null;
 
-          if (clean.includes(" - ")) {
-            const parts = clean.split(" - ");
-            category = parts[0];
-            parameter = parts.slice(1).join(" - ");
-          }
-
-          list.push({
-            person: p,
-            fullKey,
-            cleanKey: clean,
-            category,
-            parameter,
-            isSdsApproved: isApproved,
-            id: `${p.id}_${clean}`,
-          });
+        if (clean.includes(" - ")) {
+          const parts = clean.split(" - ");
+          category = parts[0];
+          parameter = parts.slice(1).join(" - ");
         }
+
+        list.push({
+          person: p,
+          fullKey: clean,
+          cleanKey: clean,
+          category,
+          parameter,
+          isSdsApproved: false,
+          id: `${p.id}_${clean}`,
+        });
       });
     });
 
@@ -1210,6 +1360,7 @@ export default function Designations() {
       if (
         [
           "guidance_designate",
+          "guidance_counselling_coordinator",
           "learner_information_officer",
           "department_head_designate",
           "department_head_ecp",
@@ -1303,23 +1454,11 @@ export default function Designations() {
     ) {
       // Check if at least 1 Department Head is designated in any active Key Stage
       const anyDeptHeadAssigned = activePersonnel.some((p) => {
-        const pDesigStr =
-          typeof p.designation === "string"
-            ? p.designation
-            : p.designation?.name ||
-              p.designation?.designation ||
-              String(p.designation || "");
-        const clean = String(pDesigStr || "")
-          .replace(/::APPROVED_SDS/gi, "")
-          .trim()
-          .toUpperCase();
+        const clean = extractDesigString(p.designation).toUpperCase();
         const desigsList = Array.isArray(p.designations)
-          ? p.designations.map((d) =>
-              String(d?.name || d?.designation || d || "")
-                .replace(/::APPROVED_SDS/gi, "")
-                .trim()
-                .toUpperCase(),
-            )
+          ? p.designations
+              .map((d) => extractDesigString(d).toUpperCase())
+              .filter(Boolean)
           : [];
         return (
           clean.startsWith("DEPARTMENT HEAD") ||
@@ -1344,16 +1483,6 @@ export default function Designations() {
   // The one Designations save, used by the header Save button AND the unsaved-changes dialog's Save button.
   // It never opens its own alerts: it returns { ok: true } or { ok: false, title, message }.
   const runDesignationsSave = async () => {
-    const missing = getMissingRequiredDesignations();
-    if (missing.length > 0) {
-      return {
-        ok: false,
-        missing,
-        title: "Required Designations Missing",
-        message: `Assign all required designations before saving (${missing.length} still missing).`,
-      };
-    }
-
     setIsSaving(true);
     try {
       let prevPersonnelMap = new Map();
@@ -1371,16 +1500,9 @@ export default function Designations() {
       const changedPersonnel = (personnel || []).filter((p) => {
         const prev = prevPersonnelMap.get(String(p.id));
         if (!prev) return true;
-        const curDesig =
-          typeof p.designation === "string"
-            ? p.designation
-            : p.designation?.name || p.designation?.designation || "";
+        const curDesig = extractDesigString(p.designation);
         const curList = Array.isArray(p.designations)
-          ? p.designations.map((d) =>
-              typeof d === "string"
-                ? d
-                : d?.name || d?.designation || d?.title || "",
-            )
+          ? p.designations.map(extractDesigString).filter(Boolean)
           : [];
         if (curDesig !== prev.designation) return true;
         if (
@@ -1392,8 +1514,33 @@ export default function Designations() {
       });
 
       for (const p of changedPersonnel) {
+        const curDesig = extractDesigString(p.designation);
+        const curList = Array.isArray(p.designations)
+          ? p.designations.map(extractDesigString).filter(Boolean)
+          : [];
+        await api
+          .syncPersonnelDesignations(p.id, {
+            designation: curDesig,
+            designations: curList,
+            school_id: schoolInfo?.schoolId || p.schoolId || p.school_id,
+            prn: p.prn,
+            first_name: p.firstName || p.first_name,
+            last_name: p.lastName || p.last_name,
+            type: p.type,
+          })
+          .catch((err) =>
+            console.warn(
+              `[Designations] Direct sync warning for ${p.id}:`,
+              err,
+            ),
+          );
+
         if (savePersonnelChanges) {
-          await savePersonnelChanges(p.id, p);
+          await savePersonnelChanges(p.id, p, {
+            silent: true,
+            silentToast: true,
+            markSaved: true,
+          });
         }
         localStorage.removeItem(`draft_personnel_${p.id}`);
       }
@@ -1414,6 +1561,16 @@ export default function Designations() {
       savedDesignationsSnapshotRef.current = JSON.stringify(
         getDesignationsSnapshot(),
       );
+
+      const missing = getMissingRequiredDesignations();
+      if (missing.length > 0) {
+        return {
+          ok: false,
+          missing,
+          title: "Required Designations Missing",
+          message: `Saved your progress to the database, but ${missing.length} required designation(s) still need to be assigned or marked N/A.`,
+        };
+      }
 
       if (completeNode) {
         completeNode("designation", null);
@@ -1744,7 +1901,7 @@ export default function Designations() {
                     const isAssigned = assignedPersonnel.length > 0;
                     const isNa = !!designationsNaMap[role.id];
                     const availablePersonnel = activePersonnel.filter(
-                      (p) => !isAssignedToKey(p.designation, role.canonicalKey),
+                      (p) => !personHasKey(p, role.canonicalKey),
                     );
 
                     return (
@@ -4162,7 +4319,7 @@ export default function Designations() {
                           );
                           const isAssigned = assigned.length > 0;
                           const available = activePersonnel.filter(
-                            (p) => !isAssignedToKey(p.designation, track.key),
+                            (p) => !personHasKey(p, track.key),
                           );
 
                           return (
@@ -4972,7 +5129,7 @@ export default function Designations() {
                     const isAssigned = assignedPersonnel.length > 0;
                     const isNa = !!designationsNaMap[role.id];
                     const availablePersonnel = activePersonnel.filter(
-                      (p) => !isAssignedToKey(p.designation, role.canonicalKey),
+                      (p) => !personHasKey(p, role.canonicalKey),
                     );
 
                     return (
@@ -5436,7 +5593,7 @@ export default function Designations() {
                       ]);
                       const isAssigned = assigned.length > 0;
                       const available = activePersonnel.filter(
-                        (p) => !isAssignedToKey(p.designation, targetKey),
+                        (p) => !personHasKey(p, targetKey),
                       );
 
                       return (
@@ -5583,7 +5740,7 @@ export default function Designations() {
                       ]);
                       const isAssigned = assigned.length > 0;
                       const available = activePersonnel.filter(
-                        (p) => !isAssignedToKey(p.designation, targetKey),
+                        (p) => !personHasKey(p, targetKey),
                       );
 
                       return (
@@ -5730,7 +5887,7 @@ export default function Designations() {
                       );
                       const isAssigned = assigned.length > 0;
                       const available = activePersonnel.filter(
-                        (p) => !isAssignedToKey(p.designation, track.key),
+                        (p) => !personHasKey(p, track.key),
                       );
 
                       return (

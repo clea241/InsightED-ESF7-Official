@@ -44,14 +44,62 @@ function storedAdviser(row) {
 }
 
 // Canonical personnel resolver across id, prn, and legacy_id to enforce Foreign Key validity
-async function resolvePersonnelId(clientOrDb, rawId) {
+async function resolvePersonnelId(clientOrDb, rawId, schoolId = null) {
   if (!rawId || String(rawId).trim() === "") return null;
   const trimmed = String(rawId).trim();
-  const res = await clientOrDb.query(
+
+  // 1. Direct match on id, prn, or legacy_id
+  let res = await clientOrDb.query(
     "SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 OR legacy_id = $1 LIMIT 1",
     [trimmed],
   );
-  return res.rows.length > 0 ? res.rows[0].id : null;
+  if (res.rows.length > 0) return res.rows[0].id;
+
+  // 2. Case-insensitive match on prn or legacy_id
+  res = await clientOrDb.query(
+    "SELECT id FROM esf7_personnel_profile WHERE UPPER(TRIM(prn)) = UPPER($1) OR UPPER(TRIM(legacy_id)) = UPPER($1) LIMIT 1",
+    [trimmed],
+  );
+  if (res.rows.length > 0) return res.rows[0].id;
+
+  // 3. Strip 'PER-' or 'PRN-' prefix and match numeric ID
+  const numOnly = trimmed.replace(/^(per|prn)[-_]/i, "").trim();
+  if (numOnly && numOnly !== trimmed) {
+    res = await clientOrDb.query(
+      "SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 OR legacy_id = $1 LIMIT 1",
+      [numOnly],
+    );
+    if (res.rows.length > 0) return res.rows[0].id;
+
+    const numVal = parseInt(numOnly, 10);
+    if (!isNaN(numVal)) {
+      res = await clientOrDb.query(
+        "SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn LIKE $2 OR legacy_id LIKE $3 LIMIT 1",
+        [String(numVal), `PRN-%${numVal}`, `%${numVal}%`],
+      );
+      if (res.rows.length > 0) return res.rows[0].id;
+    }
+  }
+
+  // 4. Match legacy_id containing the identifier (e.g. CACHE_104947_PER-104947-001)
+  res = await clientOrDb.query(
+    "SELECT id FROM esf7_personnel_profile WHERE legacy_id LIKE $1 LIMIT 1",
+    [`%${trimmed}%`],
+  );
+  if (res.rows.length > 0) return res.rows[0].id;
+
+  // 5. If schoolId provided, match inside that school
+  if (schoolId) {
+    const cleanSid = String(schoolId).replace(/^SCH-/i, "");
+    const sidPair = [cleanSid, `SCH-${cleanSid}`];
+    res = await clientOrDb.query(
+      "SELECT id FROM esf7_personnel_profile WHERE school_id = ANY($1) AND (id = $2 OR prn = $2 OR legacy_id = $2 OR legacy_id LIKE $3) LIMIT 1",
+      [sidPair, trimmed, `%${trimmed}%`],
+    );
+    if (res.rows.length > 0) return res.rows[0].id;
+  }
+
+  return null;
 }
 
 function formatRegularRecord(row) {
@@ -113,6 +161,14 @@ function formatSnedRecord(row) {
       ? Number(row.number_of_learners)
       : m + f;
 
+  const adv = row.adviser_id
+    ? String(row.adviser_id)
+    : raw.adviserId ||
+      raw.adviser_id ||
+      raw.advisorId ||
+      raw.advisor_id ||
+      null;
+
   return {
     ...raw,
     id: row.id,
@@ -128,10 +184,11 @@ function formatSnedRecord(row) {
     section_type: row.section_type || "SNED (NON-GRADED)",
     programType: row.program_type || null,
     program_type: row.program_type || null,
-    adviserId: row.adviser_id ? String(row.adviser_id) : null,
-    adviser_id: row.adviser_id ? String(row.adviser_id) : null,
-    advisorId: row.adviser_id ? String(row.adviser_id) : null,
-    advisor_id: row.adviser_id ? String(row.adviser_id) : null,
+    adviserId: adv,
+    adviser_id: adv,
+    advisorId: adv,
+    advisor_id: adv,
+    adviserLinked: Boolean(row.adviser_id),
     maleLearners: m,
     male_learners: m,
     femaleLearners: f,
@@ -153,6 +210,14 @@ function formatAlsRecord(row) {
       ? Number(row.number_of_learners)
       : m + f;
 
+  const adv = row.adviser_id
+    ? String(row.adviser_id)
+    : raw.adviserId ||
+      raw.adviser_id ||
+      raw.advisorId ||
+      raw.advisor_id ||
+      null;
+
   return {
     ...raw,
     id: row.id,
@@ -170,10 +235,11 @@ function formatAlsRecord(row) {
     delivery_mode: row.delivery_mode || null,
     clcName: row.clc_name || null,
     clc_name: row.clc_name || null,
-    adviserId: row.adviser_id ? String(row.adviser_id) : null,
-    adviser_id: row.adviser_id ? String(row.adviser_id) : null,
-    advisorId: row.adviser_id ? String(row.adviser_id) : null,
-    advisor_id: row.adviser_id ? String(row.adviser_id) : null,
+    adviserId: adv,
+    adviser_id: adv,
+    advisorId: adv,
+    advisor_id: adv,
+    adviserLinked: Boolean(row.adviser_id),
     maleLearners: m,
     male_learners: m,
     femaleLearners: f,
@@ -195,6 +261,16 @@ function formatAralRecord(row) {
       ? Number(row.total_learners)
       : m + f;
 
+  const tutor = row.tutor_id
+    ? String(row.tutor_id)
+    : raw.tutorId ||
+      raw.tutor_id ||
+      raw.advisorId ||
+      raw.advisor_id ||
+      raw.adviserId ||
+      raw.adviser_id ||
+      null;
+
   return {
     ...raw,
     id: row.id,
@@ -214,8 +290,13 @@ function formatAralRecord(row) {
     section_name: row.section_name || row.id,
     sectionType: row.section_type || "ARAL",
     section_type: row.section_type || "ARAL",
-    tutorId: row.tutor_id ? String(row.tutor_id) : null,
-    tutor_id: row.tutor_id ? String(row.tutor_id) : null,
+    tutorId: tutor,
+    tutor_id: tutor,
+    advisorId: tutor,
+    advisor_id: tutor,
+    adviserId: tutor,
+    adviser_id: tutor,
+    adviserLinked: Boolean(row.tutor_id),
     maleLearners: m,
     male_learners: m,
     femaleLearners: f,
@@ -236,6 +317,17 @@ function formatRemedialRecord(row) {
       ? Number(row.total_learners)
       : m + f;
 
+  const teacher = row.assigned_teacher_id
+    ? String(row.assigned_teacher_id)
+    : raw.assignedTeacherId ||
+      raw.assigned_teacher_id ||
+      raw.advisorId ||
+      raw.advisor_id ||
+      raw.adviserId ||
+      raw.adviser_id ||
+      raw.teacherId ||
+      null;
+
   return {
     ...raw,
     id: row.id,
@@ -251,16 +343,15 @@ function formatRemedialRecord(row) {
     grade_level: row.grade_level,
     sectionName: row.section_name || row.id,
     section_name: row.section_name || row.id,
-    assignedTeacherId: row.assigned_teacher_id
-      ? String(row.assigned_teacher_id)
-      : null,
-    assigned_teacher_id: row.assigned_teacher_id
-      ? String(row.assigned_teacher_id)
-      : null,
-    adviserId: row.assigned_teacher_id ? String(row.assigned_teacher_id) : null,
-    adviser_id: row.assigned_teacher_id
-      ? String(row.assigned_teacher_id)
-      : null,
+    assignedTeacherId: teacher,
+    assigned_teacher_id: teacher,
+    adviserId: teacher,
+    adviser_id: teacher,
+    advisorId: teacher,
+    advisor_id: teacher,
+    teacherId: teacher,
+    teacher_id: teacher,
+    adviserLinked: Boolean(row.assigned_teacher_id),
     maleLearners: m,
     male_learners: m,
     femaleLearners: f,
@@ -491,7 +582,11 @@ async function upsertRegularSection(client, body) {
 
   let validAdviserId = null;
   if (targetAdviserId) {
-    validAdviserId = await resolvePersonnelId(client, targetAdviserId);
+    validAdviserId = await resolvePersonnelId(
+      client,
+      targetAdviserId,
+      targetSchoolId,
+    );
   }
 
   const sidPair = [targetSchoolId, "SCH-" + targetSchoolId];
@@ -743,12 +838,21 @@ router.post("/sned", async (req, res) => {
     sizeStatus,
   } = req.body;
 
-  const targetSchoolId = school_id || bodySchoolId || "108348";
-  const targetSchoolYear = school_year || bodySchoolYear || "2026-2027";
+  const targetSchoolId = String(school_id || bodySchoolId || "108348").replace(
+    /^SCH-/i,
+    "",
+  );
+  const targetSchoolYear = normalizeSchoolYear(
+    school_year || bodySchoolYear || "SY 26-27",
+  );
   const targetGradeLevel = grade_level || gradeLevel || "SNED (NON-GRADED)";
   const targetProgramType = program_type || programType || null;
+  const adviserKeys = [adviser_id, advisor_id, advisorId, adviserId];
+  const adviserProvided = adviserKeys.some((v) => v !== undefined);
   const targetAdviserId =
-    adviser_id || advisor_id || advisorId || adviserId || null;
+    adviserKeys.find(
+      (v) => v !== undefined && v !== null && String(v).trim() !== "",
+    ) || null;
 
   const mVal = Number(male_learners || maleLearners || 0);
   const fVal = Number(female_learners || femaleLearners || 0);
@@ -784,9 +888,7 @@ router.post("/sned", async (req, res) => {
       String(id).toLowerCase().startsWith("draft-") ||
       String(id).toLowerCase().startsWith("temp-") ||
       !String(id).startsWith("SNED-");
-    const secId = !isDraftId
-      ? id
-      : `SNED-${targetSchoolId.replace(/^SCH-/i, "")}-${seq}`;
+    const secId = !isDraftId ? id : `SNED-${targetSchoolId}-${seq}`;
     const targetSectionType =
       section_type || sectionType || "SNED (NON-GRADED)";
     const targetSectionName = (section_name || sectionName || secId)
@@ -795,7 +897,11 @@ router.post("/sned", async (req, res) => {
 
     let validAdviserId = null;
     if (targetAdviserId) {
-      validAdviserId = await resolvePersonnelId(db, targetAdviserId);
+      validAdviserId = await resolvePersonnelId(
+        db,
+        targetAdviserId,
+        targetSchoolId,
+      );
     }
 
     const query = `
@@ -808,7 +914,7 @@ router.post("/sned", async (req, res) => {
         section_type = EXCLUDED.section_type,
         grade_level = EXCLUDED.grade_level,
         program_type = EXCLUDED.program_type,
-        adviser_id = COALESCE(EXCLUDED.adviser_id, esf7_sned_sections.adviser_id),
+        adviser_id = CASE WHEN $13::boolean THEN $8 ELSE esf7_sned_sections.adviser_id END,
         male_learners = EXCLUDED.male_learners,
         female_learners = EXCLUDED.female_learners,
         number_of_learners = EXCLUDED.number_of_learners,
@@ -830,6 +936,7 @@ router.post("/sned", async (req, res) => {
       fVal,
       totalLearners,
       targetSizeStatus,
+      adviserProvided,
     ]);
     res.status(201).json(formatSnedRecord(result.rows[0]));
   } catch (err) {
@@ -870,13 +977,22 @@ router.post("/als", async (req, res) => {
     sizeStatus,
   } = req.body;
 
-  const targetSchoolId = school_id || bodySchoolId || "108348";
-  const targetSchoolYear = school_year || bodySchoolYear || "2026-2027";
+  const targetSchoolId = String(school_id || bodySchoolId || "108348").replace(
+    /^SCH-/i,
+    "",
+  );
+  const targetSchoolYear = normalizeSchoolYear(
+    school_year || bodySchoolYear || "SY 26-27",
+  );
   const targetGradeLevel = grade_level || gradeLevel || "ALS";
   const targetDeliveryMode = delivery_mode || deliveryMode || null;
   const targetClcName = clc_name || clcName || null;
+  const adviserKeys = [adviser_id, advisor_id, advisorId, adviserId];
+  const adviserProvided = adviserKeys.some((v) => v !== undefined);
   const targetAdviserId =
-    adviser_id || advisor_id || advisorId || adviserId || null;
+    adviserKeys.find(
+      (v) => v !== undefined && v !== null && String(v).trim() !== "",
+    ) || null;
 
   const mVal = Number(male_learners || maleLearners || 0);
   const fVal = Number(female_learners || femaleLearners || 0);
@@ -912,9 +1028,7 @@ router.post("/als", async (req, res) => {
       String(id).toLowerCase().startsWith("draft-") ||
       String(id).toLowerCase().startsWith("temp-") ||
       !String(id).startsWith("ALS-");
-    const secId = !isDraftId
-      ? id
-      : `ALS-${targetSchoolId.replace(/^SCH-/i, "")}-${seq}`;
+    const secId = !isDraftId ? id : `ALS-${targetSchoolId}-${seq}`;
     const targetSectionType = section_type || sectionType || "ALS";
     const targetSectionName = (section_name || sectionName || secId)
       .toUpperCase()
@@ -922,7 +1036,11 @@ router.post("/als", async (req, res) => {
 
     let validAdviserId = null;
     if (targetAdviserId) {
-      validAdviserId = await resolvePersonnelId(db, targetAdviserId);
+      validAdviserId = await resolvePersonnelId(
+        db,
+        targetAdviserId,
+        targetSchoolId,
+      );
     }
 
     const query = `
@@ -936,7 +1054,7 @@ router.post("/als", async (req, res) => {
         grade_level = EXCLUDED.grade_level,
         delivery_mode = EXCLUDED.delivery_mode,
         clc_name = EXCLUDED.clc_name,
-        adviser_id = COALESCE(EXCLUDED.adviser_id, esf7_als_sections.adviser_id),
+        adviser_id = CASE WHEN $14::boolean THEN $9 ELSE esf7_als_sections.adviser_id END,
         male_learners = EXCLUDED.male_learners,
         female_learners = EXCLUDED.female_learners,
         number_of_learners = EXCLUDED.number_of_learners,
@@ -959,6 +1077,7 @@ router.post("/als", async (req, res) => {
       fVal,
       totalLearners,
       targetSizeStatus,
+      adviserProvided,
     ]);
     res.status(201).json(formatAlsRecord(result.rows[0]));
   } catch (err) {
@@ -989,6 +1108,10 @@ router.post("/aral", async (req, res) => {
     sectionName,
     tutor_id,
     tutorId,
+    adviser_id,
+    adviserId,
+    advisor_id,
+    advisorId,
     male_learners,
     maleLearners,
     female_learners,
@@ -997,13 +1120,32 @@ router.post("/aral", async (req, res) => {
     totalLearners,
   } = req.body;
 
-  const targetSchoolId = school_id || bodySchoolId || "108348";
-  const targetSchoolYear = school_year || bodySchoolYear || "2026-2027";
+  const targetSchoolId = String(school_id || bodySchoolId || "108348").replace(
+    /^SCH-/i,
+    "",
+  );
+  const targetSchoolYear = normalizeSchoolYear(
+    school_year || bodySchoolYear || "SY 26-27",
+  );
   const targetBasis = basis_type || basisType || "grade";
   const targetGrade = grade_level || gradeLevel || "Grade 3";
   const targetTool = assessment_tool || assessmentTool || null;
   const targetProfile = profile_level || profileLevel || null;
-  const targetTutorId = tutor_id || tutorId || null;
+  const targetTutorId =
+    tutor_id ||
+    tutorId ||
+    adviser_id ||
+    adviserId ||
+    advisor_id ||
+    advisorId ||
+    null;
+  const tutorProvided =
+    tutor_id !== undefined ||
+    tutorId !== undefined ||
+    adviser_id !== undefined ||
+    adviserId !== undefined ||
+    advisor_id !== undefined ||
+    advisorId !== undefined;
 
   const mVal = Number(male_learners || maleLearners || 0);
   const fVal = Number(female_learners || femaleLearners || 0);
@@ -1035,9 +1177,7 @@ router.post("/aral", async (req, res) => {
       String(id).toLowerCase().startsWith("draft-") ||
       String(id).toLowerCase().startsWith("temp-") ||
       !String(id).startsWith("ARAL-");
-    const secId = !isDraftId
-      ? id
-      : `ARAL-${targetSchoolId.replace(/^SCH-/i, "")}-${seq}`;
+    const secId = !isDraftId ? id : `ARAL-${targetSchoolId}-${seq}`;
     const targetSectionType = section_type || sectionType || "ARAL";
     const targetName = (section_name || sectionName || secId)
       .toUpperCase()
@@ -1045,7 +1185,11 @@ router.post("/aral", async (req, res) => {
 
     let validTutorId = null;
     if (targetTutorId) {
-      validTutorId = await resolvePersonnelId(db, targetTutorId);
+      validTutorId = await resolvePersonnelId(
+        db,
+        targetTutorId,
+        targetSchoolId,
+      );
     }
 
     const query = `
@@ -1061,7 +1205,7 @@ router.post("/aral", async (req, res) => {
         assessment_tool = EXCLUDED.assessment_tool,
         profile_level = EXCLUDED.profile_level,
         section_name = EXCLUDED.section_name,
-        tutor_id = EXCLUDED.tutor_id,
+        tutor_id = CASE WHEN $14::boolean THEN $10 ELSE esf7_aral_sections.tutor_id END,
         male_learners = EXCLUDED.male_learners,
         female_learners = EXCLUDED.female_learners,
         total_learners = EXCLUDED.total_learners,
@@ -1083,6 +1227,7 @@ router.post("/aral", async (req, res) => {
       mVal,
       fVal,
       computedTotal,
+      tutorProvided,
     ]);
     res.status(201).json(formatAralRecord(result.rows[0]));
   } catch (err) {
@@ -1111,6 +1256,8 @@ router.post("/remedial-enrichment", async (req, res) => {
     assignedTeacherId,
     adviser_id,
     adviserId,
+    advisor_id,
+    advisorId,
     male_learners,
     maleLearners,
     female_learners,
@@ -1119,8 +1266,13 @@ router.post("/remedial-enrichment", async (req, res) => {
     totalLearners,
   } = req.body;
 
-  const targetSchoolId = school_id || bodySchoolId || "108348";
-  const targetSchoolYear = school_year || bodySchoolYear || "2026-2027";
+  const targetSchoolId = String(school_id || bodySchoolId || "108348").replace(
+    /^SCH-/i,
+    "",
+  );
+  const targetSchoolYear = normalizeSchoolYear(
+    school_year || bodySchoolYear || "SY 26-27",
+  );
   const targetIntervention =
     intervention_type ||
     interventionType ||
@@ -1129,7 +1281,20 @@ router.post("/remedial-enrichment", async (req, res) => {
     "REMEDIAL";
   const targetGrade = grade_level || gradeLevel || "Grade 1";
   const targetTeacherId =
-    assigned_teacher_id || assignedTeacherId || adviser_id || adviserId || null;
+    assigned_teacher_id ||
+    assignedTeacherId ||
+    adviser_id ||
+    adviserId ||
+    advisor_id ||
+    advisorId ||
+    null;
+  const teacherProvided =
+    assigned_teacher_id !== undefined ||
+    assignedTeacherId !== undefined ||
+    adviser_id !== undefined ||
+    adviserId !== undefined ||
+    advisor_id !== undefined ||
+    advisorId !== undefined;
 
   const mVal = Number(male_learners || maleLearners || 0);
   const fVal = Number(female_learners || femaleLearners || 0);
@@ -1165,9 +1330,7 @@ router.post("/remedial-enrichment", async (req, res) => {
     const prefix = targetIntervention.toUpperCase().includes("ENRICHMENT")
       ? "ENR"
       : "REM";
-    const secId = !isDraftId
-      ? id
-      : `${prefix}-${targetSchoolId.replace(/^SCH-/i, "")}-${seq}`;
+    const secId = !isDraftId ? id : `${prefix}-${targetSchoolId}-${seq}`;
     const targetSectionType = targetIntervention.includes("ENRICHMENT")
       ? "ENRICHMENT"
       : "REMEDIAL";
@@ -1177,7 +1340,11 @@ router.post("/remedial-enrichment", async (req, res) => {
 
     let validTeacherId = null;
     if (targetTeacherId) {
-      validTeacherId = await resolvePersonnelId(db, targetTeacherId);
+      validTeacherId = await resolvePersonnelId(
+        db,
+        targetTeacherId,
+        targetSchoolId,
+      );
     }
 
     const query = `
@@ -1191,7 +1358,7 @@ router.post("/remedial-enrichment", async (req, res) => {
         section_type = EXCLUDED.section_type,
         grade_level = EXCLUDED.grade_level,
         section_name = EXCLUDED.section_name,
-        assigned_teacher_id = EXCLUDED.assigned_teacher_id,
+        assigned_teacher_id = CASE WHEN $12::boolean THEN $8 ELSE esf7_remedial_enrichment_sections.assigned_teacher_id END,
         male_learners = EXCLUDED.male_learners,
         female_learners = EXCLUDED.female_learners,
         total_learners = EXCLUDED.total_learners,
@@ -1211,6 +1378,7 @@ router.post("/remedial-enrichment", async (req, res) => {
       mVal,
       fVal,
       computedTotal,
+      teacherProvided,
     ]);
     res.status(201).json(formatRemedialRecord(result.rows[0]));
   } catch (err) {

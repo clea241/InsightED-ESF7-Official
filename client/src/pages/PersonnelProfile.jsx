@@ -2370,7 +2370,8 @@ function diffNormalized(base, current, onlyDraftKeys = false) {
     seenCanonical.add(camel);
 
     const valBase = base?.[camel] !== undefined ? base[camel] : base?.[k];
-    const valCurr = current?.[camel] !== undefined ? current[camel] : current?.[k];
+    const valCurr =
+      current?.[camel] !== undefined ? current[camel] : current?.[k];
 
     const a = JSON.stringify(canonicalValue(valBase));
     const b = JSON.stringify(canonicalValue(valCurr));
@@ -2520,6 +2521,11 @@ export default function PersonnelProfile() {
     let isMounted = true;
     const tabModule = TAB_MODULE_MAP[activeTab] || "personnel_profile";
     const currentUserId = user?.username || user?.email;
+    const activeDbPerson = (personnel || []).find(
+      (p) => !p.isDraft && p.id === activePersonnelId,
+    );
+    const dbUpdatedAt =
+      activeDbPerson?.updatedAt || activeDbPerson?.updated_at || null;
 
     autoSyncOutboxOnSectionOpen({
       module: tabModule,
@@ -2527,6 +2533,7 @@ export default function PersonnelProfile() {
       schoolId: schoolInfo?.schoolId,
       user: currentUserId,
       schoolYear: schoolInfo?.schoolYear || "SY 26-27",
+      dbUpdatedAt,
       onSynced: () => {
         if (!isMounted) return;
         if (typeof refreshPersonnelList === "function") {
@@ -2548,6 +2555,7 @@ export default function PersonnelProfile() {
       schoolId: schoolInfo?.schoolId,
       user: currentUserId,
       schoolYear: schoolInfo?.schoolYear || "SY 26-27",
+      dbUpdatedAt,
       onSynced: () => {
         if (!isMounted) return;
         if (typeof refreshPersonnelList === "function") {
@@ -2620,7 +2628,8 @@ export default function PersonnelProfile() {
 
   const currentPersonDirty = diffCurrentPerson().length > 0;
 
-  // Other people's browser drafts count only when they truly differ from that person's saved record.
+  // Other people's browser drafts count only when they truly differ from that person's saved record
+  // AND the local draft is newer than the database record.
   const otherDraftDiffs = () => {
     const out = [];
     (personnel || []).forEach((p) => {
@@ -2636,6 +2645,16 @@ export default function PersonnelProfile() {
       if (!raw) return;
       try {
         const draft = JSON.parse(raw);
+        const dbTime =
+          p.updatedAt || p.updated_at
+            ? new Date(p.updatedAt || p.updated_at).getTime()
+            : 0;
+        const draftTime = draft?.draftSavedAt ? Number(draft.draftSavedAt) : 0;
+        if (!draftTime || (dbTime > 0 && dbTime >= draftTime)) {
+          localStorage.removeItem(canonicalKey);
+          localStorage.removeItem(`draft_personnel_${p.id}`);
+          return;
+        }
         diffNormalized(buildEditPerson(p, false), draft, true).forEach((d) =>
           out.push({ ...d, field: `${p.id}.${d.field}` }),
         );
@@ -2678,9 +2697,11 @@ export default function PersonnelProfile() {
           schoolInfo?.schoolYear,
           editPerson.id,
         );
-        writeWithLegacyCleanup(canonicalKey, editPerson, [
-          `draft_personnel_${editPerson.id}`,
-        ]);
+        writeWithLegacyCleanup(
+          canonicalKey,
+          { ...editPerson, draftSavedAt: Date.now() },
+          [`draft_personnel_${editPerson.id}`],
+        );
       } catch (e) {}
     }
   }, [editPerson, currentPersonDirty, updatePersonnelInfo, schoolInfo]);
@@ -2790,8 +2811,7 @@ export default function PersonnelProfile() {
   });
 
   // Builds the editable copy of a saved person (fills defaults, mirrors snake/camel fields). `withDraft` overlays the
-  // browser draft; without it the result is the dirty-guard BASELINE, normalized exactly like the editable copy so
-  // that load-time defaults are never mistaken for user edits.
+  // browser draft ONLY if the draft was explicitly saved after the database record's updated_at timestamp.
   function buildEditPerson(dbPerson, withDraft = true) {
     {
       const canonicalKey = getPersonnelDraftKey(
@@ -2808,91 +2828,128 @@ export default function PersonnelProfile() {
       if (savedDraft) {
         try {
           const parsed = JSON.parse(savedDraft);
-          // Preserve all fields from parsed draft, while giving precedence to draft's explicit values
-          personObj = {
-            ...dbPerson,
-            ...parsed,
-            noTin:
-              parsed.noTin !== undefined
-                ? parsed.noTin
-                : parsed.no_tin !== undefined
-                  ? parsed.no_tin
-                  : dbPerson.noTin !== undefined
-                    ? dbPerson.noTin
-                    : !!dbPerson.no_tin,
-            no_tin:
-              parsed.noTin !== undefined
-                ? parsed.noTin
-                : parsed.no_tin !== undefined
-                  ? parsed.no_tin
-                  : dbPerson.noTin !== undefined
-                    ? dbPerson.noTin
-                    : !!dbPerson.no_tin,
-            noPhilsys:
-              parsed.noPhilsys !== undefined
-                ? parsed.noPhilsys
-                : parsed.no_philsys !== undefined
-                  ? parsed.no_philsys
-                  : dbPerson.noPhilsys !== undefined
-                    ? dbPerson.noPhilsys
-                    : !!dbPerson.no_philsys,
-            no_philsys:
-              parsed.noPhilsys !== undefined
-                ? parsed.noPhilsys
-                : parsed.no_philsys !== undefined
-                  ? parsed.no_philsys
-                  : dbPerson.noPhilsys !== undefined
-                    ? dbPerson.noPhilsys
-                    : !!dbPerson.no_philsys,
-            lastPromotionDate:
-              parsed.lastPromotionDate !== undefined
-                ? parsed.lastPromotionDate
-                : parsed.last_promotion_date !== undefined
-                  ? parsed.last_promotion_date
-                  : dbPerson.lastPromotionDate !== undefined
-                    ? dbPerson.lastPromotionDate
-                    : dbPerson.last_promotion_date || "",
-            last_promotion_date:
-              parsed.lastPromotionDate !== undefined
-                ? parsed.lastPromotionDate
-                : parsed.last_promotion_date !== undefined
-                  ? parsed.last_promotion_date
-                  : dbPerson.lastPromotionDate !== undefined
-                    ? dbPerson.lastPromotionDate
-                    : dbPerson.last_promotion_date || "",
-            newStationDate:
-              parsed.newStationDate !== undefined
-                ? parsed.newStationDate
-                : parsed.new_station_date !== undefined
-                  ? parsed.new_station_date
-                  : dbPerson.newStationDate !== undefined
-                    ? dbPerson.newStationDate
-                    : dbPerson.new_station_date || "",
-            new_station_date:
-              parsed.newStationDate !== undefined
-                ? parsed.newStationDate
-                : parsed.new_station_date !== undefined
-                  ? parsed.new_station_date
-                  : dbPerson.newStationDate !== undefined
-                    ? dbPerson.newStationDate
-                    : dbPerson.new_station_date || "",
-            lastLateralMovementDate:
-              parsed.lastLateralMovementDate !== undefined
-                ? parsed.lastLateralMovementDate
-                : parsed.last_lateral_movement_date !== undefined
-                  ? parsed.last_lateral_movement_date
-                  : dbPerson.lastLateralMovementDate !== undefined
-                    ? dbPerson.lastLateralMovementDate
-                    : dbPerson.last_lateral_movement_date || "",
-            last_lateral_movement_date:
-              parsed.lastLateralMovementDate !== undefined
-                ? parsed.lastLateralMovementDate
-                : parsed.last_lateral_movement_date !== undefined
-                  ? parsed.last_lateral_movement_date
-                  : dbPerson.lastLateralMovementDate !== undefined
-                    ? dbPerson.lastLateralMovementDate
-                    : dbPerson.last_lateral_movement_date || "",
-          };
+          const dbTime =
+            dbPerson.updatedAt || dbPerson.updated_at
+              ? new Date(dbPerson.updatedAt || dbPerson.updated_at).getTime()
+              : 0;
+          const draftTime = parsed?.draftSavedAt
+            ? Number(parsed.draftSavedAt)
+            : 0;
+          // Always keep database version if the draft has no timestamp or is older than/equal to the database record
+          if (!draftTime || (dbTime > 0 && dbTime >= draftTime)) {
+            localStorage.removeItem(canonicalKey);
+            localStorage.removeItem(`draft_personnel_${dbPerson.id}`);
+          } else {
+            // Preserve all fields from parsed draft, while giving precedence to draft's explicit values
+            personObj = {
+              ...dbPerson,
+              ...parsed,
+              noTin:
+                parsed.noTin !== undefined
+                  ? parsed.noTin
+                  : parsed.no_tin !== undefined
+                    ? parsed.no_tin
+                    : dbPerson.noTin !== undefined
+                      ? dbPerson.noTin
+                      : !!dbPerson.no_tin,
+              no_tin:
+                parsed.noTin !== undefined
+                  ? parsed.noTin
+                  : parsed.no_tin !== undefined
+                    ? parsed.no_tin
+                    : dbPerson.noTin !== undefined
+                      ? dbPerson.noTin
+                      : !!dbPerson.no_tin,
+              noPhilsys:
+                parsed.noPhilsys !== undefined
+                  ? parsed.noPhilsys
+                  : parsed.no_philsys !== undefined
+                    ? parsed.no_philsys
+                    : dbPerson.noPhilsys !== undefined
+                      ? dbPerson.noPhilsys
+                      : !!dbPerson.no_philsys,
+              no_philsys:
+                parsed.noPhilsys !== undefined
+                  ? parsed.noPhilsys
+                  : parsed.no_philsys !== undefined
+                    ? parsed.no_philsys
+                    : dbPerson.noPhilsys !== undefined
+                      ? dbPerson.noPhilsys
+                      : !!dbPerson.no_philsys,
+              noDepedEmail:
+                parsed.noDepedEmail !== undefined
+                  ? parsed.noDepedEmail
+                  : parsed.no_deped_email !== undefined
+                    ? parsed.no_deped_email
+                    : dbPerson.noDepedEmail !== undefined
+                      ? dbPerson.noDepedEmail
+                      : !!(
+                          dbPerson.no_deped_email ||
+                          dbPerson.depedEmail === "N/A" ||
+                          dbPerson.deped_email === "N/A"
+                        ),
+              no_deped_email:
+                parsed.noDepedEmail !== undefined
+                  ? parsed.noDepedEmail
+                  : parsed.no_deped_email !== undefined
+                    ? parsed.no_deped_email
+                    : dbPerson.noDepedEmail !== undefined
+                      ? dbPerson.noDepedEmail
+                      : !!(
+                          dbPerson.no_deped_email ||
+                          dbPerson.depedEmail === "N/A" ||
+                          dbPerson.deped_email === "N/A"
+                        ),
+              lastPromotionDate:
+                parsed.lastPromotionDate !== undefined
+                  ? parsed.lastPromotionDate
+                  : parsed.last_promotion_date !== undefined
+                    ? parsed.last_promotion_date
+                    : dbPerson.lastPromotionDate !== undefined
+                      ? dbPerson.lastPromotionDate
+                      : dbPerson.last_promotion_date || "N/A",
+              last_promotion_date:
+                parsed.lastPromotionDate !== undefined
+                  ? parsed.lastPromotionDate
+                  : parsed.last_promotion_date !== undefined
+                    ? parsed.last_promotion_date
+                    : dbPerson.lastPromotionDate !== undefined
+                      ? dbPerson.lastPromotionDate
+                      : dbPerson.last_promotion_date || "N/A",
+              newStationDate:
+                parsed.newStationDate !== undefined
+                  ? parsed.newStationDate
+                  : parsed.new_station_date !== undefined
+                    ? parsed.new_station_date
+                    : dbPerson.newStationDate !== undefined
+                      ? dbPerson.newStationDate
+                      : dbPerson.new_station_date || "N/A",
+              new_station_date:
+                parsed.newStationDate !== undefined
+                  ? parsed.newStationDate
+                  : parsed.new_station_date !== undefined
+                    ? parsed.new_station_date
+                    : dbPerson.newStationDate !== undefined
+                      ? dbPerson.newStationDate
+                      : dbPerson.new_station_date || "N/A",
+              lastLateralMovementDate:
+                parsed.lastLateralMovementDate !== undefined
+                  ? parsed.lastLateralMovementDate
+                  : parsed.last_lateral_movement_date !== undefined
+                    ? parsed.last_lateral_movement_date
+                    : dbPerson.lastLateralMovementDate !== undefined
+                      ? dbPerson.lastLateralMovementDate
+                      : dbPerson.last_lateral_movement_date || "N/A",
+              last_lateral_movement_date:
+                parsed.lastLateralMovementDate !== undefined
+                  ? parsed.lastLateralMovementDate
+                  : parsed.last_lateral_movement_date !== undefined
+                    ? parsed.last_lateral_movement_date
+                    : dbPerson.lastLateralMovementDate !== undefined
+                      ? dbPerson.lastLateralMovementDate
+                      : dbPerson.last_lateral_movement_date || "N/A",
+            };
+          }
         } catch (e) {
           console.error("Failed to parse draft", e);
         }
@@ -3019,7 +3076,7 @@ export default function PersonnelProfile() {
             ? personObj.last_promotion_date
             : dbPerson.lastPromotionDate !== undefined
               ? dbPerson.lastPromotionDate
-              : dbPerson.last_promotion_date || "";
+              : dbPerson.last_promotion_date || "N/A";
       }
       if (personObj.newStationDate === undefined) {
         personObj.newStationDate =
@@ -3027,7 +3084,7 @@ export default function PersonnelProfile() {
             ? personObj.new_station_date
             : dbPerson.newStationDate !== undefined
               ? dbPerson.newStationDate
-              : dbPerson.new_station_date || "";
+              : dbPerson.new_station_date || "N/A";
       }
       if (personObj.lastLateralMovementDate === undefined) {
         personObj.lastLateralMovementDate =
@@ -3035,7 +3092,7 @@ export default function PersonnelProfile() {
             ? personObj.last_lateral_movement_date
             : dbPerson.lastLateralMovementDate !== undefined
               ? dbPerson.lastLateralMovementDate
-              : dbPerson.last_lateral_movement_date || "";
+              : dbPerson.last_lateral_movement_date || "N/A";
       }
       if (personObj.noTin === undefined) {
         personObj.noTin = !!(personObj.no_tin !== undefined
@@ -3053,6 +3110,20 @@ export default function PersonnelProfile() {
             : dbPerson.no_philsys);
       }
       personObj.no_philsys = !!personObj.noPhilsys;
+      if (personObj.noDepedEmail === undefined) {
+        personObj.noDepedEmail = !!(personObj.no_deped_email !== undefined
+          ? personObj.no_deped_email
+          : dbPerson.noDepedEmail !== undefined
+            ? dbPerson.noDepedEmail
+            : dbPerson.no_deped_email ||
+              dbPerson.depedEmail === "N/A" ||
+              dbPerson.deped_email === "N/A");
+      }
+      personObj.no_deped_email = !!personObj.noDepedEmail;
+      if (personObj.noDepedEmail) {
+        personObj.depedEmail = "N/A";
+        personObj.deped_email = "N/A";
+      }
       if (
         personObj.stepIncrement &&
         (personObj.step_increment ||
@@ -3098,6 +3169,22 @@ export default function PersonnelProfile() {
           dbPerson.prc_specialization;
         personObj.prc_specialization = personObj.prcSpecialization;
       }
+
+      const rawDeploy =
+        personObj.deploymentStatus ||
+        personObj.deployment_status ||
+        dbPerson.deploymentStatus ||
+        dbPerson.deployment_status ||
+        "OWN STATION";
+      let cleanDeploy = String(rawDeploy).trim().toUpperCase();
+      if (
+        cleanDeploy === "STATIONED" ||
+        cleanDeploy === "STATIONED (OWN STATION)"
+      ) {
+        cleanDeploy = "OWN STATION";
+      }
+      personObj.deploymentStatus = cleanDeploy;
+      personObj.deployment_status = cleanDeploy;
 
       const rawPos = personObj.position || dbPerson.position || "";
       if (!isCanonicalPosition(rawPos)) {
@@ -3619,13 +3706,24 @@ export default function PersonnelProfile() {
       }
 
       if (key === "deploymentStatus") {
-        updated.deploymentStatus = value;
-        updated.deployment_status = value;
-        if (value === "Stationed" || value === "Stationed (Own Station)") {
+        const normVal = String(value || "OWN STATION")
+          .trim()
+          .toUpperCase();
+        const finalVal =
+          normVal === "STATIONED" || normVal === "STATIONED (OWN STATION)"
+            ? "OWN STATION"
+            : normVal;
+        updated.deploymentStatus = finalVal;
+        updated.deployment_status = finalVal;
+        if (finalVal === "OWN STATION") {
           updated.isShared = false;
           updated.is_shared = false;
           updated.isClustered = false;
           updated.is_clustered = false;
+          updated.isReassigned = false;
+          updated.is_reassigned = false;
+          updated.isBorrowed = false;
+          updated.is_borrowed = false;
           updated.partnerSchoolId = null;
           updated.partner_school_id = null;
           updated.partnerSchoolName = null;
@@ -3634,6 +3732,33 @@ export default function PersonnelProfile() {
           updated.reassigned_school_id = null;
           updated.reassignedSchoolName = null;
           updated.reassigned_school_name = null;
+        } else if (finalVal === "CLUSTERED") {
+          updated.isShared = true;
+          updated.is_shared = true;
+          updated.isClustered = true;
+          updated.is_clustered = true;
+          updated.isReassigned = false;
+          updated.is_reassigned = false;
+          updated.isBorrowed = false;
+          updated.is_borrowed = false;
+        } else if (finalVal === "REASSIGNED") {
+          updated.isShared = true;
+          updated.is_shared = true;
+          updated.isClustered = false;
+          updated.is_clustered = false;
+          updated.isReassigned = true;
+          updated.is_reassigned = true;
+          updated.isBorrowed = false;
+          updated.is_borrowed = false;
+        } else if (finalVal === "BORROWED") {
+          updated.isShared = true;
+          updated.is_shared = true;
+          updated.isClustered = false;
+          updated.is_clustered = false;
+          updated.isReassigned = false;
+          updated.is_reassigned = false;
+          updated.isBorrowed = true;
+          updated.is_borrowed = true;
         }
       }
 
@@ -4079,10 +4204,13 @@ export default function PersonnelProfile() {
       }
 
       // 1. Prepare single personnel record (Identity + Employment + Educ + Training + Learning Areas)
+      const savedAtIso = new Date().toISOString();
       const personToSave = {
         ...currentPerson,
         learningAreaMap,
         matrix_data: learningAreaMap,
+        updatedAt: savedAtIso,
+        updated_at: savedAtIso,
       };
 
       // 2. Direct 1-by-1 write-through to PostgreSQL relational database
@@ -4127,22 +4255,26 @@ export default function PersonnelProfile() {
           );
       }
 
-      // 4. Remove outbox entry right away on verified success for both the active tab module and general personnel_profile
-      const tabModule = TAB_MODULE_MAP[activeTab] || "personnel_profile";
-      await removeOutboxEntryByModule({
-        schoolId: schoolInfo?.schoolId,
-        user: user?.username || user?.email,
-        term: activeTerm,
-        module: tabModule,
-        personnelId: personToSave.id,
-      });
-      await removeOutboxEntryByModule({
-        schoolId: schoolInfo?.schoolId,
-        user: user?.username || user?.email,
-        term: activeTerm,
-        module: "personnel_profile",
-        personnelId: personToSave.id,
-      });
+      // 4. Remove outbox entries right away on verified success across all profile modules (and any legacy null personnelId entry)
+      const allProfileModules = Array.from(
+        new Set([...Object.values(TAB_MODULE_MAP), "personnel_profile"]),
+      );
+      for (const mod of allProfileModules) {
+        await removeOutboxEntryByModule({
+          schoolId: schoolInfo?.schoolId,
+          user: user?.username || user?.email,
+          term: activeTerm,
+          module: mod,
+          personnelId: personToSave.id,
+        }).catch(() => {});
+        await removeOutboxEntryByModule({
+          schoolId: schoolInfo?.schoolId,
+          user: user?.username || user?.email,
+          term: activeTerm,
+          module: mod,
+          personnelId: null,
+        }).catch(() => {});
+      }
 
       // 6. Clear secondary local drafts now that data is stored directly in database
       const canonicalKey = getPersonnelDraftKey(
@@ -4185,25 +4317,27 @@ export default function PersonnelProfile() {
         err?.name === "TimeoutError";
 
       // IndexedDB Outbox is strictly an emergency buffer when offline
-      try {
-        await upsertOutboxEntry({
-          kind: isOffline ? "offline" : "failed",
-          schoolId: schoolInfo?.schoolId,
-          user: user?.username || user?.email,
-          schoolYear: schoolInfo?.schoolYear || "SY 26-27",
-          term: activeTerm,
-          module: tabModule,
-          personnelId: currentPerson?.id,
-          endpoint: `/api/personnel/${currentPerson?.id || ""}`,
-          payload: {
-            ...currentPerson,
-            learningAreaMap,
-            matrix_data: learningAreaMap,
-          },
-          lastError: err?.message || "Failed to save personnel profile",
-        });
-      } catch (outboxErr) {
-        console.warn("[Outbox Failed Save Error]:", outboxErr);
+      if (isOffline) {
+        try {
+          await upsertOutboxEntry({
+            kind: "offline",
+            schoolId: schoolInfo?.schoolId,
+            user: user?.username || user?.email,
+            schoolYear: schoolInfo?.schoolYear || "SY 26-27",
+            term: activeTerm,
+            module: tabModule,
+            personnelId: currentPerson?.id,
+            endpoint: `/api/personnel/${currentPerson?.id || ""}`,
+            payload: {
+              ...currentPerson,
+              learningAreaMap,
+              matrix_data: learningAreaMap,
+            },
+            lastError: err?.message || "Failed to save personnel profile",
+          });
+        } catch (outboxErr) {
+          console.warn("[Outbox Failed Save Error]:", outboxErr);
+        }
       }
 
       if (isOffline) {
@@ -4269,6 +4403,13 @@ export default function PersonnelProfile() {
       type: currentPerson.type,
       position: currentPerson.position,
       depedEmail: `copy.${currentPerson.depedEmail || ""}`,
+      isSchoolHead: false,
+      is_school_head: false,
+      isMainSchoolHead: false,
+      is_main_school_head: false,
+      is_main_sh: false,
+      schoolHeadLevel: null,
+      school_head_level: null,
     });
     setActivePersonnelId(addedId);
     showToast("Record duplicated successfully.");
@@ -4409,7 +4550,8 @@ export default function PersonnelProfile() {
 
       // 6. Status of Deployment default
       if (!updatedP.deploymentStatus) {
-        updatedP.deploymentStatus = "Stationed";
+        updatedP.deploymentStatus = "OWN STATION";
+        updatedP.deployment_status = "OWN STATION";
         isModified = true;
       }
 
@@ -5259,7 +5401,11 @@ export default function PersonnelProfile() {
                                     />
                                   </div>
                                   <div
-                                    className={!isComplete ? "warning-christmas-glow-group" : ""}
+                                    className={
+                                      !isComplete
+                                        ? "warning-christmas-glow-group"
+                                        : ""
+                                    }
                                     style={{
                                       display: "inline-flex",
                                       alignItems: "center",
@@ -6106,11 +6252,8 @@ export default function PersonnelProfile() {
                       <button
                         type="button"
                         onClick={() => {
-                          handleFieldChange("deploymentStatus", "Stationed");
-                          showToast(
-                            "Reset status to Stationed (Own Station)",
-                            "info",
-                          );
+                          handleFieldChange("deploymentStatus", "OWN STATION");
+                          showToast("Reset status to OWN STATION", "info");
                         }}
                         style={{
                           padding: "6px 14px",
@@ -7187,14 +7330,12 @@ export default function PersonnelProfile() {
                                       currentPerson.nature_of_appointment ||
                                       "",
                                   ).toUpperCase() === "REGULAR PERMANENT";
-                                const isEmailNA =
-                                  !isPermanent &&
-                                  Boolean(
-                                    currentPerson.noDepedEmail ||
-                                    currentPerson.no_deped_email ||
-                                    currentPerson.depedEmail === "N/A" ||
-                                    currentPerson.deped_email === "N/A",
-                                  );
+                                const isEmailNA = Boolean(
+                                  currentPerson.noDepedEmail ||
+                                  currentPerson.no_deped_email ||
+                                  currentPerson.depedEmail === "N/A" ||
+                                  currentPerson.deped_email === "N/A",
+                                );
                                 const hasDiscrepancy = Boolean(
                                   currentPerson.allowEmailDiscrepancy ||
                                   currentPerson.allow_email_discrepancy,
@@ -7552,166 +7693,164 @@ export default function PersonnelProfile() {
                                       </div>
                                     )}
 
-                                    {/* No DepEd Email Toggle Card - Only shown for Non-Permanent Personnel */}
-                                    {!isPermanent && (
+                                    {/* No DepEd Email Toggle Card */}
+                                    <div
+                                      onClick={() => {
+                                        if (!isEmailNA) {
+                                          handleMultipleFieldsChange({
+                                            depedEmail: "N/A",
+                                            deped_email: "N/A",
+                                            noDepedEmail: true,
+                                            no_deped_email: true,
+                                          });
+                                        } else {
+                                          handleMultipleFieldsChange({
+                                            depedEmail: "",
+                                            deped_email: "",
+                                            noDepedEmail: false,
+                                            no_deped_email: false,
+                                          });
+                                        }
+                                      }}
+                                      style={{
+                                        marginTop: "8px",
+                                        padding: "10px 14px",
+                                        borderRadius: "12px",
+                                        border: isEmailNA
+                                          ? "1.5px solid #10B981"
+                                          : "1.5px solid #E2E8F0",
+                                        background: isEmailNA
+                                          ? "linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%)"
+                                          : "#F8FAFC",
+                                        boxShadow: isEmailNA
+                                          ? "0 4px 12px -2px rgba(16, 185, 129, 0.15)"
+                                          : "none",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "space-between",
+                                        gap: "12px",
+                                        cursor: "pointer",
+                                        transition:
+                                          "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+                                        userSelect: "none",
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        if (!isEmailNA) {
+                                          e.currentTarget.style.borderColor =
+                                            "#CBD5E1";
+                                          e.currentTarget.style.background =
+                                            "#F1F5F9";
+                                        }
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        if (!isEmailNA) {
+                                          e.currentTarget.style.borderColor =
+                                            "#E2E8F0";
+                                          e.currentTarget.style.background =
+                                            "#F8FAFC";
+                                        }
+                                      }}
+                                    >
                                       <div
-                                        onClick={() => {
-                                          if (!isEmailNA) {
-                                            handleMultipleFieldsChange({
-                                              depedEmail: "N/A",
-                                              deped_email: "N/A",
-                                              noDepedEmail: true,
-                                              no_deped_email: true,
-                                            });
-                                          } else {
-                                            handleMultipleFieldsChange({
-                                              depedEmail: "",
-                                              deped_email: "",
-                                              noDepedEmail: false,
-                                              no_deped_email: false,
-                                            });
-                                          }
-                                        }}
                                         style={{
-                                          marginTop: "8px",
-                                          padding: "10px 14px",
-                                          borderRadius: "12px",
-                                          border: isEmailNA
-                                            ? "1.5px solid #10B981"
-                                            : "1.5px solid #E2E8F0",
-                                          background: isEmailNA
-                                            ? "linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%)"
-                                            : "#F8FAFC",
-                                          boxShadow: isEmailNA
-                                            ? "0 4px 12px -2px rgba(16, 185, 129, 0.15)"
-                                            : "none",
                                           display: "flex",
                                           alignItems: "center",
-                                          justifyContent: "space-between",
-                                          gap: "12px",
-                                          cursor: "pointer",
-                                          transition:
-                                            "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
-                                          userSelect: "none",
-                                        }}
-                                        onMouseEnter={(e) => {
-                                          if (!isEmailNA) {
-                                            e.currentTarget.style.borderColor =
-                                              "#CBD5E1";
-                                            e.currentTarget.style.background =
-                                              "#F1F5F9";
-                                          }
-                                        }}
-                                        onMouseLeave={(e) => {
-                                          if (!isEmailNA) {
-                                            e.currentTarget.style.borderColor =
-                                              "#E2E8F0";
-                                            e.currentTarget.style.background =
-                                              "#F8FAFC";
-                                          }
+                                          gap: "10px",
+                                          flex: 1,
                                         }}
                                       >
                                         <div
                                           style={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: "10px",
-                                            flex: 1,
-                                          }}
-                                        >
-                                          <div
-                                            style={{
-                                              width: "32px",
-                                              height: "32px",
-                                              borderRadius: "9px",
-                                              background: isEmailNA
-                                                ? "#059669"
-                                                : "#E2E8F0",
-                                              color: isEmailNA
-                                                ? "#FFFFFF"
-                                                : "#64748B",
-                                              display: "flex",
-                                              alignItems: "center",
-                                              justifyContent: "center",
-                                              flexShrink: 0,
-                                              transition: "all 0.2s ease",
-                                            }}
-                                          >
-                                            <FiCheck size={16} />
-                                          </div>
-                                          <div
-                                            style={{
-                                              display: "flex",
-                                              alignItems: "center",
-                                              gap: "6px",
-                                            }}
-                                          >
-                                            <span
-                                              style={{
-                                                fontSize: "12.5px",
-                                                fontWeight: 700,
-                                                color: isEmailNA
-                                                  ? "#065F46"
-                                                  : "#1E293B",
-                                              }}
-                                            >
-                                              No DepEd Email Issued (N/A)
-                                            </span>
-                                            {isEmailNA && (
-                                              <span
-                                                style={{
-                                                  fontSize: "10px",
-                                                  fontWeight: 800,
-                                                  textTransform: "uppercase",
-                                                  letterSpacing: "0.5px",
-                                                  padding: "1px 6px",
-                                                  borderRadius: "6px",
-                                                  background: "#059669",
-                                                  color: "#FFFFFF",
-                                                }}
-                                              >
-                                                N/A
-                                              </span>
-                                            )}
-                                          </div>
-                                        </div>
-
-                                        {/* Modern iOS-Style Switch Pill */}
-                                        <div
-                                          style={{
-                                            width: "42px",
-                                            height: "24px",
-                                            borderRadius: "999px",
+                                            width: "32px",
+                                            height: "32px",
+                                            borderRadius: "9px",
                                             background: isEmailNA
                                               ? "#059669"
-                                              : "#CBD5E1",
-                                            padding: "2px",
+                                              : "#E2E8F0",
+                                            color: isEmailNA
+                                              ? "#FFFFFF"
+                                              : "#64748B",
                                             display: "flex",
                                             alignItems: "center",
-                                            transition:
-                                              "background-color 0.25s ease",
+                                            justifyContent: "center",
                                             flexShrink: 0,
-                                            position: "relative",
+                                            transition: "all 0.2s ease",
                                           }}
                                         >
-                                          <div
+                                          <FiCheck size={16} />
+                                        </div>
+                                        <div
+                                          style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: "6px",
+                                          }}
+                                        >
+                                          <span
                                             style={{
-                                              width: "20px",
-                                              height: "20px",
-                                              borderRadius: "50%",
-                                              background: "#FFFFFF",
-                                              boxShadow:
-                                                "0 2px 4px rgba(0, 0, 0, 0.2)",
-                                              transform: isEmailNA
-                                                ? "translateX(18px)"
-                                                : "translateX(0px)",
-                                              transition:
-                                                "transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
+                                              fontSize: "12.5px",
+                                              fontWeight: 700,
+                                              color: isEmailNA
+                                                ? "#065F46"
+                                                : "#1E293B",
                                             }}
-                                          />
+                                          >
+                                            No DepEd Email Issued (N/A)
+                                          </span>
+                                          {isEmailNA && (
+                                            <span
+                                              style={{
+                                                fontSize: "10px",
+                                                fontWeight: 800,
+                                                textTransform: "uppercase",
+                                                letterSpacing: "0.5px",
+                                                padding: "1px 6px",
+                                                borderRadius: "6px",
+                                                background: "#059669",
+                                                color: "#FFFFFF",
+                                              }}
+                                            >
+                                              N/A
+                                            </span>
+                                          )}
                                         </div>
                                       </div>
-                                    )}
+
+                                      {/* Modern iOS-Style Switch Pill */}
+                                      <div
+                                        style={{
+                                          width: "42px",
+                                          height: "24px",
+                                          borderRadius: "999px",
+                                          background: isEmailNA
+                                            ? "#059669"
+                                            : "#CBD5E1",
+                                          padding: "2px",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          transition:
+                                            "background-color 0.25s ease",
+                                          flexShrink: 0,
+                                          position: "relative",
+                                        }}
+                                      >
+                                        <div
+                                          style={{
+                                            width: "20px",
+                                            height: "20px",
+                                            borderRadius: "50%",
+                                            background: "#FFFFFF",
+                                            boxShadow:
+                                              "0 2px 4px rgba(0, 0, 0, 0.2)",
+                                            transform: isEmailNA
+                                              ? "translateX(18px)"
+                                              : "translateX(0px)",
+                                            transition:
+                                              "transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
+                                          }}
+                                        />
+                                      </div>
+                                    </div>
                                   </>
                                 );
                               })()}
@@ -7729,7 +7868,17 @@ export default function PersonnelProfile() {
                                   "REASSIGNED",
                                   "BORROWED",
                                 ]}
-                                value={currentPerson.deploymentStatus || ""}
+                                value={(() => {
+                                  const raw =
+                                    currentPerson.deploymentStatus ||
+                                    currentPerson.deployment_status ||
+                                    "OWN STATION";
+                                  const s = String(raw).trim().toUpperCase();
+                                  return s === "STATIONED" ||
+                                    s === "STATIONED (OWN STATION)"
+                                    ? "OWN STATION"
+                                    : s;
+                                })()}
                                 onChange={(val) =>
                                   handleFieldChange("deploymentStatus", val)
                                 }
@@ -7737,14 +7886,15 @@ export default function PersonnelProfile() {
                               />
                             </div>
 
-                            {[
-                              "Clustered",
-                              "Reassigned",
-                              "Borrowed",
-                              "CLUSTERED",
-                              "REASSIGNED",
-                              "BORROWED",
-                            ].includes(currentPerson.deploymentStatus) && (
+                            {["CLUSTERED", "REASSIGNED", "BORROWED"].includes(
+                              String(
+                                currentPerson.deploymentStatus ||
+                                  currentPerson.deployment_status ||
+                                  "",
+                              )
+                                .trim()
+                                .toUpperCase(),
+                            ) && (
                               <div
                                 className="full"
                                 style={{
@@ -13209,8 +13359,8 @@ export default function PersonnelProfile() {
                       prev
                         ? {
                             ...prev,
-                            deploymentStatus: "Stationed",
-                            deployment_status: "Stationed",
+                            deploymentStatus: "OWN STATION",
+                            deployment_status: "OWN STATION",
                           }
                         : prev,
                     );

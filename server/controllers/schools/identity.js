@@ -271,6 +271,7 @@ const handleGetSchool = async (req, res) => {
     let has_jhs_mad = false;
 
     let has_shs_sned = false;
+    let has_shs_als = false;
     let has_shs_iped = false;
     let has_shs_mad = false;
 
@@ -327,6 +328,11 @@ const handleGetSchool = async (req, res) => {
       has_jhs_mad = Boolean(pRow.has_jhs_mad);
 
       has_shs_sned = Boolean(pRow.has_shs_sned);
+      has_shs_als = Boolean(
+        pRow.has_shs_als ||
+        (Array.isArray(pRow.inclusive_programs) &&
+          pRow.inclusive_programs.includes("ALS-SHS")),
+      );
       has_shs_iped = Boolean(pRow.has_shs_iped);
       has_shs_mad = Boolean(pRow.has_shs_mad);
 
@@ -334,7 +340,9 @@ const handleGetSchool = async (req, res) => {
       hasSned = Boolean(
         pRow.has_sned ?? (has_es_sned || has_jhs_sned || has_shs_sned),
       );
-      hasAls = Boolean(pRow.has_als ?? (has_es_als || has_jhs_als));
+      hasAls = Boolean(
+        pRow.has_als ?? (has_es_als || has_jhs_als || has_shs_als),
+      );
       hasIped = Boolean(
         pRow.has_iped ?? (has_es_iped || has_jhs_iped || has_shs_iped),
       );
@@ -359,6 +367,7 @@ const handleGetSchool = async (req, res) => {
 
       shsInclusivePrograms = [];
       if (has_shs_sned) shsInclusivePrograms.push("SNED-SHS");
+      if (has_shs_als) shsInclusivePrograms.push("ALS-SHS");
       if (has_shs_iped) shsInclusivePrograms.push("IPED-SHS");
       if (has_shs_mad) shsInclusivePrograms.push("MADRASAH-SHS");
       hasShsInclusive = shsInclusivePrograms.length > 0;
@@ -426,6 +435,7 @@ const handleGetSchool = async (req, res) => {
       has_jhs_iped,
       has_jhs_mad,
       has_shs_sned,
+      has_shs_als,
       has_shs_iped,
       has_shs_mad,
       hasElemInclusive,

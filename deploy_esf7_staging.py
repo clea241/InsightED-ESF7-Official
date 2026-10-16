@@ -118,6 +118,8 @@ def main():
     env = os.environ.copy()
     env["VITE_BASE_PATH"] = "/insighted-esf7-staging/"
     env["VITE_API_URL"] = "/insighted-esf7-staging/api"
+    env["VITE_APP_ENV"] = "staging"
+    env["VITE_IS_STAGING"] = "true"
     env["NODE_OPTIONS"] = "--max-old-space-size=4096"
     try:
         subprocess.run("npm run build", shell=True, check=True, env=env, cwd="client")

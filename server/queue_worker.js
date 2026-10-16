@@ -79,23 +79,41 @@ const checkIsSchoolHead = (p) => {
   ) {
     return true;
   }
+  if (
+    p.isSchoolHead === false ||
+    p.is_school_head === false ||
+    String(p.isSchoolHead).toLowerCase() === "false" ||
+    String(p.is_school_head).toLowerCase() === "false"
+  ) {
+    return false;
+  }
   const pos = String(
     p.position || (p.employment && p.employment.position) || "",
   ).toUpperCase();
   const des = String(
     p.designation || (p.employment && p.employment.designation) || "",
   ).toUpperCase();
+
+  // Assistant Principals and Head Teachers / Department Heads are NEVER School Heads by default
+  if (
+    pos.includes("ASSISTANT") ||
+    des.includes("ASSISTANT") ||
+    pos.includes("HEAD TEACHER") ||
+    des.includes("DEPARTMENT HEAD") ||
+    pos.includes("DEPARTMENT HEAD")
+  ) {
+    return false;
+  }
+
   return (
     pos.includes("PRINCIPAL") ||
     pos.includes("TEACHER-IN-CHARGE") ||
-    pos.includes("TIC") ||
     pos.includes("OFFICER-IN-CHARGE") ||
-    pos.includes("OIC") ||
+    /\b(TIC|OIC)\b/.test(pos) ||
     des.includes("PRINCIPAL") ||
     des.includes("TEACHER-IN-CHARGE") ||
-    des.includes("TIC") ||
     des.includes("OFFICER-IN-CHARGE") ||
-    des.includes("OIC") ||
+    /\b(TIC|OIC)\b/.test(des) ||
     des.includes("SCHOOL HEAD")
   );
 };
@@ -851,8 +869,8 @@ async function processJobById(
          has_als, has_sned, has_iped, has_madrasah,
          inclusive_programs,
          has_shifts, shifts_config,
-         extras, created_at, updated_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, NOW(), NOW())
+         created_at, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, NOW(), NOW())
        ON CONFLICT (school_id, school_year) DO UPDATE SET
          has_elem_special_programs = EXCLUDED.has_elem_special_programs,
          elem_special_programs = EXCLUDED.elem_special_programs,
@@ -871,8 +889,7 @@ async function processJobById(
          has_madrasah = EXCLUDED.has_madrasah,
          inclusive_programs = EXCLUDED.inclusive_programs,
          has_shifts = EXCLUDED.has_shifts,
-                  shifts_config = EXCLUDED.shifts_config,
-         extras = EXCLUDED.extras,
+         shifts_config = EXCLUDED.shifts_config,
          updated_at = NOW()`,
       [
         schoolDbId,
@@ -899,35 +916,6 @@ async function processJobById(
         Boolean(schoolInfo.hasShifts ?? schoolInfo.has_shifts),
         JSON.stringify(
           schoolInfo.shiftsConfig || schoolInfo.shifts_config || {},
-        ),
-        JSON.stringify(
-          payloadCodecs.esf7_school_profile.buildExtras(schoolInfo, {
-            id: schoolDbId,
-            school_id: cleanSchoolId,
-            school_year: cleanSchoolYear,
-            has_elem_special_programs: elemSpecialFlag,
-            elem_special_programs: elemSpecialProgs,
-            has_jhs_special_programs: jhsSpecialFlag,
-            jhs_special_programs: jhsSpecialProgs,
-            shs_curriculum_model:
-              schoolInfo.shsCurriculumModel ||
-              schoolInfo.shs_curriculum_model ||
-              "Model A",
-            has_elem_inclusive: elemInc,
-            elem_inclusive_programs: elemIncProgs,
-            has_jhs_inclusive: jhsInc,
-            jhs_inclusive_programs: jhsIncProgs,
-            has_shs_inclusive: shsInc,
-            shs_inclusive_programs: shsIncProgs,
-            has_als: hasAls,
-            has_sned: hasSned,
-            has_iped: hasIped,
-            has_madrasah: hasMadrasah,
-            inclusive_programs: incProgs,
-            has_shifts: Boolean(schoolInfo.hasShifts ?? schoolInfo.has_shifts),
-            shifts_config:
-              schoolInfo.shiftsConfig || schoolInfo.shifts_config || {},
-          }),
         ),
       ],
     );

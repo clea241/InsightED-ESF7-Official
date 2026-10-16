@@ -10,7 +10,7 @@ router.get("/", async (req, res) => {
       .query(
         `
       SELECT t.*, 
-             COALESCE(t.relieving_personnel_id, t.extras->>'substituteTeacherId', '') as substitute_personnel_id,
+             COALESCE(t.relieving_personnel_id, '') as substitute_personnel_id,
              COALESCE(w.subject, t.subject) as subject_name, 
              w.start_time, w.end_time, w.days
       FROM esf7_workload_transfer t

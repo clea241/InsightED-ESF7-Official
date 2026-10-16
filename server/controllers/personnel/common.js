@@ -563,14 +563,37 @@ const checkIsSchoolHead = (p) => {
   ) {
     return true;
   }
+  if (
+    p.isSchoolHead === false ||
+    p.is_school_head === false ||
+    String(p.isSchoolHead).toLowerCase() === "false" ||
+    String(p.is_school_head).toLowerCase() === "false"
+  ) {
+    return false;
+  }
   const pos = String(p.position || "").toUpperCase();
   const des = String(p.designation || "").toUpperCase();
+
+  // Assistant Principals and Head Teachers / Department Heads are NEVER School Heads by default
+  if (
+    pos.includes("ASSISTANT") ||
+    des.includes("ASSISTANT") ||
+    pos.includes("HEAD TEACHER") ||
+    des.includes("DEPARTMENT HEAD") ||
+    pos.includes("DEPARTMENT HEAD")
+  ) {
+    return false;
+  }
+
   return (
     pos.includes("PRINCIPAL") ||
     pos.includes("TEACHER-IN-CHARGE") ||
-    pos.includes("TIC") ||
     pos.includes("OFFICER-IN-CHARGE") ||
-    pos.includes("OIC") ||
+    /\b(TIC|OIC)\b/.test(pos) ||
+    des.includes("PRINCIPAL") ||
+    des.includes("TEACHER-IN-CHARGE") ||
+    des.includes("OFFICER-IN-CHARGE") ||
+    /\b(TIC|OIC)\b/.test(des) ||
     des.includes("SCHOOL HEAD")
   );
 };
@@ -861,28 +884,46 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
     return [];
   }
 
-  // One person = one row: the same person listed twice (same PRN / employee no., else same name) is kept once, first copy wins.
+  // One person = one row: deduplicate duplicate master rows (same PRN/employee no. or same name)
   {
-    const seenKeys = new Set();
+    const seenPrns = new Set();
+    const seenNames = new Set();
     const before = masterRes.rows.length;
     masterRes = {
       rows: masterRes.rows.filter((r) => {
-        const prnKey = String(r.prn || r.employee_no || r.employeeNo || "")
+        const rawPrnStr = String(
+          r.prn || r.employee_no || r.employeeNo || r.id || "",
+        )
           .trim()
           .toUpperCase();
-        const nameKey =
-          `${r.firstName || r.first_name || r.first || ""} ${r.lastName || r.last_name || r.last || r.last_first || ""}`
+        const barePrn = rawPrnStr.replace(/^PRN-0*/i, "").replace(/^0+/, "");
+
+        let f = String(r.firstName || r.first_name || r.first || "")
+          .trim()
+          .toUpperCase();
+        let l = String(r.lastName || r.last_name || r.last || "")
+          .trim()
+          .toUpperCase();
+        if ((!f || !l) && r.last_first) {
+          const parts = String(r.last_first)
             .trim()
-            .toUpperCase();
-        const key =
-          prnKey && !prnKey.startsWith("PRN-")
-            ? "p:" + prnKey
-            : nameKey
-              ? "n:" + nameKey
-              : "";
-        if (!key) return true;
-        if (seenKeys.has(key)) return false;
-        seenKeys.add(key);
+            .split(/[,\s]+/);
+          if (parts.length >= 2) {
+            l = parts[0];
+            f = parts.slice(1).join(" ");
+          }
+        }
+        const nameKey =
+          f && l && f !== "TEACHER" ? `${l}__${f}`.replace(/\s+/g, " ") : "";
+
+        if (barePrn && barePrn.length >= 2) {
+          if (seenPrns.has(barePrn)) return false;
+          seenPrns.add(barePrn);
+        }
+        if (nameKey) {
+          if (seenNames.has(nameKey)) return false;
+          seenNames.add(nameKey);
+        }
         return true;
       }),
     };
@@ -939,6 +980,11 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
       row.firstServiceDate ||
       row.first_service_date ||
       parseDateFromParts(row.appt_yyyy, row.appt_mm, row.appt_dd) ||
+      null;
+    const promoDate =
+      row.lastPromotionDate ||
+      row.last_promotion_date ||
+      parseDateFromParts(row.promo_yyyy, row.promo_mm, row.promo_dd) ||
       null;
     const stationDate =
       row.newStationDate ||
@@ -1105,9 +1151,18 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
 
       isSchoolHead: isSchoolHead,
       is_school_head: isSchoolHead,
-      isMainSchoolHead: isSchoolHead,
-      is_main_school_head: isSchoolHead,
-      is_main_sh: isSchoolHead,
+      isMainSchoolHead:
+        row.is_main_sh !== undefined && row.is_main_sh !== null
+          ? !!row.is_main_sh
+          : isSchoolHead,
+      is_main_school_head:
+        row.is_main_sh !== undefined && row.is_main_sh !== null
+          ? !!row.is_main_sh
+          : isSchoolHead,
+      is_main_sh:
+        row.is_main_sh !== undefined && row.is_main_sh !== null
+          ? !!row.is_main_sh
+          : isSchoolHead,
 
       // Employment Fields
       employmentId: empId,
@@ -1180,8 +1235,8 @@ async function fetchMasterPersonnelFromInsightEd(schoolId) {
         row.assigned_grade_levels ||
         [],
       firstServiceDate: firstApptDate,
-      lastPromotionDate: firstApptDate,
-      newStationDate: stationDate || firstApptDate,
+      lastPromotionDate: promoDate || "N/A",
+      newStationDate: stationDate || firstApptDate || "N/A",
       lastLateralMovementDate: "N/A",
       last_lateral_movement_date: "N/A",
       stepIncrementConfirmed: true,
@@ -1356,13 +1411,18 @@ function formatTrainingRecord(row) {
 function formatDesignationRecord(row) {
   if (!row) return null;
   const raw = row.extras || {};
+  const sKey = row.serialized_key || row.designation_name || "";
+  const dName = row.designation_name || sKey;
   return {
     ...raw,
     id: row.id,
     personnelId: row.personnel_id,
     personnel_id: row.personnel_id,
-    designationName: row.designation_name,
-    designation_name: row.designation_name,
+    designationName: dName,
+    designation_name: dName,
+    name: sKey || dName,
+    designation: sKey || dName,
+    title: sKey || dName,
     keyStage: row.key_stage || raw.keyStage || null,
     key_stage: row.key_stage || raw.keyStage || null,
     gradeLevel: row.grade_level || "",
@@ -1374,8 +1434,8 @@ function formatDesignationRecord(row) {
     is_sds_approved: !!row.is_sds_approved,
     sdsConfirmed: !!row.sds_confirmed,
     sds_confirmed: !!row.sds_confirmed,
-    serializedKey: row.serialized_key,
-    serialized_key: row.serialized_key,
+    serializedKey: sKey,
+    serialized_key: sKey,
     rawPayload: raw,
   };
 }
@@ -1578,7 +1638,7 @@ function formatPersonnelRecord(
       !String(row.employee_no).toUpperCase().startsWith("PRN")
         ? String(row.employee_no).trim()
         : "",
-    depedEmail: row.deped_email || "",
+    depedEmail: row.no_deped_email ? "N/A" : row.deped_email || "",
     noDepedEmail: !!row.no_deped_email || row.deped_email === "N/A",
     no_deped_email: !!row.no_deped_email || row.deped_email === "N/A",
     allowEmailDiscrepancy: !!row.allow_email_discrepancy,
@@ -1648,20 +1708,12 @@ function formatPersonnelRecord(
       ? row.last_promotion_date instanceof Date
         ? row.last_promotion_date.toISOString().split("T")[0]
         : String(row.last_promotion_date).split("T")[0]
-      : row.first_service_date
-        ? row.first_service_date instanceof Date
-          ? row.first_service_date.toISOString().split("T")[0]
-          : String(row.first_service_date).split("T")[0]
-        : "N/A",
+      : "N/A",
     newStationDate: row.new_station_date
       ? row.new_station_date instanceof Date
         ? row.new_station_date.toISOString().split("T")[0]
         : String(row.new_station_date).split("T")[0]
-      : row.first_service_date
-        ? row.first_service_date instanceof Date
-          ? row.first_service_date.toISOString().split("T")[0]
-          : String(row.first_service_date).split("T")[0]
-        : "N/A",
+      : "N/A",
     lastLateralMovementDate: row.last_lateral_movement_date
       ? row.last_lateral_movement_date instanceof Date
         ? row.last_lateral_movement_date.toISOString().split("T")[0]
@@ -1756,6 +1808,8 @@ function formatPersonnelRecord(
       ? adminTaskList.map(formatAdminTaskRecord)
       : [],
 
+    updatedAt: row.updated_at || row.created_at || null,
+    updated_at: row.updated_at || row.created_at || null,
     rawPayload: { ...rawProfile, ...rawEmp, ...rawEduc, ...rawLA },
   };
 }

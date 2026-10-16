@@ -82,7 +82,8 @@ export default function Sidebar() {
           view: "workload",
           label: "06. Workload & Timetable",
           Icon: FiClock,
-          isLocked: !bypassNodeLocks,
+          isLocked: true,
+          lockLabel: "Under Maintenance",
         },
       ],
     },
@@ -190,16 +191,29 @@ export default function Sidebar() {
                               marginLeft: "auto",
                               fontSize: "9px",
                               fontWeight: "800",
-                              padding: "1px 6px",
+                              padding:
+                                item.lockLabel === "Under Maintenance"
+                                  ? "2px 7px"
+                                  : "1px 6px",
                               borderRadius: "4px",
-                              background: "#F1F5F9",
-                              color: "#64748B",
-                              border: "1px solid #CBD5E1",
+                              background:
+                                item.lockLabel === "Under Maintenance"
+                                  ? "#FEF3C7"
+                                  : "#F1F5F9",
+                              color:
+                                item.lockLabel === "Under Maintenance"
+                                  ? "#B45309"
+                                  : "#64748B",
+                              border:
+                                item.lockLabel === "Under Maintenance"
+                                  ? "1px solid #FCD34D"
+                                  : "1px solid #CBD5E1",
                               letterSpacing: "0.04em",
                               textTransform: "uppercase",
+                              whiteSpace: "nowrap",
                             }}
                           >
-                            Locked
+                            {item.lockLabel || "Locked"}
                           </span>
                         )}
                         {item.badge && (

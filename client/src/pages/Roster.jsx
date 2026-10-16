@@ -729,8 +729,12 @@ export default function Roster() {
         curr?.id === pId ? { ...curr, stage: "collapsing" } : curr,
       );
 
-      setTimeout(() => {
-        deletePersonnel(pId);
+      setTimeout(async () => {
+        const nextPersonnel = (personnel || []).filter(
+          (p) => String(p.id) !== String(pId) && String(p.prn) !== String(pId),
+        );
+        await deletePersonnel(pId);
+        syncCleanRosterSnapshot(nextPersonnel);
         setGulpDeleteState(null);
       }, 360);
     }, 400);
@@ -799,123 +803,6 @@ export default function Roster() {
   const [isChangeHeadModalOpen, setIsChangeHeadModalOpen] = useState(false);
   const [headSearchQuery, setHeadSearchQuery] = useState("");
 
-  const educationalLevels = useMemo(() => {
-    return getEducationalLevelsFromMCOC(
-      schoolInfo?.mcoc || schoolInfo?.raw_payload?.mcoc,
-      schoolInfo?.curricularOffering || schoolInfo?.curricular_offering,
-    );
-  }, [
-    schoolInfo?.mcoc,
-    schoolInfo?.raw_payload?.mcoc,
-    schoolInfo?.curricularOffering,
-    schoolInfo?.curricular_offering,
-  ]);
-
-  // Modal multiple heads configuration state: null = unanswered, true = yes, false = no
-  const [modalHasMultipleHeads, setModalHasMultipleHeads] = useState(null);
-  const [modalHeadAssignments, setModalHeadAssignments] = useState({}); // { [level]: personId }
-  const [modalMainHeadId, setModalMainHeadId] = useState(null);
-  const [activeLevelSlot, setActiveLevelSlot] = useState(null);
-  const [confirmDesignateTarget, setConfirmDesignateTarget] = useState(null);
-
-  const allMultipleSlotsAssigned = useMemo(() => {
-    return (
-      modalHasMultipleHeads === true &&
-      educationalLevels.length > 1 &&
-      educationalLevels.every((lvl) => Boolean(modalHeadAssignments[lvl]))
-    );
-  }, [modalHasMultipleHeads, educationalLevels, modalHeadAssignments]);
-
-  useEffect(() => {
-    if (isChangeHeadModalOpen) {
-      setHeadSearchQuery("");
-      const levels = educationalLevels;
-      const currentHeads = findAllRosterSchoolHeads(personnel);
-
-      if (levels.length === 1) {
-        setModalHasMultipleHeads(false);
-        const head = currentHeads[0];
-        setModalHeadAssignments(head ? { [levels[0]]: String(head.id) } : {});
-        setModalMainHeadId(head ? String(head.id) : null);
-        setActiveLevelSlot(levels[0]);
-      } else {
-        if (currentHeads.length > 1) {
-          setModalHasMultipleHeads(true);
-          const initialAssign = {};
-          levels.forEach((lvl) => {
-            const found = currentHeads.find(
-              (h) => h.schoolHeadLevel === lvl || h.school_head_level === lvl,
-            );
-            if (found) initialAssign[lvl] = String(found.id);
-          });
-          if (Object.keys(initialAssign).length === 0) {
-            currentHeads.forEach((h, idx) => {
-              if (levels[idx]) initialAssign[levels[idx]] = String(h.id);
-            });
-          }
-          setModalHeadAssignments(initialAssign);
-          const mainH =
-            currentHeads.find(
-              (h) => h.isMainSchoolHead || h.is_main_school_head,
-            ) || currentHeads[0];
-          setModalMainHeadId(mainH ? String(mainH.id) : null);
-          setActiveLevelSlot(levels[0]);
-        } else {
-          setModalHasMultipleHeads(null);
-          setModalHeadAssignments({});
-          setModalMainHeadId(null);
-          setActiveLevelSlot(null);
-        }
-      }
-    }
-  }, [isChangeHeadModalOpen, educationalLevels, personnel]);
-
-  const qualifiedHeadCandidates = useMemo(() => {
-    return (personnel || []).filter((p) => {
-      const pType =
-        detectPersonnelTypeFromPosition(
-          p.position || p.plantilla_position || p.position_title || "",
-        ) ||
-        p.type ||
-        "";
-      const isNonTeaching = pType === "non-teaching";
-      if (isNonTeaching) return false;
-      if (!headSearchQuery.trim()) return true;
-      const name = formatPersonnelName(p).toLowerCase();
-      const pos = (p.position || "").toLowerCase();
-      const email = (p.depedEmail || "").toLowerCase();
-      const q = headSearchQuery.toLowerCase();
-      return name.includes(q) || pos.includes(q) || email.includes(q);
-    });
-  }, [personnel, headSearchQuery]);
-
-  const openSdoHeadModal = () => {
-    setSdoHeadForm({
-      name: sdoSchoolHead?.name || "",
-      email: sdoSchoolHead?.email || "",
-      positionTitle: sdoSchoolHead?.positionTitle || "",
-    });
-    setSdoHeadError("");
-    setIsSdoHeadModalOpen(true);
-  };
-
-  const submitSdoHead = async (e) => {
-    e.preventDefault();
-    setIsSavingSdoHead(true);
-    setSdoHeadError("");
-    try {
-      await saveSdoSchoolHead(sdoHeadForm);
-      setIsSdoHeadModalOpen(false);
-      setHighlightHeadColumn(false);
-      setIsHeadRequiredModalOpen(false);
-      if (showToast) showToast("SDO school head saved.", "success");
-    } catch (err) {
-      setSdoHeadError(err.message || "Could not save the SDO school head.");
-    } finally {
-      setIsSavingSdoHead(false);
-    }
-  };
-
   const savedRosterSnapshotRef = useRef(null);
   const lastSchoolIdRef = useRef(schoolInfo?.schoolId);
 
@@ -973,7 +860,7 @@ export default function Roster() {
         setHasUnsavedChanges(false);
       }
     },
-    [personnel, setHasUnsavedChanges],
+    [personnel, setHasUnsavedChanges, setNewlyAddedPersonnelIds],
   );
 
   useEffect(() => {
@@ -985,6 +872,308 @@ export default function Roster() {
       savedRosterSnapshotRef.current = JSON.stringify(getRosterSnapshot());
     }
   }, [personnel, getRosterSnapshot]);
+
+  const educationalLevels = useMemo(() => {
+    return getEducationalLevelsFromMCOC(
+      schoolInfo?.mcoc || schoolInfo?.raw_payload?.mcoc,
+      schoolInfo?.curricularOffering || schoolInfo?.curricular_offering,
+    );
+  }, [
+    schoolInfo?.mcoc,
+    schoolInfo?.raw_payload?.mcoc,
+    schoolInfo?.curricularOffering,
+    schoolInfo?.curricular_offering,
+  ]);
+
+  // Modal multiple heads configuration state: null = unanswered, true = yes, false = no
+  const [modalHasMultipleHeads, setModalHasMultipleHeads] = useState(null);
+  const [modalHeadAssignments, setModalHeadAssignments] = useState({}); // { [level]: personId }
+  const [modalMainHeadId, setModalMainHeadId] = useState(null);
+  const [activeLevelSlot, setActiveLevelSlot] = useState(null);
+  const [confirmDesignateTarget, setConfirmDesignateTarget] = useState(null);
+
+  const allMultipleSlotsAssigned = useMemo(() => {
+    return (
+      modalHasMultipleHeads === true &&
+      educationalLevels.length > 1 &&
+      educationalLevels.every((lvl) => Boolean(modalHeadAssignments[lvl]))
+    );
+  }, [modalHasMultipleHeads, educationalLevels, modalHeadAssignments]);
+
+  // Cascade handler when switching from "Yes (Multiple School Heads)" to "No (1 Main School Head for all)"
+  const handleSwitchToSingleHead = useCallback(() => {
+    const assignedEntries = Object.entries(modalHeadAssignments || {}).filter(
+      ([_, id]) => Boolean(id),
+    );
+    const assignedIds = Array.from(
+      new Set(assignedEntries.map(([_, id]) => String(id))),
+    );
+
+    // 1. Resolve who the Main School Head is
+    let resolvedMainId = modalMainHeadId ? String(modalMainHeadId) : null;
+
+    if (!resolvedMainId) {
+      if (assignedIds.length === 1) {
+        resolvedMainId = assignedIds[0];
+      } else if (assignedIds.length > 1) {
+        // Multiple candidates exist, but none chosen as Main Signatory
+        if (showToast) {
+          showToast(
+            "Please select a Main Signatory first to determine who will remain the School Head.",
+            "warning",
+          );
+        }
+        return;
+      } else if (currentHead?.id) {
+        resolvedMainId = String(currentHead.id);
+      }
+    }
+
+    // 2. Cascade state change: Map all educational levels to the chosen Main Head
+    const newAssignments = {};
+    if (resolvedMainId) {
+      educationalLevels.forEach((lvl) => {
+        newAssignments[lvl] = resolvedMainId;
+      });
+    }
+
+    setModalHasMultipleHeads(false);
+    setModalMainHeadId(resolvedMainId);
+    setModalHeadAssignments(newAssignments);
+    setActiveLevelSlot(null);
+
+    // 3. Immediately clear the secondary candidate's designation from personnel in panel state
+    if (resolvedMainId && assignedIds.length > 1) {
+      const wipedIds = new Set(
+        assignedIds.filter((id) => id !== resolvedMainId),
+      );
+      const updatedPersonnel = (personnel || []).map((p) => {
+        const pIdStr = String(p.id);
+        if (wipedIds.has(pIdStr)) {
+          return {
+            ...p,
+            isSchoolHead: false,
+            is_school_head: false,
+            isMainSchoolHead: false,
+            is_main_school_head: false,
+            is_main_sh: false,
+            schoolHeadLevel: null,
+            school_head_level: null,
+          };
+        }
+        if (pIdStr === resolvedMainId) {
+          return {
+            ...p,
+            isSchoolHead: true,
+            is_school_head: true,
+            isMainSchoolHead: true,
+            is_main_school_head: true,
+            is_main_sh: true,
+            schoolHeadLevel: null,
+            school_head_level: null,
+          };
+        }
+        return p;
+      });
+
+      if (typeof setPersonnel === "function") {
+        setPersonnel(updatedPersonnel);
+      }
+    }
+  }, [
+    modalHeadAssignments,
+    modalMainHeadId,
+    currentHead,
+    educationalLevels,
+    personnel,
+    showToast,
+    setPersonnel,
+  ]);
+
+  // Handler when switching from "No" to "Yes (Multiple School Heads)"
+  const handleSwitchToMultipleHeads = useCallback(() => {
+    setModalHasMultipleHeads(true);
+
+    // Preserve ONLY the currently chosen Main School Head for the first educational level slot.
+    // All other educational levels remain unassigned so that wiped secondary candidates are NOT resurrected!
+    const newAssignments = {};
+    if (modalMainHeadId) {
+      newAssignments[educationalLevels[0]] = String(modalMainHeadId);
+      setActiveLevelSlot(educationalLevels[1] || educationalLevels[0]);
+    } else {
+      setActiveLevelSlot(educationalLevels[0]);
+    }
+
+    setModalHeadAssignments(newAssignments);
+    setModalMainHeadId(modalMainHeadId ? String(modalMainHeadId) : null);
+  }, [educationalLevels, modalMainHeadId]);
+
+  // Save School Heads configuration (supports both multiple and single head modes across educational levels)
+  const handleConfirmSaveSchoolHeads = useCallback(async () => {
+    const isMultiple = Boolean(modalHasMultipleHeads);
+    const targetAssignments = isMultiple
+      ? modalHeadAssignments
+      : Object.fromEntries(
+          educationalLevels.map((lvl) => [lvl, modalMainHeadId]),
+        );
+
+    const success = await designateSchoolHeadsConfig({
+      hasMultipleHeads: isMultiple,
+      mainHeadId: modalMainHeadId,
+      assignments: targetAssignments,
+    });
+
+    if (success) {
+      setIsChangeHeadModalOpen(false);
+      const assignedIds = new Set(
+        Object.values(targetAssignments || {})
+          .filter(Boolean)
+          .map(String),
+      );
+      const updatedList = (personnel || []).map((item) => {
+        const pIdStr = String(item.id);
+        const isHead = assignedIds.has(pIdStr);
+        const isMain = String(modalMainHeadId) === pIdStr;
+        const lvl = isMultiple
+          ? Object.entries(targetAssignments).find(
+              ([_, id]) => String(id) === pIdStr,
+            )?.[0] || null
+          : null;
+        return {
+          ...item,
+          isSchoolHead: isHead,
+          is_school_head: isHead,
+          isMainSchoolHead: isHead ? isMain : false,
+          is_main_school_head: isHead ? isMain : false,
+          is_main_sh: isHead ? isMain : false,
+          schoolHeadLevel: isHead ? lvl : null,
+          school_head_level: isHead ? lvl : null,
+        };
+      });
+      if (typeof setPersonnel === "function") {
+        setPersonnel(updatedList);
+      }
+      syncCleanRosterSnapshot(updatedList);
+      if (showToast) {
+        showToast(
+          isMultiple
+            ? "Multi-level School Head designations saved."
+            : "School Head configuration saved (1 Main School Head for all offerings).",
+          "success",
+        );
+      }
+    }
+  }, [
+    modalHasMultipleHeads,
+    modalHeadAssignments,
+    educationalLevels,
+    modalMainHeadId,
+    designateSchoolHeadsConfig,
+    personnel,
+    setPersonnel,
+    syncCleanRosterSnapshot,
+    showToast,
+  ]);
+
+  useEffect(() => {
+    if (isChangeHeadModalOpen) {
+      setHeadSearchQuery("");
+      const levels = educationalLevels;
+      const currentHeads = findAllRosterSchoolHeads(personnel);
+
+      if (levels.length === 1) {
+        setModalHasMultipleHeads(false);
+        const head = currentHeads[0];
+        setModalHeadAssignments(head ? { [levels[0]]: String(head.id) } : {});
+        setModalMainHeadId(head ? String(head.id) : null);
+        setActiveLevelSlot(levels[0]);
+      } else {
+        if (currentHeads.length > 1) {
+          setModalHasMultipleHeads(true);
+          const initialAssign = {};
+          levels.forEach((lvl) => {
+            const found = currentHeads.find(
+              (h) => h.schoolHeadLevel === lvl || h.school_head_level === lvl,
+            );
+            if (found) initialAssign[lvl] = String(found.id);
+          });
+          if (Object.keys(initialAssign).length === 0) {
+            currentHeads.forEach((h, idx) => {
+              if (levels[idx]) initialAssign[levels[idx]] = String(h.id);
+            });
+          }
+          setModalHeadAssignments(initialAssign);
+          const mainH =
+            currentHeads.find(
+              (h) => h.isMainSchoolHead || h.is_main_school_head,
+            ) || currentHeads[0];
+          setModalMainHeadId(mainH ? String(mainH.id) : null);
+          setActiveLevelSlot(levels[0]);
+        } else if (currentHeads.length === 1) {
+          setModalHasMultipleHeads(false);
+          const headId = String(currentHeads[0].id);
+          const initialAssign = {};
+          levels.forEach((lvl) => {
+            initialAssign[lvl] = headId;
+          });
+          setModalHeadAssignments(initialAssign);
+          setModalMainHeadId(headId);
+          setActiveLevelSlot(null);
+        } else {
+          setModalHasMultipleHeads(null);
+          setModalHeadAssignments({});
+          setModalMainHeadId(null);
+          setActiveLevelSlot(null);
+        }
+      }
+    }
+  }, [isChangeHeadModalOpen, educationalLevels, personnel]);
+
+  const qualifiedHeadCandidates = useMemo(() => {
+    return (personnel || []).filter((p) => {
+      const pType =
+        detectPersonnelTypeFromPosition(
+          p.position || p.plantilla_position || p.position_title || "",
+        ) ||
+        p.type ||
+        "";
+      const isNonTeaching = pType === "non-teaching";
+      if (isNonTeaching) return false;
+      if (!headSearchQuery.trim()) return true;
+      const name = formatPersonnelName(p).toLowerCase();
+      const pos = (p.position || "").toLowerCase();
+      const email = (p.depedEmail || "").toLowerCase();
+      const q = headSearchQuery.toLowerCase();
+      return name.includes(q) || pos.includes(q) || email.includes(q);
+    });
+  }, [personnel, headSearchQuery]);
+
+  const openSdoHeadModal = () => {
+    setSdoHeadForm({
+      name: sdoSchoolHead?.name || "",
+      email: sdoSchoolHead?.email || "",
+      positionTitle: sdoSchoolHead?.positionTitle || "",
+    });
+    setSdoHeadError("");
+    setIsSdoHeadModalOpen(true);
+  };
+
+  const submitSdoHead = async (e) => {
+    e.preventDefault();
+    setIsSavingSdoHead(true);
+    setSdoHeadError("");
+    try {
+      await saveSdoSchoolHead(sdoHeadForm);
+      setIsSdoHeadModalOpen(false);
+      setHighlightHeadColumn(false);
+      setIsHeadRequiredModalOpen(false);
+      if (showToast) showToast("SDO school head saved.", "success");
+    } catch (err) {
+      setSdoHeadError(err.message || "Could not save the SDO school head.");
+    } finally {
+      setIsSavingSdoHead(false);
+    }
+  };
 
   const hasPendingDrafts = Boolean((personnel || []).some((p) => p.isDraft));
   const isDirty = Boolean(
@@ -1180,9 +1369,66 @@ export default function Roster() {
         setPersonnel(cleanPersonnel);
       }
 
-      // 2b. Save all personnel on this roster directly to esf7_personnel_profile
+      // 2b. Diff against saved baseline: only send rows that actually changed
+      const lastSnapshotJson = savedRosterSnapshotRef.current;
+      let rowsToSave = cleanPersonnel;
+      if (lastSnapshotJson) {
+        try {
+          const baseline = JSON.parse(lastSnapshotJson);
+          const baselineMap = new Map(baseline.map((b) => [String(b.id), b]));
+          const changedRows = cleanPersonnel.filter((p) => {
+            const b = baselineMap.get(String(p.id));
+            if (!b) return true; // new row
+            return (
+              String(p.position || p.plantilla_position || "").trim() !==
+                String(b.position || "").trim() ||
+              String(p.firstName || p.first_name || "")
+                .trim()
+                .toUpperCase() !==
+                String(b.firstName || "")
+                  .trim()
+                  .toUpperCase() ||
+              String(p.lastName || p.last_name || "")
+                .trim()
+                .toUpperCase() !==
+                String(b.lastName || "")
+                  .trim()
+                  .toUpperCase() ||
+              String(p.depedEmail || p.email || p.deped_email || "")
+                .trim()
+                .toLowerCase() !==
+                String(b.depedEmail || "")
+                  .trim()
+                  .toLowerCase() ||
+              Boolean(p.isSchoolHead || p.is_school_head) !==
+                Boolean(b.isSchoolHead)
+            );
+          });
+          if (changedRows.length === 0) {
+            // Nothing changed in roster rows
+            syncCleanRosterSnapshot(cleanPersonnel);
+            return { ok: true };
+          }
+          rowsToSave = changedRows;
+        } catch (e) {
+          rowsToSave = cleanPersonnel;
+        }
+      }
+
+      // Strip school head fields from bulk upsert rows so designations are never accidentally overwritten
+      const payloadRows = rowsToSave.map((p) => {
+        const row = { ...p };
+        delete row.is_school_head;
+        delete row.isSchoolHead;
+        delete row.isMainSchoolHead;
+        delete row.is_main_sh;
+        delete row.schoolHeadLevel;
+        delete row.school_head_level;
+        return row;
+      });
+
       await api.saveBulkPersonnel(
-        cleanPersonnel,
+        payloadRows,
         schoolInfo?.schoolId,
         schoolInfo?.schoolYear,
       );
@@ -1322,33 +1568,60 @@ export default function Roster() {
       String(newPerson.position || "")
         .trim()
         .toUpperCase() === "COOK";
-    const addedId = await addPersonnel({
-      salutation: newPerson.salutation,
-      firstName: newPerson.firstName.toUpperCase().trim(),
-      middleName: newPerson.middleName
-        ? newPerson.middleName.toUpperCase().trim()
-        : "N/A",
-      lastName: newPerson.lastName.toUpperCase().trim(),
-      nameExtension: newPerson.nameExtension
-        ? newPerson.nameExtension.toUpperCase().trim()
-        : "",
-      birthdate: newPerson.birthdate || "",
-      depedEmail: "",
-      noDepedEmail: false,
-      no_deped_email: false,
-      type: newPerson.type,
-      position: newPerson.position,
-      natureOfAppointment: isCook
-        ? "CONTRACTUAL"
-        : newPerson.natureOfAppointment || "REGULAR PERMANENT",
-      hiringArrangement: isCook
-        ? "CONTRACTUAL"
-        : newPerson.hiringArrangement || "REGULAR",
-      fundSource: isCook ? "SBFP" : newPerson.fundSource || "NATIONAL",
-    });
+
+    let addedId = null;
+    try {
+      addedId = await addPersonnel({
+        salutation: newPerson.salutation,
+        firstName: newPerson.firstName.toUpperCase().trim(),
+        middleName: newPerson.middleName
+          ? newPerson.middleName.toUpperCase().trim()
+          : "",
+        lastName: newPerson.lastName.toUpperCase().trim(),
+        nameExtension: newPerson.nameExtension
+          ? newPerson.nameExtension.toUpperCase().trim()
+          : "",
+        birthdate: newPerson.birthdate || "",
+        depedEmail: "",
+        noDepedEmail: false,
+        no_deped_email: false,
+        type: newPerson.type,
+        position: newPerson.position,
+        natureOfAppointment: isCook
+          ? "CONTRACTUAL"
+          : newPerson.natureOfAppointment || "REGULAR PERMANENT",
+        hiringArrangement: isCook
+          ? "CONTRACTUAL"
+          : newPerson.hiringArrangement || "REGULAR",
+        fundSource: isCook ? "SBFP" : newPerson.fundSource || "NATIONAL",
+      });
+    } catch (addErr) {
+      alert("Failed to save personnel: " + (addErr.message || "Unknown error"));
+      return;
+    }
 
     if (addedId) {
-      setNewlyAddedPersonnelIds((prev) => new Set(prev).add(addedId));
+      // Newly added personnel is already persisted to database via addPersonnel;
+      // sync clean snapshot immediately so it is treated as clean and never triggers a full bulk save.
+      const currentList = personnel || [];
+      const updatedList = currentList.some(
+        (p) => String(p.id) === String(addedId),
+      )
+        ? currentList
+        : [
+            ...currentList,
+            {
+              id: addedId,
+              firstName: newPerson.firstName,
+              lastName: newPerson.lastName,
+              position: newPerson.position,
+              type: newPerson.type,
+              depedEmail: "",
+              isSchoolHead: false,
+              is_school_head: false,
+            },
+          ];
+      syncCleanRosterSnapshot(updatedList);
     }
 
     // Close modal & reset form
@@ -1364,72 +1637,16 @@ export default function Roster() {
       position: POSITION_OPTIONS_BY_CATEGORY.teaching[0],
     });
 
-    // Save all active personnel in the roster to esf7_personnel_profile
-    let fullList = [...personnel];
     try {
-      const newlyAddedObj = {
-        id: addedId,
-        salutation: newPerson.salutation,
-        firstName: newPerson.firstName.toUpperCase().trim(),
-        middleName: newPerson.middleName
-          ? newPerson.middleName.toUpperCase().trim()
-          : "N/A",
-        lastName: newPerson.lastName.toUpperCase().trim(),
-        nameExtension: newPerson.nameExtension
-          ? newPerson.nameExtension.toUpperCase().trim()
-          : "",
-        birthdate: newPerson.birthdate || "",
-        type: newPerson.type,
-        position: newPerson.position,
-        natureOfAppointment: isCook
-          ? "CONTRACTUAL"
-          : newPerson.natureOfAppointment || "REGULAR PERMANENT",
-        hiringArrangement: isCook
-          ? "CONTRACTUAL"
-          : newPerson.hiringArrangement || "REGULAR",
-        fundSource: isCook ? "SBFP" : newPerson.fundSource || "NATIONAL",
-      };
-      const isAlreadyInList = fullList.some(
-        (p) =>
-          p.id === addedId ||
-          (p.firstName &&
-            p.lastName &&
-            p.firstName.toUpperCase().trim() === newlyAddedObj.firstName &&
-            p.lastName.toUpperCase().trim() === newlyAddedObj.lastName),
-      );
-      if (!isAlreadyInList) {
-        fullList.push(newlyAddedObj);
-      }
-      await api.saveBulkPersonnel(
-        fullList,
-        schoolInfo?.schoolId,
-        schoolInfo?.schoolYear,
-      );
       await removeOutboxEntryByModule({
         schoolId: schoolInfo?.schoolId,
         user: user?.username || user?.email,
         term: activeTerm,
         module: "personnel_roster",
       });
-      syncCleanRosterSnapshot(fullList);
-    } catch (e) {
-      console.warn("Auto-save roster on add personnel notice:", e.message);
-      try {
-        await upsertOutboxEntry({
-          kind: "failed",
-          schoolId: schoolInfo?.schoolId,
-          user: user?.username || user?.email,
-          schoolYear: schoolInfo?.schoolYear || "SY 26-27",
-          term: activeTerm,
-          module: "personnel_roster",
-          endpoint: "/api/personnel/bulk",
-          payload: fullList,
-          lastError: e?.message || "Failed to auto-save added personnel",
-        });
-      } catch (outboxErr) {}
-    }
+    } catch (e) {}
 
-    showToast("Personnel successfully added and saved to roster.");
+    showToast("Personnel successfully added and saved to database.");
   };
 
   // Filter & Search Logic
@@ -2335,458 +2552,551 @@ export default function Roster() {
           ) : (
             <>
               <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>
-                      <button
-                        className="roster-sort-button"
-                        type="button"
-                        onClick={() => handleSort("name")}
-                      >
-                        Personnel Name
-                      </button>
-                    </th>
-                    <th>
-                      <div
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "5px",
-                        }}
-                      >
+                <table>
+                  <thead>
+                    <tr>
+                      <th>
                         <button
                           className="roster-sort-button"
                           type="button"
-                          onClick={() => handleSort("depedEmail")}
+                          onClick={() => handleSort("name")}
                         >
-                          DepEd Email
+                          Personnel Name
                         </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setIsEmailInfoOpen(true);
-                          }}
-                          title="DepEd Email Policy & Validation Notice"
-                          style={{
-                            background: "#E0F2FE",
-                            color: "#0284C7",
-                            border: "1px solid #BAE6FD",
-                            borderRadius: "50%",
-                            width: "18px",
-                            height: "18px",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            fontSize: "11px",
-                            fontWeight: "800",
-                            cursor: "pointer",
-                            lineHeight: 1,
-                            padding: 0,
-                          }}
-                        >
-                          i
-                        </button>
-                      </div>
-                    </th>
-                    <th>
-                      <button
-                        className="roster-sort-button"
-                        type="button"
-                        onClick={() => handleSort("type")}
-                      >
-                        Position Category
-                      </button>
-                    </th>
-                    <th>
-                      <button
-                        className="roster-sort-button"
-                        type="button"
-                        onClick={() => handleSort("position")}
-                      >
-                        Plantilla Position
-                      </button>
-                    </th>
-                    <th style={{ width: "90px", textAlign: "center" }}>
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paginatedPersonnel.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={5}
-                        style={{
-                          textAlign: "center",
-                          padding: "48px 16px",
-                          color: "#64748B",
-                          fontSize: "13px",
-                        }}
-                      >
+                      </th>
+                      <th>
                         <div
                           style={{
-                            display: "flex",
-                            flexDirection: "column",
+                            display: "inline-flex",
                             alignItems: "center",
-                            gap: "10px",
+                            gap: "5px",
+                          }}
+                        >
+                          <button
+                            className="roster-sort-button"
+                            type="button"
+                            onClick={() => handleSort("depedEmail")}
+                          >
+                            DepEd Email
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setIsEmailInfoOpen(true);
+                            }}
+                            title="DepEd Email Policy & Validation Notice"
+                            style={{
+                              background: "#E0F2FE",
+                              color: "#0284C7",
+                              border: "1px solid #BAE6FD",
+                              borderRadius: "50%",
+                              width: "18px",
+                              height: "18px",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: "11px",
+                              fontWeight: "800",
+                              cursor: "pointer",
+                              lineHeight: 1,
+                              padding: 0,
+                            }}
+                          >
+                            i
+                          </button>
+                        </div>
+                      </th>
+                      <th>
+                        <button
+                          className="roster-sort-button"
+                          type="button"
+                          onClick={() => handleSort("type")}
+                        >
+                          Position Category
+                        </button>
+                      </th>
+                      <th>
+                        <button
+                          className="roster-sort-button"
+                          type="button"
+                          onClick={() => handleSort("position")}
+                        >
+                          Plantilla Position
+                        </button>
+                      </th>
+                      <th style={{ width: "90px", textAlign: "center" }}>
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedPersonnel.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={5}
+                          style={{
+                            textAlign: "center",
+                            padding: "48px 16px",
+                            color: "#64748B",
+                            fontSize: "13px",
                           }}
                         >
                           <div
                             style={{
-                              width: "44px",
-                              height: "44px",
-                              borderRadius: "50%",
-                              background: "#F1F5F9",
                               display: "flex",
+                              flexDirection: "column",
                               alignItems: "center",
-                              justifyContent: "center",
-                              color: "#64748B",
+                              gap: "10px",
                             }}
                           >
-                            <FiSearch size={22} />
-                          </div>
-                          <span style={{ fontWeight: 600, color: "#334155" }}>
-                            No personnel match your search or filter criteria.
-                          </span>
-                          {(searchQuery || typeFilter !== "all") && (
-                            <button
-                              type="button"
-                              className="btn secondary"
+                            <div
                               style={{
-                                marginTop: "4px",
-                                padding: "6px 14px",
-                                fontSize: "12px",
-                                fontWeight: "600",
-                              }}
-                              onClick={() => {
-                                setSearchQuery("");
-                                setTypeFilter("all");
-                                setCurrentPage(1);
-                              }}
-                            >
-                              Reset Search & Filters
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    paginatedPersonnel.map((p) => {
-                    const isHead = Boolean(
-                      p.isSchoolHead === true || p.is_school_head === true,
-                    );
-                    const isGulping = gulpDeleteState?.id === p.id;
-                    const gulpStage = isGulping ? gulpDeleteState.stage : null;
-                    return (
-                      <tr
-                        key={p.id}
-                        className={`roster-row ${gulpStage === "collapsing" ? "roster-row-gulp-collapsing" : ""}`}
-                        style={{
-                          ...(isHead
-                            ? { background: "rgba(240, 253, 244, 0.75)" }
-                            : undefined),
-                          ...(isGulping
-                            ? { background: "rgba(254, 242, 242, 0.65)" }
-                            : undefined),
-                          position: "relative",
-                        }}
-                      >
-                        <td>
-                          {isGulping ? (
-                            <GulpFlyingText
-                              text={formatPersonnelName(p)}
-                              targetVector={gulpDeleteState.vectors?.name}
-                              onComplete={() => handleGulpComplete(p.id)}
-                            />
-                          ) : (
-                            <span
-                              ref={(el) => (nameRefs.current[p.id] = el)}
-                              onClick={() => {
-                                setActivePersonnelId(p.id);
-                                setActiveView("profile");
-                              }}
-                              style={{
-                                fontWeight: 600,
-                                color: "#0f172a",
-                                cursor: "pointer",
-                                transition: "color 0.15s ease",
-                              }}
-                              title="Click to view Personnel Profile"
-                              onMouseEnter={(e) =>
-                                (e.currentTarget.style.color = "#0284c7")
-                              }
-                              onMouseLeave={(e) =>
-                                (e.currentTarget.style.color = "#0f172a")
-                              }
-                            >
-                              {formatPersonnelName(p)}
-                            </span>
-                          )}
-                          {!isGulping && isHead &&
-                            (allRosterHeads.length <= 1 ||
-                              p.isMainSchoolHead ||
-                              p.is_main_school_head ||
-                              String(p.id) === String(currentHead?.id)) && (
-                              <span
-                                style={{
-                                  marginLeft: "8px",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: "4px",
-                                  padding: "2px 8px",
-                                  background: "#fef3c7",
-                                  color: "#92400e",
-                                  border: "1px solid #fcd34d",
-                                  borderRadius: "6px",
-                                  fontSize: "10px",
-                                  fontWeight: "800",
-                                  textTransform: "uppercase",
-                                  verticalAlign: "middle",
-                                }}
-                                title="Main School Head / DepEd eSF7 Signatory"
-                              >
-                                <FiUserCheck size={11} /> Main School Head
-                              </span>
-                            )}
-                          {p.isDraft && (
-                            <span
-                              style={{
-                                marginLeft: "6px",
-                                display: "inline-flex",
+                                width: "44px",
+                                height: "44px",
+                                borderRadius: "50%",
+                                background: "#F1F5F9",
+                                display: "flex",
                                 alignItems: "center",
-                                padding: "2px 6px",
-                                background: "#FEF3C7",
-                                color: "#D97706",
-                                border: "1px solid #FCD34D",
-                                borderRadius: "6px",
-                                fontSize: "10px",
-                                fontWeight: "bold",
-                                textTransform: "uppercase",
+                                justifyContent: "center",
+                                color: "#64748B",
                               }}
                             >
-                              Draft
+                              <FiSearch size={22} />
+                            </div>
+                            <span style={{ fontWeight: 600, color: "#334155" }}>
+                              No personnel match your search or filter criteria.
                             </span>
-                          )}
-                          {(() => {
-                            const isRejected = (() => {
-                              if (
-                                p.reassignmentStatus === "rejected" ||
-                                p.requestStatus === "rejected"
-                              )
-                                return true;
-                              const depStatus = String(
-                                p.deploymentStatus || p.deployment_status || "",
-                              ).toUpperCase();
-                              if (depStatus.includes("REJECTED")) return true;
-
-                              const pId = String(p.id || "")
-                                .replace(/^(PER-|PRN-)/i, "")
-                                .trim();
-                              const prn = String(p.prn || p.profilingCode || "")
-                                .replace(/^PRN-/i, "")
-                                .trim();
-                              const pFn = String(
-                                p.firstName || p.first_name || "",
-                              )
-                                .trim()
-                                .toUpperCase();
-                              const pLn = String(
-                                p.lastName || p.last_name || "",
-                              )
-                                .trim()
-                                .toUpperCase();
-
-                              const allReqs = [
-                                ...(outgoingRequests || []),
-                                ...(requestHistory || []),
-                              ];
-                              const matched = allReqs.find((req) => {
-                                const reqPId = String(
-                                  req.personnel_id || req.personnelId || "",
-                                )
-                                  .replace(/^(PER-|PRN-)/i, "")
-                                  .trim();
-                                if (
-                                  pId &&
-                                  reqPId &&
-                                  (pId === reqPId ||
-                                    reqPId.endsWith(pId) ||
-                                    pId.endsWith(reqPId))
-                                )
-                                  return true;
-                                if (
-                                  prn &&
-                                  reqPId &&
-                                  (prn === reqPId ||
-                                    reqPId.endsWith(prn) ||
-                                    prn.endsWith(reqPId))
-                                )
-                                  return true;
-                                const reqName = String(
-                                  req.personnel_name || req.personnelName || "",
-                                ).toUpperCase();
-                                if (
-                                  pLn &&
-                                  pFn &&
-                                  reqName &&
-                                  reqName.includes(pLn) &&
-                                  reqName.includes(pFn)
-                                )
-                                  return true;
-                                return false;
-                              });
-
-                              return matched
-                                ? String(matched.status || "").toLowerCase() ===
-                                    "rejected"
-                                : false;
-                            })();
-
-                            if (isRejected) {
-                              return (
+                            {(searchQuery || typeFilter !== "all") && (
+                              <button
+                                type="button"
+                                className="btn secondary"
+                                style={{
+                                  marginTop: "4px",
+                                  padding: "6px 14px",
+                                  fontSize: "12px",
+                                  fontWeight: "600",
+                                }}
+                                onClick={() => {
+                                  setSearchQuery("");
+                                  setTypeFilter("all");
+                                  setCurrentPage(1);
+                                }}
+                              >
+                                Reset Search & Filters
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      paginatedPersonnel.map((p) => {
+                        const isHead = Boolean(
+                          p.isSchoolHead === true || p.is_school_head === true,
+                        );
+                        const isGulping = gulpDeleteState?.id === p.id;
+                        const gulpStage = isGulping
+                          ? gulpDeleteState.stage
+                          : null;
+                        return (
+                          <tr
+                            key={p.id}
+                            className={`roster-row ${gulpStage === "collapsing" ? "roster-row-gulp-collapsing" : ""}`}
+                            style={{
+                              ...(isHead
+                                ? { background: "rgba(240, 253, 244, 0.75)" }
+                                : undefined),
+                              ...(isGulping
+                                ? { background: "rgba(254, 242, 242, 0.65)" }
+                                : undefined),
+                              position: "relative",
+                            }}
+                          >
+                            <td>
+                              {isGulping ? (
+                                <GulpFlyingText
+                                  text={formatPersonnelName(p)}
+                                  targetVector={gulpDeleteState.vectors?.name}
+                                  onComplete={() => handleGulpComplete(p.id)}
+                                />
+                              ) : (
                                 <span
-                                  style={{
-                                    marginLeft: "6px",
-                                    display: "inline-flex",
-                                    alignItems: "center",
-                                    padding: "2px 8px",
-                                    background: "#FEE2E2",
-                                    color: "#DC2626",
-                                    border: "1px solid #F87171",
-                                    borderRadius: "6px",
-                                    fontSize: "10px",
-                                    fontWeight: "bold",
-                                    textTransform: "uppercase",
+                                  ref={(el) => (nameRefs.current[p.id] = el)}
+                                  onClick={() => {
+                                    setActivePersonnelId(p.id);
+                                    setActiveView("profile");
                                   }}
-                                  title="Inter-School Reassignment Request Rejected by Target School"
+                                  style={{
+                                    fontWeight: 600,
+                                    color: "#0f172a",
+                                    cursor: "pointer",
+                                    transition: "color 0.15s ease",
+                                  }}
+                                  title="Click to view Personnel Profile"
+                                  onMouseEnter={(e) =>
+                                    (e.currentTarget.style.color = "#0284c7")
+                                  }
+                                  onMouseLeave={(e) =>
+                                    (e.currentTarget.style.color = "#0f172a")
+                                  }
                                 >
-                                  <FiAlertCircle
-                                    size={10}
-                                    style={{ marginRight: "3px" }}
-                                  />{" "}
-                                  REJECTED
+                                  {formatPersonnelName(p)}
                                 </span>
-                              );
-                            }
-
-                            if (
-                              p.isShared ||
-                              String(
-                                p.deploymentStatus || p.deployment_status || "",
-                              )
-                                .toUpperCase()
-                                .includes("BORROWED")
-                            ) {
-                              return (
+                              )}
+                              {!isGulping &&
+                                isHead &&
+                                (allRosterHeads.length <= 1 ||
+                                  p.isMainSchoolHead ||
+                                  p.is_main_school_head ||
+                                  String(p.id) === String(currentHead?.id)) && (
+                                  <span
+                                    style={{
+                                      marginLeft: "8px",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "4px",
+                                      padding: "2px 8px",
+                                      background: "#fef3c7",
+                                      color: "#92400e",
+                                      border: "1px solid #fcd34d",
+                                      borderRadius: "6px",
+                                      fontSize: "10px",
+                                      fontWeight: "800",
+                                      textTransform: "uppercase",
+                                      verticalAlign: "middle",
+                                    }}
+                                    title="Main School Head / DepEd eSF7 Signatory"
+                                  >
+                                    <FiUserCheck size={11} /> Main School Head
+                                  </span>
+                                )}
+                              {p.isDraft && (
                                 <span
                                   style={{
                                     marginLeft: "6px",
                                     display: "inline-flex",
                                     alignItems: "center",
                                     padding: "2px 6px",
-                                    background: String(
-                                      p.deploymentStatus ||
-                                        p.deployment_status ||
-                                        "",
-                                    )
-                                      .toUpperCase()
-                                      .includes("BORROWED")
-                                      ? "#FEF3C7"
-                                      : "#e0e7ff",
-                                    color: String(
-                                      p.deploymentStatus ||
-                                        p.deployment_status ||
-                                        "",
-                                    )
-                                      .toUpperCase()
-                                      .includes("BORROWED")
-                                      ? "#92400E"
-                                      : "#3730a3",
-                                    border: String(
-                                      p.deploymentStatus ||
-                                        p.deployment_status ||
-                                        "",
-                                    )
-                                      .toUpperCase()
-                                      .includes("BORROWED")
-                                      ? "1px solid #FCD34D"
-                                      : "1px solid #c7d2fe",
+                                    background: "#FEF3C7",
+                                    color: "#D97706",
+                                    border: "1px solid #FCD34D",
                                     borderRadius: "6px",
                                     fontSize: "10px",
                                     fontWeight: "bold",
                                     textTransform: "uppercase",
                                   }}
-                                  title={
-                                    String(
-                                      p.deploymentStatus ||
-                                        p.deployment_status ||
-                                        "",
-                                    )
-                                      .toUpperCase()
-                                      .includes("BORROWED")
-                                      ? "Borrowed from Mother School"
-                                      : "Shared Personnel"
-                                  }
                                 >
-                                  {String(
+                                  Draft
+                                </span>
+                              )}
+                              {(() => {
+                                const isRejected = (() => {
+                                  if (
+                                    p.reassignmentStatus === "rejected" ||
+                                    p.requestStatus === "rejected"
+                                  )
+                                    return true;
+                                  const depStatus = String(
+                                    p.deploymentStatus ||
+                                      p.deployment_status ||
+                                      "",
+                                  ).toUpperCase();
+                                  if (depStatus.includes("REJECTED"))
+                                    return true;
+
+                                  const pId = String(p.id || "")
+                                    .replace(/^(PER-|PRN-)/i, "")
+                                    .trim();
+                                  const prn = String(
+                                    p.prn || p.profilingCode || "",
+                                  )
+                                    .replace(/^PRN-/i, "")
+                                    .trim();
+                                  const pFn = String(
+                                    p.firstName || p.first_name || "",
+                                  )
+                                    .trim()
+                                    .toUpperCase();
+                                  const pLn = String(
+                                    p.lastName || p.last_name || "",
+                                  )
+                                    .trim()
+                                    .toUpperCase();
+
+                                  const allReqs = [
+                                    ...(outgoingRequests || []),
+                                    ...(requestHistory || []),
+                                  ];
+                                  const matched = allReqs.find((req) => {
+                                    const reqPId = String(
+                                      req.personnel_id || req.personnelId || "",
+                                    )
+                                      .replace(/^(PER-|PRN-)/i, "")
+                                      .trim();
+                                    if (
+                                      pId &&
+                                      reqPId &&
+                                      (pId === reqPId ||
+                                        reqPId.endsWith(pId) ||
+                                        pId.endsWith(reqPId))
+                                    )
+                                      return true;
+                                    if (
+                                      prn &&
+                                      reqPId &&
+                                      (prn === reqPId ||
+                                        reqPId.endsWith(prn) ||
+                                        prn.endsWith(reqPId))
+                                    )
+                                      return true;
+                                    const reqName = String(
+                                      req.personnel_name ||
+                                        req.personnelName ||
+                                        "",
+                                    ).toUpperCase();
+                                    if (
+                                      pLn &&
+                                      pFn &&
+                                      reqName &&
+                                      reqName.includes(pLn) &&
+                                      reqName.includes(pFn)
+                                    )
+                                      return true;
+                                    return false;
+                                  });
+
+                                  return matched
+                                    ? String(
+                                        matched.status || "",
+                                      ).toLowerCase() === "rejected"
+                                    : false;
+                                })();
+
+                                if (isRejected) {
+                                  return (
+                                    <span
+                                      style={{
+                                        marginLeft: "6px",
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        padding: "2px 8px",
+                                        background: "#FEE2E2",
+                                        color: "#DC2626",
+                                        border: "1px solid #F87171",
+                                        borderRadius: "6px",
+                                        fontSize: "10px",
+                                        fontWeight: "bold",
+                                        textTransform: "uppercase",
+                                      }}
+                                      title="Inter-School Reassignment Request Rejected by Target School"
+                                    >
+                                      <FiAlertCircle
+                                        size={10}
+                                        style={{ marginRight: "3px" }}
+                                      />{" "}
+                                      REJECTED
+                                    </span>
+                                  );
+                                }
+
+                                if (
+                                  p.isShared ||
+                                  String(
                                     p.deploymentStatus ||
                                       p.deployment_status ||
                                       "",
                                   )
                                     .toUpperCase()
-                                    .includes("BORROWED") ? (
-                                    <>
-                                      <FiTag
-                                        size={10}
-                                        style={{ marginRight: "3px" }}
-                                      />{" "}
-                                      BORROWED
-                                    </>
-                                  ) : (
-                                    <>
-                                      <FiLink
-                                        size={10}
-                                        style={{ marginRight: "3px" }}
-                                      />{" "}
-                                      SHARED
-                                    </>
-                                  )}
-                                </span>
-                              );
-                            }
+                                    .includes("BORROWED")
+                                ) {
+                                  return (
+                                    <span
+                                      style={{
+                                        marginLeft: "6px",
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        padding: "2px 6px",
+                                        background: String(
+                                          p.deploymentStatus ||
+                                            p.deployment_status ||
+                                            "",
+                                        )
+                                          .toUpperCase()
+                                          .includes("BORROWED")
+                                          ? "#FEF3C7"
+                                          : "#e0e7ff",
+                                        color: String(
+                                          p.deploymentStatus ||
+                                            p.deployment_status ||
+                                            "",
+                                        )
+                                          .toUpperCase()
+                                          .includes("BORROWED")
+                                          ? "#92400E"
+                                          : "#3730a3",
+                                        border: String(
+                                          p.deploymentStatus ||
+                                            p.deployment_status ||
+                                            "",
+                                        )
+                                          .toUpperCase()
+                                          .includes("BORROWED")
+                                          ? "1px solid #FCD34D"
+                                          : "1px solid #c7d2fe",
+                                        borderRadius: "6px",
+                                        fontSize: "10px",
+                                        fontWeight: "bold",
+                                        textTransform: "uppercase",
+                                      }}
+                                      title={
+                                        String(
+                                          p.deploymentStatus ||
+                                            p.deployment_status ||
+                                            "",
+                                        )
+                                          .toUpperCase()
+                                          .includes("BORROWED")
+                                          ? "Borrowed from Mother School"
+                                          : "Shared Personnel"
+                                      }
+                                    >
+                                      {String(
+                                        p.deploymentStatus ||
+                                          p.deployment_status ||
+                                          "",
+                                      )
+                                        .toUpperCase()
+                                        .includes("BORROWED") ? (
+                                        <>
+                                          <FiTag
+                                            size={10}
+                                            style={{ marginRight: "3px" }}
+                                          />{" "}
+                                          BORROWED
+                                        </>
+                                      ) : (
+                                        <>
+                                          <FiLink
+                                            size={10}
+                                            style={{ marginRight: "3px" }}
+                                          />{" "}
+                                          SHARED
+                                        </>
+                                      )}
+                                    </span>
+                                  );
+                                }
 
-                            return null;
-                          })()}
-                        </td>
-                        <td>
-                          {isGulping && p.depedEmail ? (
-                            <GulpFlyingItem
-                              targetVector={gulpDeleteState.vectors?.email}
-                              delayMs={70}
-                            >
-                              <span
-                                style={{
-                                  color: "#0F172A",
-                                  fontWeight: 500,
-                                  fontSize: "13px",
-                                }}
-                              >
-                                {p.depedEmail}
-                              </span>
-                            </GulpFlyingItem>
-                          ) : (
-                            <span ref={(el) => (emailRefs.current[p.id] = el)}>
-                              {p.depedEmail}
-                            </span>
-                          )}
-                        </td>
-                        <td>
-                          {(() => {
-                            const isCanon = isCanonicalPosition(p.position);
-                            if (!isCanon) {
-                              return (
+                                return null;
+                              })()}
+                            </td>
+                            <td>
+                              {isGulping && p.depedEmail ? (
+                                <GulpFlyingItem
+                                  targetVector={gulpDeleteState.vectors?.email}
+                                  delayMs={70}
+                                >
+                                  <span
+                                    style={{
+                                      color: "#0F172A",
+                                      fontWeight: 500,
+                                      fontSize: "13px",
+                                    }}
+                                  >
+                                    {p.depedEmail}
+                                  </span>
+                                </GulpFlyingItem>
+                              ) : (
+                                <span
+                                  ref={(el) => (emailRefs.current[p.id] = el)}
+                                >
+                                  {p.depedEmail}
+                                </span>
+                              )}
+                            </td>
+                            <td>
+                              {(() => {
+                                const isCanon = isCanonicalPosition(p.position);
+                                if (!isCanon) {
+                                  return (
+                                    <span
+                                      style={{
+                                        color: "#94a3b8",
+                                        fontStyle: "italic",
+                                        fontSize: "12px",
+                                      }}
+                                    >
+                                      —
+                                    </span>
+                                  );
+                                }
+                                const pType =
+                                  getCategoryForCanonicalPosition(p.position) ||
+                                  detectPersonnelTypeFromPosition(
+                                    p.position || "",
+                                  ) ||
+                                  p.type ||
+                                  "teaching";
+                                const label =
+                                  pType === "teaching"
+                                    ? "Teaching"
+                                    : pType === "teaching-related"
+                                      ? "Related"
+                                      : "Non-Teaching";
+                                return isGulping ? (
+                                  <GulpFlyingItem
+                                    targetVector={
+                                      gulpDeleteState.vectors?.category
+                                    }
+                                    delayMs={35}
+                                  >
+                                    <span
+                                      className={`category-badge category-${pType}`}
+                                    >
+                                      {label}
+                                    </span>
+                                  </GulpFlyingItem>
+                                ) : (
+                                  <span
+                                    ref={(el) =>
+                                      (categoryRefs.current[p.id] = el)
+                                    }
+                                    className={`category-badge category-${pType}`}
+                                  >
+                                    {label}
+                                  </span>
+                                );
+                              })()}
+                            </td>
+                            <td>
+                              {isCanonicalPosition(p.position) ? (
+                                isGulping ? (
+                                  <GulpFlyingItem
+                                    targetVector={
+                                      gulpDeleteState.vectors?.position
+                                    }
+                                    delayMs={10}
+                                  >
+                                    <span
+                                      style={{
+                                        fontWeight: 600,
+                                        color: "#0F172A",
+                                        fontSize: "13px",
+                                      }}
+                                    >
+                                      {p.position}
+                                    </span>
+                                  </GulpFlyingItem>
+                                ) : (
+                                  <span
+                                    ref={(el) =>
+                                      (positionRefs.current[p.id] = el)
+                                    }
+                                  >
+                                    {p.position}
+                                  </span>
+                                )
+                              ) : (
                                 <span
                                   style={{
                                     color: "#94a3b8",
@@ -2796,435 +3106,382 @@ export default function Roster() {
                                 >
                                   —
                                 </span>
-                              );
-                            }
-                            const pType =
-                              getCategoryForCanonicalPosition(p.position) ||
-                              detectPersonnelTypeFromPosition(
-                                p.position || "",
-                              ) ||
-                              p.type ||
-                              "teaching";
-                            const label =
-                              pType === "teaching"
-                                ? "Teaching"
-                                : pType === "teaching-related"
-                                  ? "Related"
-                                  : "Non-Teaching";
-                            return isGulping ? (
-                              <GulpFlyingItem
-                                targetVector={gulpDeleteState.vectors?.category}
-                                delayMs={35}
-                              >
-                                <span
-                                  className={`category-badge category-${pType}`}
-                                >
-                                  {label}
-                                </span>
-                              </GulpFlyingItem>
-                            ) : (
-                              <span
-                                ref={(el) => (categoryRefs.current[p.id] = el)}
-                                className={`category-badge category-${pType}`}
-                              >
-                                {label}
-                              </span>
-                            );
-                          })()}
-                        </td>
-                        <td>
-                          {isCanonicalPosition(p.position) ? (
-                            isGulping ? (
-                              <GulpFlyingItem
-                                targetVector={gulpDeleteState.vectors?.position}
-                                delayMs={10}
-                              >
-                                <span
-                                  style={{
-                                    fontWeight: 600,
-                                    color: "#0F172A",
-                                    fontSize: "13px",
-                                  }}
-                                >
-                                  {p.position}
-                                </span>
-                              </GulpFlyingItem>
-                            ) : (
-                              <span
-                                ref={(el) => (positionRefs.current[p.id] = el)}
-                              >
-                                {p.position}
-                              </span>
-                            )
-                          ) : (
-                            <span
-                              style={{
-                                color: "#94a3b8",
-                                fontStyle: "italic",
-                                fontSize: "12px",
-                              }}
-                            >
-                              —
-                            </span>
-                          )}
-                        </td>
-                        <td>
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: "5px",
-                              justifyContent: "center",
-                            }}
-                          >
-                            {p.isDraft && !isGulping && (
-                              <button
-                                className="btn"
+                              )}
+                            </td>
+                            <td>
+                              <div
                                 style={{
-                                  minHeight: "34px",
-                                  padding: "6px 12px",
-                                  fontSize: "12px",
-                                  background: "#D97706",
-                                  color: "white",
-                                  border: 0,
-                                }}
-                                onClick={async () => {
-                                  await commitDraftPersonnel(p.id);
+                                  display: "flex",
+                                  gap: "5px",
+                                  justifyContent: "center",
                                 }}
                               >
-                                Save
-                              </button>
-                            )}
-                            <button
-                              ref={(el) => (trashRefs.current[p.id] = el)}
-                              className="btn danger"
-                              disabled={Boolean(gulpDeleteState)}
-                              style={{
-                                minHeight: "34px",
-                                padding: "6px 10px",
-                                fontSize: "12px",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                background: isGulping ? "#B91C1C" : undefined,
-                                borderColor: isGulping ? "#991B1B" : undefined,
-                                boxShadow: isGulping
-                                  ? "0 0 14px rgba(220, 38, 38, 0.45)"
-                                  : undefined,
-                                transform:
-                                  isGulping && gulpStage === "eating"
-                                    ? "scale(1.08)"
-                                    : undefined,
-                                transition:
-                                  "all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)",
-                              }}
-                              title="Delete Personnel"
-                              onClick={() => handleGulpDelete(p)}
-                            >
-                              <GulpTrashIcon
-                                isOpen={isGulping && gulpStage === "eating"}
-                                isEating={isGulping && gulpStage === "eating"}
-                                isChomped={
-                                  isGulping &&
-                                  (gulpStage === "chomped" ||
-                                    gulpStage === "collapsing")
-                                }
-                                size={14}
-                                color="white"
-                              />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  }))}
-                </tbody>
-              </table>
-              <GulpGlobalStyles />
-            </div>
+                                {p.isDraft && !isGulping && (
+                                  <button
+                                    className="btn"
+                                    style={{
+                                      minHeight: "34px",
+                                      padding: "6px 12px",
+                                      fontSize: "12px",
+                                      background: "#D97706",
+                                      color: "white",
+                                      border: 0,
+                                    }}
+                                    onClick={async () => {
+                                      await commitDraftPersonnel(p.id);
+                                    }}
+                                  >
+                                    Save
+                                  </button>
+                                )}
+                                <button
+                                  ref={(el) => (trashRefs.current[p.id] = el)}
+                                  className="btn danger"
+                                  disabled={Boolean(gulpDeleteState)}
+                                  style={{
+                                    minHeight: "34px",
+                                    padding: "6px 10px",
+                                    fontSize: "12px",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    background: isGulping
+                                      ? "#B91C1C"
+                                      : undefined,
+                                    borderColor: isGulping
+                                      ? "#991B1B"
+                                      : undefined,
+                                    boxShadow: isGulping
+                                      ? "0 0 14px rgba(220, 38, 38, 0.45)"
+                                      : undefined,
+                                    transform:
+                                      isGulping && gulpStage === "eating"
+                                        ? "scale(1.08)"
+                                        : undefined,
+                                    transition:
+                                      "all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                                  }}
+                                  title="Delete Personnel"
+                                  onClick={() => handleGulpDelete(p)}
+                                >
+                                  <GulpTrashIcon
+                                    isOpen={isGulping && gulpStage === "eating"}
+                                    isEating={
+                                      isGulping && gulpStage === "eating"
+                                    }
+                                    isChomped={
+                                      isGulping &&
+                                      (gulpStage === "chomped" ||
+                                        gulpStage === "collapsing")
+                                    }
+                                    size={14}
+                                    color="white"
+                                  />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+                <GulpGlobalStyles />
+              </div>
 
-            {/* Pagination Controls */}
-            {totalItems > 0 && (
-              <div
-                className="roster-pagination"
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  gap: "12px",
-                  marginTop: "16px",
-                  padding: "12px 16px",
-                  backgroundColor: "#FFFFFF",
-                  border: "1px solid #E2E8F0",
-                  borderRadius: "10px",
-                  fontSize: "12px",
-                  color: "#64748B",
-                  boxShadow: "0 1px 3px rgba(0, 0, 0, 0.05)",
-                }}
-              >
-                {/* Left side: Range Info & Page Size Selector */}
+              {/* Pagination Controls */}
+              {totalItems > 0 && (
                 <div
+                  className="roster-pagination"
                   style={{
                     display: "flex",
+                    justifyContent: "space-between",
                     alignItems: "center",
+                    flexWrap: "wrap",
                     gap: "12px",
-                    flexWrap: "nowrap",
-                    whiteSpace: "nowrap",
-                    flexShrink: 0,
+                    marginTop: "16px",
+                    padding: "12px 16px",
+                    backgroundColor: "#FFFFFF",
+                    border: "1px solid #E2E8F0",
+                    borderRadius: "10px",
+                    fontSize: "12px",
+                    color: "#64748B",
+                    boxShadow: "0 1px 3px rgba(0, 0, 0, 0.05)",
                   }}
                 >
-                  <span style={{ whiteSpace: "nowrap" }}>
-                    Showing{" "}
-                    <strong style={{ color: "#0F172A", fontWeight: "700" }}>
-                      {startIndex}–{endIndex}
-                    </strong>{" "}
-                    of{" "}
-                    <strong style={{ color: "#0F172A", fontWeight: "700" }}>
-                      {totalItems}
-                    </strong>{" "}
-                    personnel
-                    {totalItems !== personnel.length && (
-                      <span style={{ color: "#94A3B8", marginLeft: "4px" }}>
-                        (filtered from {personnel.length})
-                      </span>
-                    )}
-                  </span>
-
-                  <span style={{ color: "#CBD5E1", userSelect: "none" }}>|</span>
-
+                  {/* Left side: Range Info & Page Size Selector */}
                   <div
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: "6px",
+                      gap: "12px",
+                      flexWrap: "nowrap",
                       whiteSpace: "nowrap",
                       flexShrink: 0,
                     }}
                   >
-                    <label
-                      htmlFor="roster-page-size"
-                      style={{
-                        margin: 0,
-                        color: "#64748B",
-                        fontWeight: "500",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      Per page:
-                    </label>
-                    <select
-                      id="roster-page-size"
-                      value={pageSize}
-                      onChange={(e) => {
-                        const val =
-                          e.target.value === "all"
-                            ? "all"
-                            : Number(e.target.value);
-                        setPageSize(val);
-                        setCurrentPage(1);
-                      }}
-                      style={{
-                        padding: "4px 8px",
-                        borderRadius: "6px",
-                        border: "1px solid #CBD5E1",
-                        fontSize: "12px",
-                        fontWeight: "700",
-                        background: "white",
-                        color: "#0F172A",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <option value={10}>10</option>
-                      <option value={25}>25</option>
-                      <option value={50}>50</option>
-                      <option value={100}>100</option>
-                      <option value="all">All</option>
-                    </select>
-                  </div>
-                </div>
+                    <span style={{ whiteSpace: "nowrap" }}>
+                      Showing{" "}
+                      <strong style={{ color: "#0F172A", fontWeight: "700" }}>
+                        {startIndex}–{endIndex}
+                      </strong>{" "}
+                      of{" "}
+                      <strong style={{ color: "#0F172A", fontWeight: "700" }}>
+                        {totalItems}
+                      </strong>{" "}
+                      personnel
+                      {totalItems !== personnel.length && (
+                        <span style={{ color: "#94A3B8", marginLeft: "4px" }}>
+                          (filtered from {personnel.length})
+                        </span>
+                      )}
+                    </span>
 
-                {/* Right side: Page Navigation Buttons */}
-                {totalPages > 1 && (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "4px",
-                    }}
-                  >
-                    {/* First Page */}
-                    <button
-                      type="button"
-                      disabled={safeCurrentPage <= 1}
-                      onClick={() => setCurrentPage(1)}
-                      title="First Page"
+                    <span style={{ color: "#CBD5E1", userSelect: "none" }}>
+                      |
+                    </span>
+
+                    <div
                       style={{
-                        minWidth: "32px",
-                        height: "32px",
-                        padding: "0 6px",
-                        borderRadius: "6px",
-                        border: "1px solid #CBD5E1",
-                        background: safeCurrentPage <= 1 ? "#F8FAFC" : "white",
-                        color: safeCurrentPage <= 1 ? "#94A3B8" : "#0F172A",
-                        fontWeight: "700",
-                        cursor:
-                          safeCurrentPage <= 1 ? "not-allowed" : "pointer",
-                        display: "inline-flex",
+                        display: "flex",
                         alignItems: "center",
-                        justifyContent: "center",
-                        transition: "all 0.15s ease",
+                        gap: "6px",
+                        whiteSpace: "nowrap",
+                        flexShrink: 0,
                       }}
                     >
-                      <FiChevronsLeft size={14} />
-                    </button>
+                      <label
+                        htmlFor="roster-page-size"
+                        style={{
+                          margin: 0,
+                          color: "#64748B",
+                          fontWeight: "500",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Per page:
+                      </label>
+                      <select
+                        id="roster-page-size"
+                        value={pageSize}
+                        onChange={(e) => {
+                          const val =
+                            e.target.value === "all"
+                              ? "all"
+                              : Number(e.target.value);
+                          setPageSize(val);
+                          setCurrentPage(1);
+                        }}
+                        style={{
+                          padding: "4px 8px",
+                          borderRadius: "6px",
+                          border: "1px solid #CBD5E1",
+                          fontSize: "12px",
+                          fontWeight: "700",
+                          background: "white",
+                          color: "#0F172A",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <option value={10}>10</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                        <option value="all">All</option>
+                      </select>
+                    </div>
+                  </div>
 
-                    {/* Previous Page */}
-                    <button
-                      type="button"
-                      disabled={safeCurrentPage <= 1}
-                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                      title="Previous Page"
+                  {/* Right side: Page Navigation Buttons */}
+                  {totalPages > 1 && (
+                    <div
                       style={{
-                        minWidth: "32px",
-                        height: "32px",
-                        padding: "0 10px",
-                        borderRadius: "6px",
-                        border: "1px solid #CBD5E1",
-                        background: safeCurrentPage <= 1 ? "#F8FAFC" : "white",
-                        color: safeCurrentPage <= 1 ? "#94A3B8" : "#0F172A",
-                        fontWeight: "700",
-                        cursor:
-                          safeCurrentPage <= 1 ? "not-allowed" : "pointer",
-                        display: "inline-flex",
+                        display: "flex",
                         alignItems: "center",
                         gap: "4px",
-                        fontSize: "12px",
-                        transition: "all 0.15s ease",
                       }}
                     >
-                      <FiChevronLeft size={13} />
-                      <span>Prev</span>
-                    </button>
+                      {/* First Page */}
+                      <button
+                        type="button"
+                        disabled={safeCurrentPage <= 1}
+                        onClick={() => setCurrentPage(1)}
+                        title="First Page"
+                        style={{
+                          minWidth: "32px",
+                          height: "32px",
+                          padding: "0 6px",
+                          borderRadius: "6px",
+                          border: "1px solid #CBD5E1",
+                          background:
+                            safeCurrentPage <= 1 ? "#F8FAFC" : "white",
+                          color: safeCurrentPage <= 1 ? "#94A3B8" : "#0F172A",
+                          fontWeight: "700",
+                          cursor:
+                            safeCurrentPage <= 1 ? "not-allowed" : "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        <FiChevronsLeft size={14} />
+                      </button>
 
-                    {/* Numeric Pages with smart ellipsis */}
-                    {getPageNumbers(safeCurrentPage, totalPages).map(
-                      (pageNum, idx) => {
-                        if (pageNum === "...") {
+                      {/* Previous Page */}
+                      <button
+                        type="button"
+                        disabled={safeCurrentPage <= 1}
+                        onClick={() =>
+                          setCurrentPage((p) => Math.max(1, p - 1))
+                        }
+                        title="Previous Page"
+                        style={{
+                          minWidth: "32px",
+                          height: "32px",
+                          padding: "0 10px",
+                          borderRadius: "6px",
+                          border: "1px solid #CBD5E1",
+                          background:
+                            safeCurrentPage <= 1 ? "#F8FAFC" : "white",
+                          color: safeCurrentPage <= 1 ? "#94A3B8" : "#0F172A",
+                          fontWeight: "700",
+                          cursor:
+                            safeCurrentPage <= 1 ? "not-allowed" : "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                          fontSize: "12px",
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        <FiChevronLeft size={13} />
+                        <span>Prev</span>
+                      </button>
+
+                      {/* Numeric Pages with smart ellipsis */}
+                      {getPageNumbers(safeCurrentPage, totalPages).map(
+                        (pageNum, idx) => {
+                          if (pageNum === "...") {
+                            return (
+                              <span
+                                key={`ellipsis-${idx}`}
+                                style={{
+                                  minWidth: "24px",
+                                  textAlign: "center",
+                                  color: "#94A3B8",
+                                  fontWeight: "700",
+                                  fontSize: "12px",
+                                  userSelect: "none",
+                                }}
+                              >
+                                …
+                              </span>
+                            );
+                          }
+
+                          const isActive = pageNum === safeCurrentPage;
                           return (
-                            <span
-                              key={`ellipsis-${idx}`}
+                            <button
+                              key={pageNum}
+                              type="button"
+                              onClick={() => setCurrentPage(pageNum)}
                               style={{
-                                minWidth: "24px",
-                                textAlign: "center",
-                                color: "#94A3B8",
-                                fontWeight: "700",
+                                minWidth: "32px",
+                                height: "32px",
+                                padding: "0 8px",
+                                borderRadius: "6px",
+                                border: isActive
+                                  ? "1.5px solid #2563EB"
+                                  : "1px solid #CBD5E1",
+                                background: isActive ? "#EFF6FF" : "white",
+                                color: isActive ? "#1D4ED8" : "#334155",
+                                fontWeight: isActive ? "800" : "600",
                                 fontSize: "12px",
-                                userSelect: "none",
+                                cursor: "pointer",
+                                transition: "all 0.15s ease",
+                                boxShadow: isActive
+                                  ? "0 1px 3px rgba(37, 99, 235, 0.15)"
+                                  : "none",
                               }}
                             >
-                              …
-                            </span>
+                              {pageNum}
+                            </button>
                           );
+                        },
+                      )}
+
+                      {/* Next Page */}
+                      <button
+                        type="button"
+                        disabled={safeCurrentPage >= totalPages}
+                        onClick={() =>
+                          setCurrentPage((p) => Math.min(totalPages, p + 1))
                         }
+                        title="Next Page"
+                        style={{
+                          minWidth: "32px",
+                          height: "32px",
+                          padding: "0 10px",
+                          borderRadius: "6px",
+                          border: "1px solid #CBD5E1",
+                          background:
+                            safeCurrentPage >= totalPages ? "#F8FAFC" : "white",
+                          color:
+                            safeCurrentPage >= totalPages
+                              ? "#94A3B8"
+                              : "#0F172A",
+                          fontWeight: "700",
+                          cursor:
+                            safeCurrentPage >= totalPages
+                              ? "not-allowed"
+                              : "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                          fontSize: "12px",
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        <span>Next</span>
+                        <FiChevronRight size={13} />
+                      </button>
 
-                        const isActive = pageNum === safeCurrentPage;
-                        return (
-                          <button
-                            key={pageNum}
-                            type="button"
-                            onClick={() => setCurrentPage(pageNum)}
-                            style={{
-                              minWidth: "32px",
-                              height: "32px",
-                              padding: "0 8px",
-                              borderRadius: "6px",
-                              border: isActive
-                                ? "1.5px solid #2563EB"
-                                : "1px solid #CBD5E1",
-                              background: isActive ? "#EFF6FF" : "white",
-                              color: isActive ? "#1D4ED8" : "#334155",
-                              fontWeight: isActive ? "800" : "600",
-                              fontSize: "12px",
-                              cursor: "pointer",
-                              transition: "all 0.15s ease",
-                              boxShadow: isActive
-                                ? "0 1px 3px rgba(37, 99, 235, 0.15)"
-                                : "none",
-                            }}
-                          >
-                            {pageNum}
-                          </button>
-                        );
-                      },
-                    )}
-
-                    {/* Next Page */}
-                    <button
-                      type="button"
-                      disabled={safeCurrentPage >= totalPages}
-                      onClick={() =>
-                        setCurrentPage((p) => Math.min(totalPages, p + 1))
-                      }
-                      title="Next Page"
-                      style={{
-                        minWidth: "32px",
-                        height: "32px",
-                        padding: "0 10px",
-                        borderRadius: "6px",
-                        border: "1px solid #CBD5E1",
-                        background:
-                          safeCurrentPage >= totalPages ? "#F8FAFC" : "white",
-                        color:
-                          safeCurrentPage >= totalPages ? "#94A3B8" : "#0F172A",
-                        fontWeight: "700",
-                        cursor:
-                          safeCurrentPage >= totalPages
-                            ? "not-allowed"
-                            : "pointer",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "4px",
-                        fontSize: "12px",
-                        transition: "all 0.15s ease",
-                      }}
-                    >
-                      <span>Next</span>
-                      <FiChevronRight size={13} />
-                    </button>
-
-                    {/* Last Page */}
-                    <button
-                      type="button"
-                      disabled={safeCurrentPage >= totalPages}
-                      onClick={() => setCurrentPage(totalPages)}
-                      title="Last Page"
-                      style={{
-                        minWidth: "32px",
-                        height: "32px",
-                        padding: "0 6px",
-                        borderRadius: "6px",
-                        border: "1px solid #CBD5E1",
-                        background:
-                          safeCurrentPage >= totalPages ? "#F8FAFC" : "white",
-                        color:
-                          safeCurrentPage >= totalPages ? "#94A3B8" : "#0F172A",
-                        fontWeight: "700",
-                        cursor:
-                          safeCurrentPage >= totalPages
-                            ? "not-allowed"
-                            : "pointer",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        transition: "all 0.15s ease",
-                      }}
-                    >
-                      <FiChevronsRight size={14} />
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
+                      {/* Last Page */}
+                      <button
+                        type="button"
+                        disabled={safeCurrentPage >= totalPages}
+                        onClick={() => setCurrentPage(totalPages)}
+                        title="Last Page"
+                        style={{
+                          minWidth: "32px",
+                          height: "32px",
+                          padding: "0 6px",
+                          borderRadius: "6px",
+                          border: "1px solid #CBD5E1",
+                          background:
+                            safeCurrentPage >= totalPages ? "#F8FAFC" : "white",
+                          color:
+                            safeCurrentPage >= totalPages
+                              ? "#94A3B8"
+                              : "#0F172A",
+                          fontWeight: "700",
+                          cursor:
+                            safeCurrentPage >= totalPages
+                              ? "not-allowed"
+                              : "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        <FiChevronsRight size={14} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -4050,10 +4307,7 @@ export default function Roster() {
                   >
                     <button
                       type="button"
-                      onClick={() => {
-                        setModalHasMultipleHeads(true);
-                        setActiveLevelSlot(educationalLevels[0]);
-                      }}
+                      onClick={handleSwitchToMultipleHeads}
                       style={{
                         flex: 1,
                         padding: "10px 14px",
@@ -4084,10 +4338,7 @@ export default function Roster() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        setModalHasMultipleHeads(false);
-                        setActiveLevelSlot(null);
-                      }}
+                      onClick={handleSwitchToSingleHead}
                       style={{
                         flex: 1,
                         padding: "10px 14px",
@@ -4607,23 +4858,149 @@ export default function Roster() {
                 </div>
               )}
 
-              {/* Single Head Guidance Notice: ONLY shown IF THEY CLICK NO */}
+              {/* Single Head Guidance Notice & Selected Head Card: ONLY shown IF THEY CLICK NO */}
               {modalHasMultipleHeads === false &&
                 educationalLevels.length > 1 && (
                   <div
                     style={{
-                      margin: "12px 24px 0",
-                      padding: "10px 14px",
-                      background: "#f0fdf4",
-                      border: "1px solid #bbf7d0",
-                      borderRadius: "10px",
-                      fontSize: "12px",
-                      color: "#166534",
+                      margin: "14px 24px 0",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "10px",
                     }}
                   >
-                    <strong>Single Head Mode:</strong> The selected School Head
-                    will serve as the Main School Head across all applicable
-                    educational levels ({educationalLevels.join(" & ")}).
+                    <div
+                      style={{
+                        padding: "10px 14px",
+                        background: "#f0fdf4",
+                        border: "1px solid #bbf7d0",
+                        borderRadius: "10px",
+                        fontSize: "12px",
+                        color: "#166534",
+                        lineHeight: "1.45",
+                      }}
+                    >
+                      <strong>Single Head Mode:</strong> One Main School Head
+                      will govern all applicable educational levels (
+                      {educationalLevels.join(" & ")}).
+                    </div>
+
+                    {modalMainHeadId &&
+                      (() => {
+                        const mainPerson = personnel.find(
+                          (p) => String(p.id) === String(modalMainHeadId),
+                        );
+                        if (!mainPerson) return null;
+                        return (
+                          <div
+                            style={{
+                              border: "2px solid #059669",
+                              background: "#f0fdf4",
+                              borderRadius: "12px",
+                              padding: "12px 16px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              boxShadow: "0 2px 8px rgba(5, 150, 105, 0.08)",
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "12px",
+                                minWidth: 0,
+                                flex: 1,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: "36px",
+                                  height: "36px",
+                                  borderRadius: "10px",
+                                  background: "#059669",
+                                  color: "#ffffff",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                <FiStar size={18} />
+                              </div>
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "8px",
+                                    flexWrap: "wrap",
+                                  }}
+                                >
+                                  <span
+                                    style={{
+                                      fontWeight: "800",
+                                      fontSize: "14px",
+                                      color: "#065f46",
+                                    }}
+                                  >
+                                    {formatPersonnelName(mainPerson)}
+                                  </span>
+                                  <span
+                                    style={{
+                                      background: "#fef3c7",
+                                      color: "#92400e",
+                                      border: "1px solid #fcd34d",
+                                      borderRadius: "999px",
+                                      padding: "1px 8px",
+                                      fontSize: "9px",
+                                      fontWeight: "800",
+                                      textTransform: "uppercase",
+                                    }}
+                                  >
+                                    ★ Main School Head (All Offerings)
+                                  </span>
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: "12px",
+                                    color: "#047857",
+                                    marginTop: "2px",
+                                  }}
+                                >
+                                  {mainPerson.position || "Faculty"}{" "}
+                                  {mainPerson.depedEmail
+                                    ? `• ${mainPerson.depedEmail}`
+                                    : ""}
+                                </div>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setModalMainHeadId(null);
+                                setModalHeadAssignments({});
+                              }}
+                              style={{
+                                background: "#ffffff",
+                                border: "1px solid #cbd5e1",
+                                borderRadius: "8px",
+                                color: "#334155",
+                                fontSize: "11px",
+                                fontWeight: "700",
+                                cursor: "pointer",
+                                padding: "5px 10px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "4px",
+                                flexShrink: 0,
+                              }}
+                            >
+                              <FiEdit2 size={11} /> Change
+                            </button>
+                          </div>
+                        );
+                      })()}
                   </div>
                 )}
 
@@ -5050,12 +5427,9 @@ export default function Roster() {
                                   <button
                                     type="button"
                                     className="btn secondary"
-                                    onClick={async () => {
-                                      await designateSchoolHeadsConfig({
-                                        hasMultipleHeads: false,
-                                        mainHeadId: null,
-                                        assignments: {},
-                                      });
+                                    onClick={() => {
+                                      setModalMainHeadId(null);
+                                      setModalHeadAssignments({});
                                       const updatedList = (personnel || []).map(
                                         (item) => ({
                                           ...item,
@@ -5068,12 +5442,15 @@ export default function Roster() {
                                           school_head_level: null,
                                         }),
                                       );
-                                      syncCleanRosterSnapshot(updatedList);
-                                      if (showToast)
+                                      if (typeof setPersonnel === "function") {
+                                        setPersonnel(updatedList);
+                                      }
+                                      if (showToast) {
                                         showToast(
-                                          "School Head designation removed.",
+                                          "School Head designation cleared in panel.",
                                           "info",
                                         );
+                                      }
                                     }}
                                     style={{
                                       padding: "6px 14px",
@@ -5092,7 +5469,42 @@ export default function Roster() {
                                   <button
                                     type="button"
                                     className="btn"
-                                    onClick={() => setConfirmDesignateTarget(p)}
+                                    onClick={() => {
+                                      const pIdStr = String(p.id);
+                                      setModalMainHeadId(pIdStr);
+                                      const newAssignments = {};
+                                      educationalLevels.forEach((lvl) => {
+                                        newAssignments[lvl] = pIdStr;
+                                      });
+                                      setModalHeadAssignments(newAssignments);
+
+                                      // Update personnel state immediately in UI
+                                      const updatedList = (personnel || []).map(
+                                        (item) => {
+                                          const isHead =
+                                            String(item.id) === pIdStr;
+                                          return {
+                                            ...item,
+                                            isSchoolHead: isHead,
+                                            is_school_head: isHead,
+                                            isMainSchoolHead: isHead,
+                                            is_main_school_head: isHead,
+                                            is_main_sh: isHead,
+                                            schoolHeadLevel: null,
+                                            school_head_level: null,
+                                          };
+                                        },
+                                      );
+                                      if (typeof setPersonnel === "function") {
+                                        setPersonnel(updatedList);
+                                      }
+                                      if (showToast) {
+                                        showToast(
+                                          `${formatPersonnelName(p)} designated as Main School Head for all offerings.`,
+                                          "success",
+                                        );
+                                      }
+                                    }}
                                     style={{
                                       padding: "7px 16px",
                                       fontSize: "12px",
@@ -5157,6 +5569,18 @@ export default function Roster() {
                     levels assigned
                     {modalMainHeadId && " • Main Head selected"}
                   </span>
+                ) : modalHasMultipleHeads === false &&
+                  educationalLevels.length > 1 ? (
+                  <span>
+                    Status:{" "}
+                    <strong
+                      style={{ color: modalMainHeadId ? "#059669" : "#d97706" }}
+                    >
+                      {modalMainHeadId
+                        ? `1 Main School Head (${formatPersonnelName(personnel.find((p) => String(p.id) === String(modalMainHeadId)))}) designated for all offerings (${educationalLevels.join(" & ")})`
+                        : `Please select 1 Main School Head for all offerings (${educationalLevels.join(" & ")})`}
+                    </strong>
+                  </span>
                 ) : (
                   <span>
                     DepEd eSF7 requires an official School Head before saving.
@@ -5176,61 +5600,45 @@ export default function Roster() {
                     borderRadius: "10px",
                   }}
                 >
-                  {modalHasMultipleHeads ? "Cancel" : "Done"}
+                  {modalHasMultipleHeads !== null ? "Cancel" : "Done"}
                 </button>
 
-                {modalHasMultipleHeads && (
+                {((educationalLevels.length > 1 &&
+                  modalHasMultipleHeads !== null) ||
+                  educationalLevels.length === 1) && (
                   <button
                     type="button"
                     className="btn"
                     disabled={
-                      Object.keys(modalHeadAssignments).length <
-                        educationalLevels.length || !modalMainHeadId
+                      modalHasMultipleHeads
+                        ? Object.keys(modalHeadAssignments).length <
+                            educationalLevels.length || !modalMainHeadId
+                        : !modalMainHeadId
                     }
-                    onClick={async () => {
-                      const success = await designateSchoolHeadsConfig({
-                        hasMultipleHeads: true,
-                        mainHeadId: modalMainHeadId,
-                        assignments: modalHeadAssignments,
-                      });
-                      if (success) {
-                        setIsChangeHeadModalOpen(false);
-                        const assignedIds = new Set(
-                          Object.values(modalHeadAssignments || {}).map(String),
-                        );
-                        const updatedList = (personnel || []).map((item) => {
-                          const isHead = assignedIds.has(String(item.id));
-                          const isMain =
-                            String(modalMainHeadId) === String(item.id);
-                          return {
-                            ...item,
-                            isSchoolHead: isHead,
-                            is_school_head: isHead,
-                            isMainSchoolHead: isMain,
-                            is_main_school_head: isMain,
-                            is_main_sh: isMain,
-                          };
-                        });
-                        syncCleanRosterSnapshot(updatedList);
-                      }
-                    }}
+                    onClick={handleConfirmSaveSchoolHeads}
                     style={{
                       padding: "8px 20px",
                       fontSize: "13px",
                       fontWeight: "700",
-                      background:
-                        Object.keys(modalHeadAssignments).length <
-                          educationalLevels.length || !modalMainHeadId
-                          ? "#cbd5e1"
-                          : "#059669",
+                      background: (
+                        modalHasMultipleHeads
+                          ? Object.keys(modalHeadAssignments).length <
+                              educationalLevels.length || !modalMainHeadId
+                          : !modalMainHeadId
+                      )
+                        ? "#cbd5e1"
+                        : "#059669",
                       color: "#ffffff",
                       border: "none",
                       borderRadius: "10px",
-                      cursor:
-                        Object.keys(modalHeadAssignments).length <
-                          educationalLevels.length || !modalMainHeadId
-                          ? "not-allowed"
-                          : "pointer",
+                      cursor: (
+                        modalHasMultipleHeads
+                          ? Object.keys(modalHeadAssignments).length <
+                              educationalLevels.length || !modalMainHeadId
+                          : !modalMainHeadId
+                      )
+                        ? "not-allowed"
+                        : "pointer",
                     }}
                   >
                     Confirm & Save School Heads
@@ -5460,6 +5868,9 @@ export default function Roster() {
                       is_main_sh: isHead,
                     };
                   });
+                  if (typeof setPersonnel === "function") {
+                    setPersonnel(updatedList);
+                  }
                   syncCleanRosterSnapshot(updatedList);
                   if (showToast) {
                     showToast(

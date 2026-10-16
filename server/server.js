@@ -748,6 +748,7 @@ const initDB = async () => {
         ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_jhs_iped BOOLEAN NOT NULL DEFAULT FALSE;
         ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_jhs_mad BOOLEAN NOT NULL DEFAULT FALSE;
         ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_shs_sned BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_shs_als BOOLEAN NOT NULL DEFAULT FALSE;
         ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_shs_iped BOOLEAN NOT NULL DEFAULT FALSE;
         ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_shs_mad BOOLEAN NOT NULL DEFAULT FALSE;
         ALTER TABLE esf7_school_profile ADD COLUMN IF NOT EXISTS has_sned BOOLEAN NOT NULL DEFAULT FALSE;
@@ -763,6 +764,20 @@ const initDB = async () => {
         ALTER TABLE esf7_personnel_profile ADD COLUMN IF NOT EXISTS legacy_id VARCHAR(128);
 
         ALTER TABLE school_drafts ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1;
+
+        CREATE TABLE IF NOT EXISTS esf7_deleted_personnel (
+          id VARCHAR(128) PRIMARY KEY,
+          school_id VARCHAR(64) NOT NULL,
+          personnel_id VARCHAR(128),
+          prn VARCHAR(128),
+          employee_no VARCHAR(128),
+          first_name VARCHAR(255),
+          last_name VARCHAR(255),
+          full_name_clean VARCHAR(255),
+          deleted_by VARCHAR(128) DEFAULT 'SCHOOL_HEAD',
+          deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_esf7_deleted_personnel_school ON esf7_deleted_personnel(school_id);
 
         IF NOT EXISTS (
           SELECT 1 FROM pg_constraint c

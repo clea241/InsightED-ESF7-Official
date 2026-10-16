@@ -54,10 +54,104 @@ const ELEM_GRADE_ORDER = [
 const ELEM_SPECIAL_KEYS = ["SNED", "ALS"];
 const JHS_GRADE_ORDER = ["Grade 7", "Grade 8", "Grade 9", "Grade 10"];
 
+// Resilient personnel matching helper across all DepEd ID schemes:
+// 1. Direct ID match (e.g. "176527" === "176527")
+// 2. PRN / Legacy ID / Employee ID matching (e.g. "PRN-0176527", "PER-300488-028")
+// 3. CACHE_ prefix stripping (e.g. "CACHE_300488_PER-300488-028")
+// 4. Numeric equivalence ignoring "PER-", "PRN-", "EMP-" and leading zeros (e.g. "PER-176527" === "176527")
+export const findPersonnelById = (personnelList, targetId) => {
+  if (!targetId || !Array.isArray(personnelList) || personnelList.length === 0)
+    return null;
+  const rawTarget = String(targetId).trim();
+  if (!rawTarget) return null;
+  const targetNum = rawTarget
+    .replace(/^(?:PER|PRN|EMP)-/i, "")
+    .replace(/^0+/, "");
+
+  for (const p of personnelList) {
+    if (!p) continue;
+    const pId = String(p.id || "").trim();
+    const pPrn = String(p.prn || "").trim();
+    const pLegacy = String(p.legacy_id || p.legacyId || "").trim();
+    const pEmp = String(p.employeeId || p.employee_id || "").trim();
+
+    // 1. Direct match
+    if (
+      (pId && pId === rawTarget) ||
+      (pPrn && pPrn === rawTarget) ||
+      (pLegacy && pLegacy === rawTarget) ||
+      (pEmp && pEmp === rawTarget)
+    ) {
+      return p;
+    }
+
+    // 2. Case-insensitive match
+    const lowerTarget = rawTarget.toLowerCase();
+    if (
+      (pId && pId.toLowerCase() === lowerTarget) ||
+      (pPrn && pPrn.toLowerCase() === lowerTarget) ||
+      (pLegacy && pLegacy.toLowerCase() === lowerTarget) ||
+      (pEmp && pEmp.toLowerCase() === lowerTarget)
+    ) {
+      return p;
+    }
+
+    // 3. CACHE_ prefix stripping on legacy_id
+    if (pLegacy) {
+      const strippedLegacy = pLegacy.replace(/^CACHE_\d+_/, "");
+      if (strippedLegacy.toLowerCase() === lowerTarget) return p;
+    }
+
+    // 4. Numeric match ignoring PER-/PRN-/EMP- and leading zeros
+    if (targetNum && /^\d+$/.test(targetNum)) {
+      const pIdNum = pId.replace(/^(?:PER|PRN|EMP)-/i, "").replace(/^0+/, "");
+      const pPrnNum = pPrn.replace(/^(?:PER|PRN|EMP)-/i, "").replace(/^0+/, "");
+      const pLegacyNum = pLegacy
+        .replace(/^CACHE_\d+_/, "")
+        .replace(/^(?:PER|PRN|EMP)-/i, "")
+        .replace(/^0+/, "");
+      if (
+        (pIdNum && pIdNum === targetNum) ||
+        (pPrnNum && pPrnNum === targetNum) ||
+        (pLegacyNum && pLegacyNum === targetNum)
+      ) {
+        return p;
+      }
+    }
+  }
+  return null;
+};
+
+export const findAdvisor = (sec, pList) => {
+  if (!sec) return null;
+  const targetId =
+    sec.advisorId ||
+    sec.adviserId ||
+    sec.tutorId ||
+    sec.assignedTeacherId ||
+    sec.assigned_teacher_id;
+  if (!targetId) return null;
+  return findPersonnelById(pList, targetId);
+};
+
 // A section whose adviser cannot be matched in the loaded roster: if an adviser id IS stored, say so (amber) instead of
 // showing "Unassigned" - the assignment exists in the database, the roster just has no matching person right now.
-const AdviserMissing = ({ sec }) => {
-  const storedId = sec && (sec.advisorId || sec.adviserId || sec.tutorId);
+const AdviserMissing = ({ sec, pList }) => {
+  const matched = pList ? findAdvisor(sec, pList) : null;
+  if (matched) {
+    return (
+      <span style={{ fontWeight: "700", color: "#0F172A", fontSize: "12px" }}>
+        {matched.firstName} {matched.lastName}
+      </span>
+    );
+  }
+  const storedId =
+    sec &&
+    (sec.advisorId ||
+      sec.adviserId ||
+      sec.tutorId ||
+      sec.assignedTeacherId ||
+      sec.assigned_teacher_id);
   if (storedId) {
     return (
       <span
@@ -2704,11 +2798,13 @@ export default function OrganizedClasses() {
           .includes("ALS");
       if (!isSpecial && (sec?.advisorId || sec?.adviserId)) {
         const advId = String(sec.advisorId || sec.adviserId);
-        const person = (effectivePersonnel || []).find(
-          (p) => String(p.id) === advId,
-        );
-        // School Head / Principal is exempted from the 1-regular-advisory limit
-        if (!checkIsSchoolHead(person)) {
+        const person = findAdvisor(sec, effectivePersonnel);
+        if (person) {
+          // School Head / Principal is exempted from the 1-regular-advisory limit
+          if (!checkIsSchoolHead(person)) {
+            set.add(String(person.id));
+          }
+        } else {
           set.add(advId);
         }
       }
@@ -2743,11 +2839,16 @@ export default function OrganizedClasses() {
               .includes(t),
         );
       if (isAral && (sec?.tutorId || sec?.advisorId || sec?.adviserId)) {
-        set.add(String(sec.tutorId || sec.advisorId || sec.adviserId));
+        const tutorPerson = findAdvisor(sec, effectivePersonnel);
+        if (tutorPerson) {
+          set.add(String(tutorPerson.id));
+        } else {
+          set.add(String(sec.tutorId || sec.advisorId || sec.adviserId));
+        }
       }
     });
     return set;
-  }, [classSections]);
+  }, [classSections, effectivePersonnel]);
 
   // Comprehensive option builder for Regular Section Advisers (never omits any eligible teacher)
   const buildRegularAdvisorOptions = (
@@ -2761,9 +2862,7 @@ export default function OrganizedClasses() {
 
     const curIdStr = String(currentAdvisorId || "");
     if (curIdStr) {
-      const curPerson = effectivePersonnel.find(
-        (p) => String(p.id) === curIdStr,
-      );
+      const curPerson = findPersonnelById(effectivePersonnel, curIdStr);
       if (curPerson) {
         const curName =
           `${curPerson.firstName || ""} ${curPerson.lastName || ""}`.trim() ||
@@ -2773,6 +2872,7 @@ export default function OrganizedClasses() {
           value: curPerson.id,
           label: `${curName}${isRel ? " [Teaching-Related]" : ""} (Current Adviser)`,
         });
+        addedIds.add(String(curPerson.id));
         addedIds.add(curIdStr);
       }
     }
@@ -2832,9 +2932,7 @@ export default function OrganizedClasses() {
     const addedIds = new Set();
     const curIdStr = String(currentAdvisorId || "");
     if (curIdStr) {
-      const curPerson = effectivePersonnel.find(
-        (p) => String(p.id) === curIdStr,
-      );
+      const curPerson = findPersonnelById(effectivePersonnel, curIdStr);
       if (curPerson) {
         const curName =
           `${curPerson.firstName || ""} ${curPerson.lastName || ""}`.trim() ||
@@ -2843,6 +2941,7 @@ export default function OrganizedClasses() {
           value: curPerson.id,
           label: `${curName} (Current Adviser)`,
         });
+        addedIds.add(String(curPerson.id));
         addedIds.add(curIdStr);
       }
     }
@@ -2887,9 +2986,7 @@ export default function OrganizedClasses() {
     const addedIds = new Set();
     const curIdStr = String(currentAdvisorId || "");
     if (curIdStr) {
-      const curPerson = effectivePersonnel.find(
-        (p) => String(p.id) === curIdStr,
-      );
+      const curPerson = findPersonnelById(effectivePersonnel, curIdStr);
       if (curPerson) {
         const curName =
           `${curPerson.firstName || ""} ${curPerson.lastName || ""}`.trim() ||
@@ -2898,6 +2995,7 @@ export default function OrganizedClasses() {
           value: curPerson.id,
           label: `${curName} (Current Adviser)`,
         });
+        addedIds.add(String(curPerson.id));
         addedIds.add(curIdStr);
       }
     }
@@ -2938,9 +3036,7 @@ export default function OrganizedClasses() {
     const addedIds = new Set();
     const curIdStr = String(currentTutorId || "");
     if (curIdStr) {
-      const curPerson = effectivePersonnel.find(
-        (p) => String(p.id) === curIdStr,
-      );
+      const curPerson = findPersonnelById(effectivePersonnel, curIdStr);
       if (curPerson) {
         const curName =
           `${curPerson.firstName || ""} ${curPerson.lastName || ""}`.trim() ||
@@ -2949,6 +3045,7 @@ export default function OrganizedClasses() {
           value: curPerson.id,
           label: `${curName} (Current Tutor)`,
         });
+        addedIds.add(String(curPerson.id));
         addedIds.add(curIdStr);
       }
     }
@@ -2978,9 +3075,7 @@ export default function OrganizedClasses() {
     const addedIds = new Set();
     const curIdStr = String(currentAdvisorId || "");
     if (curIdStr) {
-      const curPerson = effectivePersonnel.find(
-        (p) => String(p.id) === curIdStr,
-      );
+      const curPerson = findPersonnelById(effectivePersonnel, curIdStr);
       if (curPerson) {
         const curName =
           `${curPerson.firstName || ""} ${curPerson.lastName || ""}`.trim() ||
@@ -2989,6 +3084,7 @@ export default function OrganizedClasses() {
           value: curPerson.id,
           label: `${curName} (Current Teacher)`,
         });
+        addedIds.add(String(curPerson.id));
         addedIds.add(curIdStr);
       }
     }
@@ -3175,7 +3271,12 @@ export default function OrganizedClasses() {
         sec.numberOfLearners !== undefined && sec.numberOfLearners !== null
           ? String(sec.numberOfLearners)
           : "",
-      advisorId: sec.advisorId || sec.adviserId || sec.tutorId || "",
+      advisorId: (() => {
+        const p = findAdvisor(sec, effectivePersonnel || personnel);
+        return p
+          ? String(p.id)
+          : String(sec.advisorId || sec.adviserId || sec.tutorId || "");
+      })(),
       adviserRemarks: sec.adviserRemarks || sec.adviser_remarks || "",
       aralBasis: aralInfo
         ? aralInfo.isAssessment
@@ -3192,7 +3293,12 @@ export default function OrganizedClasses() {
       aralToolKey: toolKey,
       aralProfileLevel: validLevel,
       aralLearners: sec.aralLearners || sec.numberOfLearners || 15,
-      tutorId: sec.tutorId || sec.advisorId || sec.adviserId || "",
+      tutorId: (() => {
+        const p = findAdvisor(sec, effectivePersonnel || personnel);
+        return p
+          ? String(p.id)
+          : String(sec.tutorId || sec.advisorId || sec.adviserId || "");
+      })(),
       interventionCategory:
         sec.sectionType === "ENRICHMENT" ? "ENRICHMENT" : "REMEDIAL",
     });
@@ -3427,28 +3533,33 @@ export default function OrganizedClasses() {
       adviser_remarks: editingRowData.adviserRemarks || null,
     };
 
+    let savedSec = null;
     if (isReg) {
       try {
-        await api.addRegularSection(updatePayload);
+        savedSec = await api.addRegularSection(updatePayload);
       } catch (err) {
         console.warn("[handleSaveInlineEdit] Instant DB update warning:", err);
       }
     } else {
       try {
-        await api.addSection({ ...sec, ...updatePayload });
+        savedSec = await api.addSection({ ...sec, ...updatePayload });
       } catch (err) {
         console.warn("[handleSaveInlineEdit] Instant DB update warning:", err);
       }
     }
 
-    await updateSectionDetails(sec.id, updatePayload);
+    const finalPayload =
+      savedSec && savedSec.id
+        ? { ...updatePayload, ...savedSec }
+        : updatePayload;
+    await updateSectionDetails(sec.id, finalPayload);
 
     if (savedSectionsSnapshotRef.current) {
       try {
         const snapList = JSON.parse(savedSectionsSnapshotRef.current);
         savedSectionsSnapshotRef.current = JSON.stringify([
           ...snapList.filter((s) => s.id !== sec.id),
-          { ...sec, ...updatePayload },
+          { ...sec, ...finalPayload },
         ]);
       } catch (e) {}
     }
@@ -3672,20 +3783,27 @@ export default function OrganizedClasses() {
       aralLearners: Number(inlineAralData.aralLearners) || 0,
     };
 
+    let savedSec = null;
     try {
-      await api.addSection(aralPayload);
+      savedSec = await api.addSection(aralPayload);
     } catch (e) {
       console.warn("[handleSaveInlineAddAral] DB save warning:", e);
     }
 
-    await addClassSection(aralPayload);
+    const finalSecToStage =
+      savedSec && (savedSec.id || savedSec.data?.id)
+        ? { ...aralPayload, ...(savedSec.data || savedSec) }
+        : aralPayload;
+    await addClassSection(finalSecToStage);
 
     if (savedSectionsSnapshotRef.current) {
       try {
         const snapList = JSON.parse(savedSectionsSnapshotRef.current);
         savedSectionsSnapshotRef.current = JSON.stringify([
-          ...snapList.filter((s) => s.id !== secId),
-          aralPayload,
+          ...snapList.filter(
+            (s) => s.id !== finalSecToStage.id && s.id !== secId,
+          ),
+          finalSecToStage,
         ]);
       } catch (e) {}
     }
@@ -3763,20 +3881,27 @@ export default function OrganizedClasses() {
       numberOfLearners: total,
     };
 
+    let savedSec = null;
     try {
-      await api.addSection(remPayload);
+      savedSec = await api.addSection(remPayload);
     } catch (e) {
       console.warn("[handleSaveInlineAddRemedial] DB save warning:", e);
     }
 
-    await addClassSection(remPayload);
+    const finalSecToStage =
+      savedSec && (savedSec.id || savedSec.data?.id)
+        ? { ...remPayload, ...(savedSec.data || savedSec) }
+        : remPayload;
+    await addClassSection(finalSecToStage);
 
     if (savedSectionsSnapshotRef.current) {
       try {
         const snapList = JSON.parse(savedSectionsSnapshotRef.current);
         savedSectionsSnapshotRef.current = JSON.stringify([
-          ...snapList.filter((s) => s.id !== secId),
-          remPayload,
+          ...snapList.filter(
+            (s) => s.id !== finalSecToStage.id && s.id !== secId,
+          ),
+          finalSecToStage,
         ]);
       } catch (e) {}
     }
@@ -3842,20 +3967,27 @@ export default function OrganizedClasses() {
       numberOfLearners: total,
     };
 
+    let savedSec = null;
     try {
-      await api.addSection(snedPayload);
+      savedSec = await api.addSection(snedPayload);
     } catch (e) {
       console.warn("[handleSaveInlineAddSned] DB save warning:", e);
     }
 
-    await addClassSection(snedPayload);
+    const finalSecToStage =
+      savedSec && (savedSec.id || savedSec.data?.id)
+        ? { ...snedPayload, ...(savedSec.data || savedSec) }
+        : snedPayload;
+    await addClassSection(finalSecToStage);
 
     if (savedSectionsSnapshotRef.current) {
       try {
         const snapList = JSON.parse(savedSectionsSnapshotRef.current);
         savedSectionsSnapshotRef.current = JSON.stringify([
-          ...snapList.filter((s) => s.id !== secId),
-          snedPayload,
+          ...snapList.filter(
+            (s) => s.id !== finalSecToStage.id && s.id !== secId,
+          ),
+          finalSecToStage,
         ]);
       } catch (e) {}
     }
@@ -3919,20 +4051,27 @@ export default function OrganizedClasses() {
       numberOfLearners: total,
     };
 
+    let savedSec = null;
     try {
-      await api.addSection(alsPayload);
+      savedSec = await api.addSection(alsPayload);
     } catch (e) {
       console.warn("[handleSaveInlineAddAls] DB save warning:", e);
     }
 
-    await addClassSection(alsPayload);
+    const finalSecToStage =
+      savedSec && (savedSec.id || savedSec.data?.id)
+        ? { ...alsPayload, ...(savedSec.data || savedSec) }
+        : alsPayload;
+    await addClassSection(finalSecToStage);
 
     if (savedSectionsSnapshotRef.current) {
       try {
         const snapList = JSON.parse(savedSectionsSnapshotRef.current);
         savedSectionsSnapshotRef.current = JSON.stringify([
-          ...snapList.filter((s) => s.id !== secId),
-          alsPayload,
+          ...snapList.filter(
+            (s) => s.id !== finalSecToStage.id && s.id !== secId,
+          ),
+          finalSecToStage,
         ]);
       } catch (e) {}
     }
@@ -4177,8 +4316,21 @@ export default function OrganizedClasses() {
         }
         const adviserOf = (x) =>
           String((x && (x.advisorId || x.adviserId)) || "").trim();
+        const adviserMatch = (sent, saved) => {
+          const a = adviserOf(sent);
+          const b = adviserOf(saved);
+          if (!a && !b) return true;
+          if (a === b) return true;
+          const pA = findPersonnelById(effectivePersonnel || personnel, a);
+          const pB = findPersonnelById(effectivePersonnel || personnel, b);
+          if (pA && pB && String(pA.id) === String(pB.id)) return true;
+          const numA = a.replace(/^(?:PER|PRN|EMP)-/i, "").replace(/^0+/, "");
+          const numB = b.replace(/^(?:PER|PRN|EMP)-/i, "").replace(/^0+/, "");
+          if (numA && numB && numA === numB) return true;
+          return false;
+        };
         const adviserMismatch = regularChanged.find(
-          (sent, i) => adviserOf(sent) !== adviserOf(savedList[i]),
+          (sent, i) => !adviserMatch(sent, savedList[i]),
         );
         if (adviserMismatch) {
           const i = regularChanged.indexOf(adviserMismatch);
@@ -4204,23 +4356,33 @@ export default function OrganizedClasses() {
             "warning",
           );
         }
-        // The database may already know a section under another id: adopt the saved id so it never shows up twice.
+        // The database may already know a section under another id: adopt the saved id and canonical adviser ID so it never shows up twice.
         const idFix = new Map();
+        const savedByOldId = new Map();
         (resp?.sections || []).forEach((saved, i) => {
-          if (
-            regularChanged[i] &&
-            String(saved.id) !== String(regularChanged[i].id)
-          )
-            idFix.set(String(regularChanged[i].id), saved.id);
+          if (regularChanged[i]) {
+            savedByOldId.set(String(regularChanged[i].id), saved);
+            if (String(saved.id) !== String(regularChanged[i].id)) {
+              idFix.set(String(regularChanged[i].id), saved.id);
+            }
+          }
         });
-        if (idFix.size > 0)
+        if (savedByOldId.size > 0) {
           setClassSections((prev) =>
-            prev.map((s) =>
-              idFix.has(String(s.id))
-                ? { ...s, id: idFix.get(String(s.id)) }
-                : s,
-            ),
+            prev.map((s) => {
+              const saved = savedByOldId.get(String(s.id));
+              if (saved) {
+                return {
+                  ...s,
+                  id: saved.id || s.id,
+                  advisorId: saved.advisorId || saved.adviserId || s.advisorId,
+                  adviserId: saved.advisorId || saved.adviserId || s.adviserId,
+                };
+              }
+              return s;
+            }),
           );
+        }
       }
 
       for (const sec of otherChanged) {
@@ -6652,12 +6814,9 @@ export default function OrganizedClasses() {
                           {pagedRegularRows.map((sec) => {
                             if (editingRowData && editingRowData.id === sec.id)
                               return renderEditRow(sec);
-                            const advisor = (
-                              effectivePersonnel || personnel
-                            ).find(
-                              (p) =>
-                                String(p.id) ===
-                                String(sec.advisorId || sec.adviserId),
+                            const advisor = findAdvisor(
+                              sec,
+                              effectivePersonnel || personnel,
                             );
                             const isMultigrade =
                               String(sec.gradeLevel || "").includes(" - ") ||
@@ -6846,7 +7005,10 @@ export default function OrganizedClasses() {
                                       )}
                                     </div>
                                   ) : (
-                                    <AdviserMissing sec={sec} />
+                                    <AdviserMissing
+                                      sec={sec}
+                                      pList={effectivePersonnel || personnel}
+                                    />
                                   )}
                                 </td>
                                 <td
@@ -7462,12 +7624,9 @@ export default function OrganizedClasses() {
                                 editingRowData.id === sec.id
                               )
                                 return renderEditRow(sec);
-                              const advisor = (
-                                effectivePersonnel || personnel
-                              ).find(
-                                (p) =>
-                                  String(p.id) ===
-                                  String(sec.advisorId || sec.adviserId),
+                              const advisor = findAdvisor(
+                                sec,
+                                effectivePersonnel || personnel,
                               );
                               const mVal = Number(sec.maleLearners) || 0;
                               const fVal = Number(sec.femaleLearners) || 0;
@@ -7551,7 +7710,10 @@ export default function OrganizedClasses() {
                                         {advisor.firstName} {advisor.lastName}
                                       </span>
                                     ) : (
-                                      <AdviserMissing sec={sec} />
+                                      <AdviserMissing
+                                        sec={sec}
+                                        pList={effectivePersonnel || personnel}
+                                      />
                                     )}
                                   </td>
                                   <td
@@ -7965,12 +8127,9 @@ export default function OrganizedClasses() {
                                 editingRowData.id === sec.id
                               )
                                 return renderEditRow(sec);
-                              const advisor = (
-                                effectivePersonnel || personnel
-                              ).find(
-                                (p) =>
-                                  String(p.id) ===
-                                  String(sec.advisorId || sec.adviserId),
+                              const advisor = findAdvisor(
+                                sec,
+                                effectivePersonnel || personnel,
                               );
                               const mVal = Number(sec.maleLearners) || 0;
                               const fVal = Number(sec.femaleLearners) || 0;
@@ -8072,7 +8231,10 @@ export default function OrganizedClasses() {
                                         {advisor.firstName} {advisor.lastName}
                                       </span>
                                     ) : (
-                                      <AdviserMissing sec={sec} />
+                                      <AdviserMissing
+                                        sec={sec}
+                                        pList={effectivePersonnel || personnel}
+                                      />
                                     )}
                                   </td>
                                   <td
@@ -8492,14 +8654,9 @@ export default function OrganizedClasses() {
                           {pagedAralRows.map((sec) => {
                             if (editingRowData && editingRowData.id === sec.id)
                               return renderEditRow(sec);
-                            const tutor = (
-                              effectivePersonnel || personnel
-                            ).find(
-                              (p) =>
-                                String(p.id) ===
-                                String(
-                                  sec.tutorId || sec.advisorId || sec.adviserId,
-                                ),
+                            const tutor = findAdvisor(
+                              sec,
+                              effectivePersonnel || personnel,
                             );
                             const isAssessmentBasis =
                               sec.aralBasis === "assessment" ||
@@ -8647,7 +8804,10 @@ export default function OrganizedClasses() {
                                       {tutor.firstName} {tutor.lastName}
                                     </span>
                                   ) : (
-                                    <AdviserMissing sec={sec} />
+                                    <AdviserMissing
+                                      sec={sec}
+                                      pList={effectivePersonnel || personnel}
+                                    />
                                   )}
                                 </td>
                                 <td
@@ -9082,12 +9242,9 @@ export default function OrganizedClasses() {
                           {pagedRemedialRows.map((sec) => {
                             if (editingRowData && editingRowData.id === sec.id)
                               return renderEditRow(sec);
-                            const teacher = (
-                              effectivePersonnel || personnel
-                            ).find(
-                              (p) =>
-                                String(p.id) ===
-                                String(sec.advisorId || sec.adviserId),
+                            const teacher = findAdvisor(
+                              sec,
+                              effectivePersonnel || personnel,
                             );
                             const mVal = Number(sec.maleLearners) || 0;
                             const fVal = Number(sec.femaleLearners) || 0;
@@ -9186,7 +9343,10 @@ export default function OrganizedClasses() {
                                       {teacher.firstName} {teacher.lastName}
                                     </span>
                                   ) : (
-                                    <AdviserMissing sec={sec} />
+                                    <AdviserMissing
+                                      sec={sec}
+                                      pList={effectivePersonnel || personnel}
+                                    />
                                   )}
                                 </td>
                                 <td
@@ -9908,7 +10068,7 @@ export default function OrganizedClasses() {
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "space-between",
-                          padding: "6px 12px",
+                          padding: "8px 12px",
                           borderRadius: "10px",
                           border: sub.enabled
                             ? "1.5px solid #bbf7d0"
@@ -9924,6 +10084,7 @@ export default function OrganizedClasses() {
                           style={{
                             display: "flex",
                             alignItems: "center",
+                            flexWrap: "wrap",
                             gap: "6px",
                             flex: 1,
                             minWidth: 0,
@@ -9936,9 +10097,9 @@ export default function OrganizedClasses() {
                               color: sub.enabled
                                 ? "var(--navy)"
                                 : "var(--muted)",
-                              whiteSpace: "nowrap",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
+                              whiteSpace: "normal",
+                              wordBreak: "break-word",
+                              lineHeight: "1.35",
                             }}
                           >
                             {sub.name}
@@ -9967,6 +10128,8 @@ export default function OrganizedClasses() {
                                   fontWeight: "800",
                                   padding: "2px 6px",
                                   borderRadius: "4px",
+                                  whiteSpace: "nowrap",
+                                  flexShrink: 0,
                                   background: sub.shsCategory.includes("CORE")
                                     ? "#e0f2fe"
                                     : sub.shsCategory.includes("APPLIED")
@@ -9993,6 +10156,7 @@ export default function OrganizedClasses() {
                             alignItems: "center",
                             gap: "8px",
                             marginLeft: "12px",
+                            flexShrink: 0,
                           }}
                           onClick={(e) => e.stopPropagation()}
                         >

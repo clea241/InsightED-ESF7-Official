@@ -19,12 +19,31 @@ function sectionKeys(s) {
   return keys;
 }
 
+const GENERIC_KEYS = new Set([
+  "",
+  "N/A",
+  "NA",
+  "NONE",
+  "NULL",
+  "UNDEFINED",
+  "-",
+  "0",
+  "PRN-N/A",
+  "PRN-NONE",
+  "PRN-0",
+]);
+
+function isNonGenericKey(val) {
+  if (val == null) return false;
+  const s = String(val).trim().toUpperCase();
+  if (!s || GENERIC_KEYS.has(s) || s.length < 2) return false;
+  return true;
+}
+
 function personnelKeys(p) {
   const keys = [];
-  if (p && p.id != null && String(p.id).trim() !== "")
-    keys.push(`id:${norm(p.id)}`);
-  if (p && p.prn != null && String(p.prn).trim() !== "")
-    keys.push(`prn:${norm(p.prn)}`);
+  if (p && isNonGenericKey(p.id)) keys.push(`id:${norm(p.id)}`);
+  if (p && isNonGenericKey(p.prn)) keys.push(`prn:${norm(p.prn)}`);
   return keys;
 }
 

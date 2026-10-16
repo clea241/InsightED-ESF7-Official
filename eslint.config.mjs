@@ -69,6 +69,7 @@ export default [
       "!server/server.js",
       "!server/queue_worker.js",
       "server/scripts/**",
+      "scripts/*.cjs",
       "server/tests/*verifier.js",
       "server/tests/test_*.js",
       "*.js",

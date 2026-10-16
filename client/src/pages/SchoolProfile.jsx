@@ -754,7 +754,8 @@ export default function SchoolProfile() {
 
   // The one School Profile save, used by the confirm dialog's Save button AND the unsaved-changes dialog's Save button.
   // It never opens its own alerts: it returns { ok: true } or { ok: false, title, message }.
-  const runSchoolProfileSave = async () => {
+  const runSchoolProfileSave = async (options = {}) => {
+    const isSilent = Boolean(options?.silent);
     setIsSaving(true);
     let configData = null;
     try {
@@ -840,6 +841,10 @@ export default function SchoolProfile() {
         isSHSActive &&
         hasShsInclusive === "yes" &&
         shsInclusivePrograms.includes("SNED-SHS");
+      const has_shs_als =
+        isSHSActive &&
+        hasShsInclusive === "yes" &&
+        shsInclusivePrograms.includes("ALS-SHS");
       const has_shs_iped =
         isSHSActive &&
         hasShsInclusive === "yes" &&
@@ -867,6 +872,7 @@ export default function SchoolProfile() {
         has_jhs_iped,
         has_jhs_mad,
         has_shs_sned,
+        has_shs_als,
         has_shs_iped,
         has_shs_mad,
         hasElemInclusive: hasElemInclusive === "yes",
@@ -963,7 +969,7 @@ export default function SchoolProfile() {
       if (completeNode) {
         completeNode("school", null);
       }
-      if (showToast) {
+      if (showToast && !isSilent) {
         showToast("School Profile configuration saved to database.", "success");
       }
       return { ok: true };
@@ -986,11 +992,13 @@ export default function SchoolProfile() {
         console.warn("[Outbox Failed Save Error]:", outboxErr);
       }
 
-      reportError(err, {
-        action: "Saving School Profile",
-        handler: "runSchoolProfileSave",
-        schoolId: schoolInfo.schoolId,
-      });
+      if (!isSilent) {
+        reportError(err, {
+          action: "Saving School Profile",
+          handler: "runSchoolProfileSave",
+          schoolId: schoolInfo.schoolId,
+        });
+      }
 
       return {
         ok: false,
@@ -1003,6 +1011,70 @@ export default function SchoolProfile() {
     }
   };
   runSaveRef.current = runSchoolProfileSave;
+
+  // Direct header save to database
+  const handleSaveClick = async () => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+    const result = await runSchoolProfileSave({ silent: false });
+    if (result.ok === false && showAlert) {
+      await showAlert(result.title, result.message);
+    }
+  };
+
+  // Automatic Debounced Database Auto-Save
+  const autoSaveTimerRef = useRef(null);
+  const [autoSaveStatus, setAutoSaveStatus] = useState("idle"); // "idle" | "saving" | "saved" | "error"
+
+  const configSnapshotString = useMemo(() => {
+    try {
+      return JSON.stringify(getCurrentConfigSnapshot());
+    } catch (e) {
+      return "";
+    }
+  }, [getCurrentConfigSnapshot]);
+
+  useEffect(() => {
+    // Only auto-save if there are unsaved modifications (isDirty), not currently saving, and school is loaded
+    if (!isDirty || isSaving || !schoolInfo?.schoolId || baselinePending) {
+      return;
+    }
+
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+
+    autoSaveTimerRef.current = setTimeout(async () => {
+      try {
+        setAutoSaveStatus("saving");
+        const res = await runSchoolProfileSave({ silent: true });
+        if (res?.ok) {
+          setAutoSaveStatus("saved");
+          setTimeout(() => {
+            setAutoSaveStatus((curr) => (curr === "saved" ? "idle" : curr));
+          }, 3000);
+        } else {
+          setAutoSaveStatus("error");
+        }
+      } catch (err) {
+        console.error("[SchoolProfile Auto-Save Error]:", err);
+        setAutoSaveStatus("error");
+      }
+    }, 1200);
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, [
+    isDirty,
+    isSaving,
+    schoolInfo?.schoolId,
+    baselinePending,
+    configSnapshotString,
+  ]);
 
   // Header Save opens the typed-CONFIRM step; confirming it runs the same save the unsaved-changes dialog uses.
   const handleConfirmAndProceed = async () => {
@@ -1051,11 +1123,17 @@ export default function SchoolProfile() {
         description="Official administrative details, curricular offerings, and special programs setup."
         onBack={() => setActiveView("nodemap")}
         showNodeMap={true}
-        onContinue={() => setIsConfirmModalOpen(true)}
-        continueText="Save"
-        continueDisabled={
-          isSaving || (!isDirty && Boolean(schoolInfo?.curricularConfigSaved))
+        onContinue={handleSaveClick}
+        continueText={
+          isSaving
+            ? "Saving..."
+            : autoSaveStatus === "saving"
+              ? "Saving..."
+              : autoSaveStatus === "saved"
+                ? "Saved ✓"
+                : "Save"
         }
+        continueDisabled={isSaving}
         discardDisabled={isSaving || !isDirty}
         showDiscard={true}
         onDiscard={handleDiscard}
@@ -1526,46 +1604,120 @@ export default function SchoolProfile() {
                 style={{
                   display: "flex",
                   alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
                   gap: "14px",
                   marginBottom: "4px",
                 }}
               >
                 <div
-                  style={{
-                    width: "42px",
-                    height: "42px",
-                    borderRadius: "14px",
-                    background: "#eff6ff",
-                    color: "#2563eb",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    border: "1px solid #bfdbfe",
-                  }}
+                  style={{ display: "flex", alignItems: "center", gap: "14px" }}
                 >
-                  <FiStar size={22} />
+                  <div
+                    style={{
+                      width: "42px",
+                      height: "42px",
+                      borderRadius: "14px",
+                      background: "#eff6ff",
+                      color: "#2563eb",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      border: "1px solid #bfdbfe",
+                    }}
+                  >
+                    <FiStar size={22} />
+                  </div>
+                  <div>
+                    <h3
+                      style={{
+                        margin: 0,
+                        fontSize: "21px",
+                        fontWeight: "900",
+                        color: "#0f172a",
+                      }}
+                    >
+                      Special Curricular Programs & Curriculum Model
+                    </h3>
+                    <p
+                      style={{
+                        margin: "3px 0 0",
+                        fontSize: "13px",
+                        color: "#64748b",
+                      }}
+                    >
+                      Configure authorized special programs for Elementary, JHS,
+                      and Grade 12 SHS Curriculum Model.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3
-                    style={{
-                      margin: 0,
-                      fontSize: "21px",
-                      fontWeight: "900",
-                      color: "#0f172a",
-                    }}
-                  >
-                    Special Curricular Programs & Curriculum Model
-                  </h3>
-                  <p
-                    style={{
-                      margin: "3px 0 0",
-                      fontSize: "13px",
-                      color: "#64748b",
-                    }}
-                  >
-                    Configure authorized special programs for Elementary, JHS,
-                    and Grade 12 SHS Curriculum Model.
-                  </p>
+
+                {/* Real-Time Database Auto-Save Status Badge */}
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: "8px" }}
+                >
+                  {autoSaveStatus === "saving" && (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        fontSize: "12px",
+                        fontWeight: "700",
+                        color: "#2563eb",
+                        background: "#eff6ff",
+                        padding: "5px 12px",
+                        borderRadius: "14px",
+                        border: "1px solid #bfdbfe",
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: "8px",
+                          height: "8px",
+                          borderRadius: "50%",
+                          background: "#2563eb",
+                        }}
+                      />
+                      Auto-saving to database...
+                    </span>
+                  )}
+                  {autoSaveStatus === "saved" && (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        fontSize: "12px",
+                        fontWeight: "700",
+                        color: "#059669",
+                        background: "#ecfdf5",
+                        padding: "5px 12px",
+                        borderRadius: "14px",
+                        border: "1px solid #a7f3d0",
+                      }}
+                    >
+                      ✓ Saved to database
+                    </span>
+                  )}
+                  {autoSaveStatus === "error" && (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        fontSize: "12px",
+                        fontWeight: "700",
+                        color: "#dc2626",
+                        background: "#fef2f2",
+                        padding: "5px 12px",
+                        borderRadius: "14px",
+                        border: "1px solid #fecaca",
+                      }}
+                    >
+                      Auto-save failed
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -2478,7 +2630,7 @@ export default function SchoolProfile() {
                           onClick={() => {
                             setHasShsInclusive("yes");
                             if (shsInclusivePrograms.length === 0)
-                              setShsInclusivePrograms(["SNED-SHS"]);
+                              setShsInclusivePrograms(["ALS-SHS", "SNED-SHS"]);
                           }}
                           style={{
                             padding: "6px 18px",
@@ -2536,6 +2688,10 @@ export default function SchoolProfile() {
                         }}
                       >
                         {[
+                          {
+                            tag: "ALS-SHS",
+                            label: "ALS (Alternative Learning System)",
+                          },
                           {
                             tag: "SNED-SHS",
                             label: "SNED (Special Needs Education)",

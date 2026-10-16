@@ -435,6 +435,17 @@ export const api = {
     });
     return parseJsonOrThrow(res);
   },
+  saveSchoolHeadConfig: async (config) => {
+    const res = await fetchWithAuth(
+      `${API_BASE}/personnel/school-heads/config`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(config),
+      },
+    );
+    return parseJsonOrThrow(res);
+  },
   toggleSchoolHead: async (id, isSchoolHead, isMainSh = true, extra = {}) => {
     const res = await fetchWithAuth(`${API_BASE}/personnel/${id}/school-head`, {
       method: "PUT",
@@ -540,6 +551,19 @@ export const api = {
     const res = await fetchWithAuth(`${API_BASE}/trainings/${id}`, {
       method: "DELETE",
     });
+    return parseJsonOrThrow(res);
+  },
+
+  // Designations (esf7_personnel_designations)
+  syncPersonnelDesignations: async (personnelId, payload = {}) => {
+    const res = await fetchWithAuth(
+      `${API_BASE}/designations/personnel/${encodeURIComponent(personnelId)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload || {}),
+      },
+    );
     return parseJsonOrThrow(res);
   },
 
@@ -1578,3 +1602,5 @@ configureDraftSaver({
   send: (year, payload, baseVersion) =>
     api.saveSchoolDraft(year, payload, baseVersion),
 });
+
+export default api;

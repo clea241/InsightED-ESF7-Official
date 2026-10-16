@@ -26,6 +26,17 @@ router.get("/autofill-template", async (req, res) => {
       req.query.schoolId ||
       req.query.school_id ||
       "502949";
+    const cleanSchoolId = String(schoolId).replace("SCH-", "").trim();
+    const sidPair = [cleanSchoolId, `SCH-${cleanSchoolId}`];
+    const existingRes = await db
+      .query(
+        `SELECT COUNT(*)::int AS cnt FROM esf7_personnel_profile WHERE school_id = ANY($1)`,
+        [sidPair],
+      )
+      .catch(() => ({ rows: [{ cnt: 0 }] }));
+    if ((existingRes.rows[0]?.cnt || 0) > 0) {
+      return res.json([]);
+    }
     const list = await fetchMasterPersonnelFromInsightEd(schoolId);
     res.json(list);
   } catch (err) {
@@ -129,7 +140,7 @@ router.get("/:id", async (req, res) => {
       LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
       LEFT JOIN esf7_perssonel_educ ed ON p.id = ed.personnel_id
       LEFT JOIN esf7_personnel_learning_areas la ON p.id = la.personnel_id
-      WHERE p.id = $1 OR p.prn = $1 
+      WHERE p.id = $1 OR p.prn = $1 OR p.legacy_id = $1
       LIMIT 1
     `,
       [req.params.id],
@@ -207,7 +218,7 @@ async function syncTrainingsInTransaction(
 
   let counter = 1;
   for (const t of allTrainings) {
-    const trnId = `TRN-${personnelId.replace("PER-", "")}-${String(counter++).padStart(3, "0")}`;
+    const trnId = `TRN-${String(personnelId).replace("PER-", "")}-${String(counter++).padStart(3, "0")}`;
     const type = (t.training_type || t.type || "OTHER").toUpperCase();
     const title = t.title || "Professional Training";
     const conductor = t.conductor || "NEAP / DepEd";
@@ -315,7 +326,27 @@ async function syncDesignationsInTransaction(
   designations,
   reqBody,
 ) {
-  if (!designation && !designations) return;
+  // If neither designation nor designations was supplied in the request body, do not wipe existing designations
+  if (
+    reqBody &&
+    reqBody.designation === undefined &&
+    reqBody.designations === undefined
+  ) {
+    return;
+  }
+
+  // If both were explicitly supplied as empty/falsy, user intends to clear all designations
+  if (
+    !designation &&
+    (!designations ||
+      (Array.isArray(designations) && designations.length === 0))
+  ) {
+    await client.query(
+      "DELETE FROM esf7_personnel_designations WHERE personnel_id = $1",
+      [personnelId],
+    );
+    return;
+  }
 
   await client.query(
     "DELETE FROM esf7_personnel_designations WHERE personnel_id = $1",
@@ -472,7 +503,7 @@ async function syncDesignationsInTransaction(
         track: track || "",
         isSdsApproved: isSds,
         sdsConfirmed: isSds,
-        serializedKey: rawStr,
+        serializedKey: cleanKey,
         rawPayload: {
           designation: cleanKey,
           keyStage: keyStage || null,
@@ -480,7 +511,7 @@ async function syncDesignationsInTransaction(
           subjectArea: subjectArea || null,
           track: track || null,
           isSdsApproved: isSds,
-          serializedKey: rawStr,
+          serializedKey: cleanKey,
         },
       };
     } else if (typeof item === "object") {
@@ -492,6 +523,13 @@ async function syncDesignationsInTransaction(
       )
         continue;
       processedKeys.add(cleanKey.toUpperCase());
+
+      const rawKey =
+        (typeof item.serializedKey === "string" && item.serializedKey.trim()) ||
+        (typeof item.serialized_key === "string" &&
+          item.serialized_key.trim()) ||
+        (typeof item.key === "string" && item.key.trim()) ||
+        cleanKey;
 
       const upper = cleanKey.toUpperCase();
       let keyStage = item.keyStage || item.key_stage || null;
@@ -530,20 +568,18 @@ async function syncDesignationsInTransaction(
         }
       }
 
-      const rawKey =
-        item.serializedKey || item.serialized_key || item.key || cleanKey;
       const isSds = !!(
         item.isSdsApproved ||
         item.is_sds_approved ||
         String(rawKey).includes("::APPROVED_SDS")
       );
       const isConf = !!(item.sdsConfirmed || item.sds_confirmed || isSds);
-      const dsgName = (
-        item.designationName ||
-        item.designation_name ||
-        item.name ||
-        cleanKey.split(" - ")[0]
-      )
+      const rawNameCandidate =
+        (typeof item.designationName === "string" && item.designationName) ||
+        (typeof item.designation_name === "string" && item.designation_name) ||
+        (typeof item.name === "string" && item.name) ||
+        cleanKey.split(" - ")[0];
+      const dsgName = String(rawNameCandidate || "")
         .replace(/::APPROVED_SDS/gi, "")
         .trim();
 
@@ -555,12 +591,13 @@ async function syncDesignationsInTransaction(
         track: item.track || "",
         isSdsApproved: isSds,
         sdsConfirmed: isConf,
-        serializedKey: rawKey,
+        serializedKey: cleanKey,
         rawPayload: item,
       };
     }
 
-    if (!dsgObj.designationName) continue;
+    if (!dsgObj.designationName || dsgObj.designationName === "[object Object]")
+      continue;
 
     const dsgId = `DSG-${String(targetSchoolId).replace("SCH-", "")}-${String(personnelId).split("-").pop()}-${String(counter++).padStart(3, "0")}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
@@ -569,7 +606,7 @@ async function syncDesignationsInTransaction(
         id, personnel_id, school_id, designation_name, key_stage, grade_level, subject_area, track,
         is_sds_approved, sds_confirmed, serialized_key, updated_at
        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
-       ON CONFLICT (personnel_id, serialized_key) DO UPDATE SET
+       ON CONFLICT (id) DO UPDATE SET
         designation_name = EXCLUDED.designation_name,
         key_stage = EXCLUDED.key_stage,
         grade_level = EXCLUDED.grade_level,
@@ -577,6 +614,7 @@ async function syncDesignationsInTransaction(
         track = EXCLUDED.track,
         is_sds_approved = EXCLUDED.is_sds_approved,
         sds_confirmed = EXCLUDED.sds_confirmed,
+        serialized_key = EXCLUDED.serialized_key,
         updated_at = NOW()`,
       [
         dsgId,
@@ -731,8 +769,9 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // A school can have several Principals but only ONE designated school head
-    if (is_school_head === true || isSchoolHead === true) {
+    // A school can have several Principals but only ONE designated school head (only checked on explicit head designation)
+    const isExplicitHead = req.body.isExplicitHeadDesignation === true;
+    if (isExplicitHead && (is_school_head === true || isSchoolHead === true)) {
       const bare = cleanTargetSchool;
       const headCheck = await client.query(
         `SELECT first_name, last_name, position FROM esf7_personnel_profile
@@ -797,7 +836,8 @@ router.post("/", async (req, res) => {
           ? allowEmailDiscrepancy === true || allowEmailDiscrepancy === "true"
           : false;
 
-    const isHead = is_school_head === true || isSchoolHead === true;
+    const isHead =
+      isExplicitHead && (is_school_head === true || isSchoolHead === true);
     const isMainSh = isHead
       ? !req.body.hasMultipleHeads
         ? true
@@ -888,6 +928,26 @@ router.post("/", async (req, res) => {
         )
         .catch(() => {});
     }
+
+    // Clean up any stale deletion tombstones for this teacher
+    await client
+      .query(
+        `DELETE FROM esf7_deleted_personnel 
+         WHERE school_id = ANY($1) 
+           AND (
+             personnel_id = $2 
+             OR (prn IS NOT NULL AND prn = $3)
+             OR (UPPER(first_name) = $4 AND UPPER(last_name) = $5)
+           )`,
+        [
+          [cleanTargetSchool, `SCH-${cleanTargetSchool}`],
+          customId,
+          finalPrn,
+          finalFirstName,
+          finalLastName,
+        ],
+      )
+      .catch(() => {});
 
     // Insert linked employment
     const empPos = (position || "TEACHER I").toUpperCase();
@@ -1154,6 +1214,37 @@ router.post("/", async (req, res) => {
       req.body,
     );
 
+    // Recompute node_02_roster server-side as part of the personnel creation transaction
+    if (targetSchoolId) {
+      const cleanSid = String(targetSchoolId).replace(/^SCH-/i, "").trim();
+      await client
+        .query(
+          `WITH counts AS (
+          SELECT
+            count(*)::int AS total,
+            count(*) FILTER (WHERE type = 'teaching')::int AS teaching,
+            count(*) FILTER (WHERE type = 'teaching-related')::int AS related_teaching,
+            count(*) FILTER (WHERE type = 'non-teaching')::int AS non_teaching
+          FROM esf7_personnel_profile
+          WHERE REPLACE(school_id, 'SCH-', '') = $1 AND (deleted IS NOT TRUE)
+        )
+        UPDATE esf7_school_node_status
+        SET node_02_roster = jsonb_build_object(
+          'status', 'COMPLETED',
+          'total_personnel', counts.total,
+          'teaching', counts.teaching,
+          'related_teaching', counts.related_teaching,
+          'non_teaching', counts.non_teaching,
+          'last_updated', NOW()
+        ),
+        updated_at = NOW()
+        FROM counts
+        WHERE REPLACE(school_id, 'SCH-', '') = $1`,
+          [cleanSid],
+        )
+        .catch(() => {});
+    }
+
     await client.query("COMMIT");
 
     // Fetch the newly created complete record
@@ -1346,8 +1437,8 @@ router.put("/:id", async (req, res) => {
       matrix_data = {},
 
       // Designations
-      designation = "",
-      designations = [],
+      designation,
+      designations,
     } = req.body;
 
     const targetSchoolId = (school_id || schoolId || "108348").replace(
@@ -1357,7 +1448,7 @@ router.put("/:id", async (req, res) => {
 
     const resolvedId = await resolvePersonnelId(client, req.params.id);
     let currentRes = await client.query(
-      `SELECT * FROM esf7_personnel_profile WHERE id = $1 OR UPPER(id) = UPPER($1) OR legacy_id = $1 OR UPPER(legacy_id) = UPPER($1) OR prn = $1 OR id = $2 OR id IN (SELECT new_id FROM esf7_personnel_id_mapping WHERE legacy_id = $1) LIMIT 1`,
+      `SELECT * FROM esf7_personnel_profile WHERE id = $1 OR UPPER(id) = UPPER($1) OR legacy_id = $1 OR UPPER(legacy_id) = UPPER($1) OR prn = $1 OR id = $2 OR id IN (SELECT new_id FROM esf7_personnel_id_mapping WHERE legacy_id = $1) ORDER BY updated_at DESC NULLS LAST, created_at DESC LIMIT 1`,
       [req.params.id, resolvedId],
     );
 
@@ -1412,17 +1503,21 @@ router.put("/:id", async (req, res) => {
 
     const current = currentRes.rows[0];
 
-    const isTargetHead =
-      is_school_head !== undefined
+    // Decouple School Head designations from regular personnel profile updates:
+    // Only update school head fields if explicitly flagged via isExplicitHeadDesignation.
+    // Otherwise, preserve the current personnel's existing school head flags as-is.
+    const isExplicitHead = req.body.isExplicitHeadDesignation === true;
+    const isTargetHead = isExplicitHead
+      ? is_school_head !== undefined
         ? Boolean(is_school_head)
         : isSchoolHead !== undefined
           ? Boolean(isSchoolHead)
-          : Boolean(current.is_school_head);
+          : Boolean(current.is_school_head)
+      : Boolean(current.is_school_head);
 
-    const isTargetMain = isTargetHead
-      ? !req.body.hasMultipleHeads
-        ? true
-        : Boolean(
+    const isTargetMain = isExplicitHead
+      ? isTargetHead
+        ? Boolean(
             req.body.is_main_sh !== undefined
               ? req.body.is_main_sh
               : req.body.isMainSh !== undefined
@@ -1431,9 +1526,11 @@ router.put("/:id", async (req, res) => {
                   ? req.body.isMainSchoolHead
                   : (current.is_main_sh ?? true),
           )
-      : false;
+        : false
+      : Boolean(current.is_main_sh);
 
-    if (isTargetHead && !req.body.hasMultipleHeads) {
+    // Only run exclusivity reset if this is an explicit head designation action
+    if (isExplicitHead && isTargetHead && !req.body.hasMultipleHeads) {
       await client.query(
         `UPDATE esf7_personnel_profile 
          SET is_school_head = FALSE, is_main_sh = FALSE, updated_at = NOW() 
@@ -1708,11 +1805,12 @@ router.put("/:id", async (req, res) => {
       hiringArrangement ||
       (isCook ? "CONTRACTUAL" : "REGULAR")
     ).toUpperCase();
-    const empDeploy = (
-      deployment_status ||
-      deploymentStatus ||
-      "OWN STATION"
-    ).toUpperCase();
+    let empDeploy = (deployment_status || deploymentStatus || "OWN STATION")
+      .toUpperCase()
+      .trim();
+    if (empDeploy === "STATIONED" || empDeploy === "STATIONED (OWN STATION)") {
+      empDeploy = "OWN STATION";
+    }
     const crypto = require("crypto");
     const empId = crypto.randomUUID();
 
@@ -1935,6 +2033,22 @@ router.put("/:id", async (req, res) => {
       designations,
       req.body,
     );
+
+    // Sync node status is_school_head flag
+    if (isTargetHead && !req.body.hasMultipleHeads) {
+      await client
+        .query(
+          "UPDATE esf7_personnel_node_status SET is_school_head = FALSE, updated_at = NOW() WHERE (school_id = $1 OR school_id = $2) AND is_school_head = TRUE",
+          [targetSchoolId, `SCH-${targetSchoolId}`],
+        )
+        .catch(() => {});
+    }
+    await client
+      .query(
+        "UPDATE esf7_personnel_node_status SET is_school_head = $1, updated_at = NOW() WHERE personnel_id = $2",
+        [Boolean(isTargetHead), updatedProfile.id],
+      )
+      .catch(() => {});
 
     await client.query("COMMIT");
 

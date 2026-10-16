@@ -22,7 +22,23 @@ export const findRosterSchoolHead = (personnel) => {
   const heads = (personnel || []).filter(isRosterSchoolHead);
   if (heads.length === 0) return null;
   const main = heads.find(isMainSchoolHead);
-  return main || heads[0];
+  if (main) return main;
+
+  // If no head is flagged as main, prioritize actual School Principal over Head Teacher / other roles
+  const principalHead = heads.find((p) => {
+    const pos = String(
+      p.position || p.plantilla_position || p.position_title || "",
+    ).toUpperCase();
+    return (
+      (pos.includes("PRINCIPAL") && !pos.includes("ASSISTANT")) ||
+      pos.includes("TEACHER-IN-CHARGE") ||
+      pos.includes("OFFICER-IN-CHARGE") ||
+      /\b(TIC|OIC)\b/.test(pos)
+    );
+  });
+  if (principalHead) return principalHead;
+
+  return heads[0];
 };
 
 export const findAllRosterSchoolHeads = (personnel) =>

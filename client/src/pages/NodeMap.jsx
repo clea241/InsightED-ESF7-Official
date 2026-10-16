@@ -143,11 +143,12 @@ export default function NodeMap() {
           id: "workload",
           nodeNumber: "06",
           title: "Workload & Timetable",
-          subtitle: "Module temporarily locked for DepEd review & alignment",
+          subtitle:
+            "Under Maintenance — Schedule optimization and updates in progress",
           Icon: FiClock,
           view: "workload",
-          isLockedNode: true,
-          summary: "Locked for DepEd Policy Review",
+          isUnderMaintenance: true,
+          summary: "Under Maintenance",
         },
       ],
     },
@@ -413,6 +414,8 @@ export default function NodeMap() {
             }}
           >
             {sec.nodes.map((node) => {
+              const isUnderMaintenance =
+                node.id === "workload" || Boolean(node.isUnderMaintenance);
               const isAlwaysUnlocked = [
                 "school",
                 "roster",
@@ -424,13 +427,15 @@ export default function NodeMap() {
                 "validation",
               ].includes(node.id);
               const isExplicitlyLocked =
-                !bypassNodeLocks &&
-                (["overload", "workload", "allowances"].includes(node.id) ||
-                  Boolean(node.isLockedNode));
+                isUnderMaintenance ||
+                (!bypassNodeLocks &&
+                  (["overload", "allowances"].includes(node.id) ||
+                    Boolean(node.isLockedNode)));
               const isUnlocked =
                 !isExplicitlyLocked &&
                 (isAlwaysUnlocked || isNodeUnlocked(node.id));
-              const isCompleted = isNodeCompleted(node.id);
+              const isCompleted =
+                !isUnderMaintenance && isNodeCompleted(node.id);
               const isActive = isUnlocked && !isCompleted;
               const IconComp = node.Icon;
 
@@ -455,7 +460,30 @@ export default function NodeMap() {
                 </>
               );
 
-              if (isCompleted) {
+              if (isUnderMaintenance) {
+                // Workload & Timetable Under Maintenance
+                cardBg = "#FFFFFF";
+                borderColor = "#FCD34D";
+                boxShadow = "0 3px 10px rgba(217, 119, 6, 0.08)";
+                nodeNumColor = "#B45309";
+                titleColor = "#78350F";
+                subtitleColor = "#92400E";
+                iconBg = "#FFFBEB";
+                iconColor = "#D97706";
+                iconBorder = "1px solid #FDE68A";
+                summaryBg = "#FFFBEB";
+                summaryColor = "#B45309";
+                summaryBorder = "1px solid #FCD34D";
+                badgeBg = "#FEF3C7";
+                badgeColor = "#B45309";
+                badgeBorder = "1px solid #FCD34D";
+                badgeContent = (
+                  <>
+                    <FiLock size={10} style={{ marginRight: "3px" }} /> Under
+                    Maintenance
+                  </>
+                );
+              } else if (isCompleted) {
                 cardBg =
                   "linear-gradient(135deg, rgba(236, 253, 245, 0.95) 0%, rgba(209, 250, 229, 0.85) 100%)";
                 borderColor = "#10B981";
@@ -763,7 +791,9 @@ export default function NodeMap() {
                     {!isUnlocked ? (
                       <>
                         <FiLock size={12} />
-                        <span>Locked</span>
+                        <span>
+                          {isUnderMaintenance ? "Under Maintenance" : "Locked"}
+                        </span>
                       </>
                     ) : isCompleted ? (
                       <>

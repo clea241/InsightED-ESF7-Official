@@ -313,11 +313,13 @@ export default function RoomQR({ isModal = false, onClose } = {}) {
         const pos = String(
           p.position || p.natureOfAppointment || "",
         ).toLowerCase();
+        if (pos.includes("assistant") || pos.includes("head teacher"))
+          return false;
         return (
           pos.includes("principal") ||
-          pos.includes("head teacher") ||
-          pos.includes("tic") ||
-          pos.includes("oic")
+          pos.includes("teacher-in-charge") ||
+          pos.includes("officer-in-charge") ||
+          /\b(tic|oic)\b/.test(pos)
         );
       });
 

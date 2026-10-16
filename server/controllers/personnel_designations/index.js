@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../../db");
+const { formatCanonicalPrn } = require("../personnel/common");
 
 function extractCleanDesignationKey(item) {
   if (!item) return "";
@@ -38,6 +39,8 @@ function extractCleanDesignationKey(item) {
 function formatDesignationRecord(row) {
   if (!row) return null;
   const extras = row.extras || {};
+  const sKey = row.serialized_key || row.designation_name || "";
+  const dName = row.designation_name || sKey;
   return {
     ...extras,
     id: row.id,
@@ -45,8 +48,11 @@ function formatDesignationRecord(row) {
     personnel_id: row.personnel_id,
     schoolId: row.school_id,
     school_id: row.school_id,
-    designationName: row.designation_name,
-    designation_name: row.designation_name,
+    designationName: dName,
+    designation_name: dName,
+    name: sKey || dName,
+    designation: sKey || dName,
+    title: sKey || dName,
     keyStage: row.key_stage || extras.keyStage || null,
     key_stage: row.key_stage || extras.keyStage || null,
     gradeLevel: row.grade_level || "",
@@ -58,8 +64,8 @@ function formatDesignationRecord(row) {
     is_sds_approved: !!row.is_sds_approved,
     sdsConfirmed: !!row.sds_confirmed,
     sds_confirmed: !!row.sds_confirmed,
-    serializedKey: row.serialized_key,
-    serialized_key: row.serialized_key,
+    serializedKey: sKey,
+    serialized_key: sKey,
     rawPayload: extras,
     extras,
   };
@@ -156,16 +162,58 @@ router.put("/personnel/:personnel_id", async (req, res) => {
       `SELECT id, school_id FROM esf7_personnel_profile WHERE id = $1 OR legacy_id = $1 OR prn = $1 LIMIT 1`,
       [personnel_id],
     );
+    let resolvedPersonnelId;
+    let targetSchoolId;
+
     if (personRes.rows.length === 0) {
-      await client.query("ROLLBACK");
-      return res.status(404).json({
-        error: `Cannot sync designations: Personnel profile '${personnel_id}' does not exist in esf7_personnel_profile.`,
-      });
+      // Auto-upsert personnel profile if loaded from master list or draft (prevents 404 & foreign key violation)
+      const cleanSchoolId = String(
+        req.body.school_id || req.body.schoolId || "108348",
+      ).replace(/^SCH-/i, "");
+      const targetSchoolYear = String(
+        req.body.school_year || req.body.schoolYear || "2024-2025",
+      );
+      const pPrn = req.body.prn
+        ? formatCanonicalPrn(req.body.prn)
+        : `PRN-${personnel_id}`;
+      const fName = String(
+        req.body.first_name || req.body.firstName || "TEACHER",
+      )
+        .toUpperCase()
+        .trim();
+      const lName = String(req.body.last_name || req.body.lastName || "STAFF")
+        .toUpperCase()
+        .trim();
+      const pType = String(req.body.type || "teaching").toLowerCase();
+
+      const insRes = await client.query(
+        `INSERT INTO esf7_personnel_profile (
+          id, prn, school_id, school_year, type, first_name, last_name, status, legacy_id, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'canonical', $8, NOW())
+        ON CONFLICT (id) DO UPDATE SET updated_at = NOW()
+        RETURNING id, school_id`,
+        [
+          personnel_id,
+          pPrn,
+          cleanSchoolId,
+          targetSchoolYear,
+          pType,
+          fName,
+          lName,
+          personnel_id,
+        ],
+      );
+      resolvedPersonnelId = insRes.rows[0].id;
+      targetSchoolId = String(
+        insRes.rows[0].school_id || cleanSchoolId,
+      ).replace(/^SCH-/i, "");
+    } else {
+      resolvedPersonnelId = personRes.rows[0].id;
+      targetSchoolId = String(personRes.rows[0].school_id || "108348").replace(
+        /^SCH-/i,
+        "",
+      );
     }
-    const resolvedPersonnelId = personRes.rows[0].id;
-    const targetSchoolId = String(
-      personRes.rows[0].school_id || "108348",
-    ).replace(/^SCH-/i, "");
 
     await client.query(
       "DELETE FROM esf7_personnel_designations WHERE personnel_id = $1",
@@ -256,7 +304,7 @@ router.put("/personnel/:personnel_id", async (req, res) => {
           id, personnel_id, school_id, designation_name, key_stage, grade_level, subject_area, track,
           is_sds_approved, sds_confirmed, serialized_key, updated_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
-        ON CONFLICT (personnel_id, serialized_key) DO UPDATE SET
+        ON CONFLICT (id) DO UPDATE SET
           designation_name = EXCLUDED.designation_name,
           key_stage = EXCLUDED.key_stage,
           grade_level = EXCLUDED.grade_level,
@@ -264,6 +312,7 @@ router.put("/personnel/:personnel_id", async (req, res) => {
           track = EXCLUDED.track,
           is_sds_approved = EXCLUDED.is_sds_approved,
           sds_confirmed = EXCLUDED.sds_confirmed,
+          serialized_key = EXCLUDED.serialized_key,
           updated_at = NOW()
         RETURNING *`,
         [
