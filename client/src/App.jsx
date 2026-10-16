@@ -25,7 +25,7 @@ import Landing from "./pages/Landing";
 import LoadingScreen from "./components/LoadingScreen";
 import ServerHealthModal from "./components/ServerHealthModal";
 import { subscribeHealth } from "./services/serverHealth";
-import { FiAlertTriangle, FiCheckCircle } from "react-icons/fi";
+import { FiAlertTriangle, FiCheckCircle, FiLock } from "react-icons/fi";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { setErrorAlertContext } from "./services/errorAlert";
 import {
@@ -303,10 +303,104 @@ function MainAppContent() {
               {(activeView === "classes" ||
                 activeView === "organized_classes" ||
                 activeView === "organized-classes") && <OrganizedClasses />}
-              {activeView === "workload" && <Workload />}
+              {/* DepEd Locked Modules: Workload, Allowances, Overload */}
+              {!appState.bypassNodeLocks &&
+              (activeView === "workload" ||
+                activeView === "allowances" ||
+                activeView === "overload") ? (
+                <div
+                  style={{
+                    padding: "60px 20px",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    minHeight: "65vh",
+                    textAlign: "center",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "72px",
+                      height: "72px",
+                      borderRadius: "20px",
+                      background: "#F8FAFC",
+                      border: "1.5px solid #E2E8F0",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#64748B",
+                      fontSize: "32px",
+                      marginBottom: "20px",
+                      boxShadow: "0 4px 12px rgba(0, 0, 0, 0.04)",
+                    }}
+                  >
+                    <FiLock />
+                  </div>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: "800",
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                      color: "#94A3B8",
+                      marginBottom: "6px",
+                    }}
+                  >
+                    DepEd Policy Review
+                  </span>
+                  <h2
+                    style={{
+                      fontSize: "22px",
+                      fontWeight: "800",
+                      color: "#0F172A",
+                      margin: "0 0 10px",
+                      letterSpacing: "-0.02em",
+                    }}
+                  >
+                    Module Temporarily Locked
+                  </h2>
+                  <p
+                    style={{
+                      fontSize: "14px",
+                      color: "#64748B",
+                      maxWidth: "460px",
+                      margin: "0 0 24px",
+                      lineHeight: "1.55",
+                    }}
+                  >
+                    The <strong>{VIEW_LABELS[activeView]}</strong> module is
+                    temporarily locked pending final DepEd policy alignment and
+                    administrative review. Please proceed with other active eSF7
+                    milestones.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setActiveView("nodemap")}
+                    style={{
+                      background:
+                        "linear-gradient(135deg, #1E40AF 0%, #2563EB 100%)",
+                      color: "#FFFFFF",
+                      border: "none",
+                      borderRadius: "10px",
+                      padding: "10px 22px",
+                      fontSize: "13px",
+                      fontWeight: "700",
+                      cursor: "pointer",
+                      boxShadow: "0 4px 14px rgba(37, 99, 235, 0.25)",
+                    }}
+                  >
+                    Return to Process Map
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {activeView === "workload" && <Workload />}
+                  {activeView === "overload" && <Overload />}
+                  {activeView === "allowances" && <Allowances />}
+                </>
+              )}
               {activeView === "deployment" && <Deployment />}
-              {activeView === "overload" && <Overload />}
-              {activeView === "allowances" && <Allowances />}
               {activeView === "validation" && <ValidationCenter />}
               {activeView === "submission" && <Submission />}
               {activeView === "room-qr" && <RoomQR />}

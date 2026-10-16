@@ -3545,9 +3545,9 @@ export const AppProvider = ({ children }) => {
 
   const isNodeUnlocked = (nodeId) => {
     if (bypassNodeLocks) return true;
-    if (nodeId === "overload") return false; // Node 10 (overload) is locked by default unless DEV locks are bypassed
+    // Nodes locked by default for DepEd review & alignment
+    if (["overload", "workload", "allowances"].includes(nodeId)) return false;
     if (!nodeId) return true;
-    if (ALWAYS_UNLOCKED_NODES.includes(nodeId)) return true;
     return true;
   };
 
@@ -6741,13 +6741,17 @@ export const AppProvider = ({ children }) => {
           }
 
           // Persist workload rows directly to PostgreSQL esf7_workload_rows in the background
-          // Callers that do their own awaited workload write (Workload page) pass skipWorkloadSync to avoid a racing duplicate write.
-          if (
+          // ONLY sync workload if options.syncWorkload === true or if updatedPerson specifically contains new workloadRows intended for sync
+          const shouldSyncWorkload =
             !options.skipWorkloadSync &&
+            (options.syncWorkload ||
+              (updatedPerson.workloadRows !== undefined &&
+                options.isWorkloadEdit)) &&
             Array.isArray(merged.workloadRows) &&
             typeof api !== "undefined" &&
-            api.saveWorkloadBatch
-          ) {
+            api.saveWorkloadBatch;
+
+          if (shouldSyncWorkload) {
             api
               .saveWorkloadBatch({
                 personnel_id: merged.id || p.id,

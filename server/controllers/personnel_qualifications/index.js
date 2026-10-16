@@ -300,7 +300,10 @@ router.get("/:personnel_id", async (req, res) => {
   const { personnel_id } = req.params;
   try {
     const result = await db.query(
-      `SELECT * FROM esf7_perssonel_educ WHERE personnel_id = $1 LIMIT 1`,
+      `SELECT ed.* FROM esf7_perssonel_educ ed
+       LEFT JOIN esf7_personnel_profile p ON p.id = ed.personnel_id
+       WHERE ed.personnel_id = $1 OR ed.id = $1 OR p.prn = $1 OR p.legacy_id = $1
+       LIMIT 1`,
       [personnel_id],
     );
     if (result.rows.length === 0) {
@@ -342,15 +345,20 @@ router.post("/:personnel_id", async (req, res) => {
     } = req.body;
 
     const personRes = await db.query(
-      `SELECT school_id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
+      `SELECT id, school_id FROM esf7_personnel_profile WHERE id = $1 OR legacy_id = $1 OR prn = $1 LIMIT 1`,
       [personnel_id],
     );
-    const schoolId =
-      personRes.rows.length > 0 ? personRes.rows[0].school_id : "108348";
+    if (personRes.rows.length === 0) {
+      return res.status(404).json({
+        error: `Cannot save education record: Personnel profile '${personnel_id}' does not exist in esf7_personnel_profile.`,
+      });
+    }
+    const resolvedPersonnelId = personRes.rows[0].id;
+    const schoolId = personRes.rows[0].school_id || "108348";
 
     const countRes = await db.query(`SELECT COUNT(*) FROM esf7_perssonel_educ`);
     const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
-    const eduId = `EDU-${schoolId.replace("SCH-", "")}-${seq}`;
+    const eduId = `EDU-${schoolId.replace("SCH-", "")}-${resolvedPersonnelId.slice(0, 8)}`;
 
     const eduHighestAttainment = (
       highest_educational_attainment ||
@@ -457,7 +465,7 @@ router.post("/:personnel_id", async (req, res) => {
 
     const values = [
       eduId,
-      personnel_id,
+      resolvedPersonnelId,
       eduHighestAttainment,
       eduShsTrack,
       eduVocationalCourse,

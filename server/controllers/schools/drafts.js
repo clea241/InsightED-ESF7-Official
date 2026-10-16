@@ -43,6 +43,39 @@ function sanitizeTime(val) {
   return `${hh}:${mm}:${ss}`;
 }
 
+function extractCleanDesignationKey(item) {
+  if (!item) return "";
+  if (typeof item === "string") {
+    const s = item.replace(/::APPROVED_SDS/gi, "").trim();
+    if (
+      !s ||
+      s === "[object Object]" ||
+      s === "object Object" ||
+      s === "{}" ||
+      s.startsWith("[object")
+    ) {
+      return "";
+    }
+    return s;
+  }
+  if (typeof item === "object") {
+    const candidate =
+      (typeof item.serializedKey === "string" && item.serializedKey) ||
+      (typeof item.serialized_key === "string" && item.serialized_key) ||
+      (typeof item.designationName === "string" && item.designationName) ||
+      (typeof item.designation_name === "string" && item.designation_name) ||
+      (typeof item.designation === "string" && item.designation) ||
+      (typeof item.name === "string" && item.name) ||
+      (typeof item.title === "string" && item.title) ||
+      "";
+    if (candidate) return extractCleanDesignationKey(candidate);
+    if (item.designation && typeof item.designation === "object") {
+      return extractCleanDesignationKey(item.designation);
+    }
+  }
+  return "";
+}
+
 async function acquireClient() {
   if (typeof db.getClient === "function") {
     try {
@@ -76,13 +109,38 @@ async function safeDraftQuery(client, namePrefix, queryFn) {
   }
 }
 
+let schoolDraftsTableExists = null;
+let schoolDraftsCheckedAt = 0;
+async function hasSchoolDraftsTable() {
+  if (
+    schoolDraftsTableExists !== null &&
+    Date.now() - schoolDraftsCheckedAt < 60000
+  ) {
+    return schoolDraftsTableExists;
+  }
+  try {
+    const r = await db.query(
+      "SELECT to_regclass('public.school_drafts') AS regclass",
+    );
+    schoolDraftsTableExists = Boolean(
+      r.rows && r.rows[0] && r.rows[0].regclass,
+    );
+  } catch (e) {
+    schoolDraftsTableExists = false;
+  }
+  schoolDraftsCheckedAt = Date.now();
+  return schoolDraftsTableExists;
+}
+
 let draftVersionColumn = null;
 let draftVersionCheckedAt = 0;
 async function hasDraftVersionColumn() {
+  const tableExists = await hasSchoolDraftsTable();
+  if (!tableExists) return false;
   if (draftVersionColumn === true) return true;
   if (
     draftVersionColumn === false &&
-    Date.now() - draftVersionCheckedAt < 30000
+    Date.now() - draftVersionCheckedAt < 60000
   )
     return false;
   try {
@@ -707,6 +765,17 @@ async function persistNormalizedDraft(
   const profileParams = [];
   const empParams = [];
   const educParams = [];
+  const desigParams = [];
+  const schoolAssignedDesigKeys = new Map();
+  const primaryDesigHolders = new Map();
+  for (const p of rawPersonnelList) {
+    if (!p) continue;
+    const prim = extractCleanDesignationKey(p.designation);
+    if (prim) {
+      const pId = p.id ? String(p.id).trim() : null;
+      if (pId) primaryDesigHolders.set(prim.toUpperCase(), pId);
+    }
+  }
 
   for (const p of rawPersonnelList) {
     if (!p) continue;
@@ -940,6 +1009,84 @@ async function persistNormalizedDraft(
       eligibility: JSON.stringify(eligList),
       prc_specialization: p.prcSpecialization || p.prc_specialization || null,
     });
+
+    const desigList = [];
+    const directPrimary = extractCleanDesignationKey(p.designation);
+    if (directPrimary) {
+      desigList.push(directPrimary);
+    }
+    if (Array.isArray(p.designations)) {
+      p.designations.forEach((d) => {
+        const clean = extractCleanDesignationKey(d);
+        if (clean) desigList.push(clean);
+      });
+    }
+
+    const seenDesigKeys = new Set();
+    let desigCounter = 1;
+    for (const item of desigList) {
+      const cleanKey = extractCleanDesignationKey(item);
+      if (!cleanKey || cleanKey === "[object Object]") continue;
+      const upperKey = cleanKey.toUpperCase();
+      if (seenDesigKeys.has(upperKey)) continue;
+
+      // If another teacher holds this key as their primary designation, skip stale secondary entry
+      const primHolder = primaryDesigHolders.get(upperKey);
+      if (
+        primHolder &&
+        String(primHolder) !== String(finalId) &&
+        String(primHolder) !== String(p.id)
+      ) {
+        continue;
+      }
+      // If already assigned to another teacher in this school, skip duplicate
+      if (
+        schoolAssignedDesigKeys.has(upperKey) &&
+        String(schoolAssignedDesigKeys.get(upperKey)) !== String(finalId)
+      ) {
+        continue;
+      }
+
+      seenDesigKeys.add(upperKey);
+      schoolAssignedDesigKeys.set(upperKey, finalId);
+
+      const isSds =
+        (typeof item === "string" && String(item).includes("::APPROVED_SDS")) ||
+        (item &&
+          (item.isSdsApproved === true || item.is_sds_approved === true));
+
+      let dsgName = cleanKey;
+      let keyStage = (item && (item.keyStage || item.key_stage)) || null;
+      let gradeLevel = (item && (item.gradeLevel || item.grade_level)) || null;
+      let subjectArea =
+        (item && (item.subjectArea || item.subject_area)) || null;
+      let track = (item && item.track) || null;
+
+      if (cleanKey.includes(" - ")) {
+        const parts = cleanKey.split(" - ").map((x) => x.trim());
+        dsgName = parts[0];
+        if (parts.length === 2) gradeLevel = parts[1];
+        else if (parts.length >= 3) {
+          gradeLevel = parts[1];
+          subjectArea = parts[2];
+          if (parts.length >= 4) track = parts[3];
+        }
+      }
+
+      desigParams.push({
+        id: `DSG-${cleanId}-${String(finalId).split("-").pop()}-${String(desigCounter++).padStart(3, "0")}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+        personnel_id: finalId,
+        school_id: cleanId,
+        designation_name: dsgName,
+        key_stage: keyStage,
+        grade_level: gradeLevel,
+        subject_area: subjectArea,
+        track,
+        is_sds_approved: isSds,
+        sds_confirmed: isSds,
+        serialized_key: cleanKey,
+      });
+    }
   }
 
   // Batch insert mapping
@@ -1179,6 +1326,75 @@ async function persistNormalizedDraft(
       });
   }
 
+  // Purge obsolete / removed designations for this school so unassigned or reassigned designations are never duplicated
+  if (
+    Array.isArray(finalPayload.personnel) &&
+    finalPayload.personnel.length > 0
+  ) {
+    await safeDraftQuery(client, "del_desig", () =>
+      client.query(
+        "DELETE FROM esf7_personnel_designations WHERE school_id = ANY($1::text[])",
+        [[cleanId, "SCH-" + cleanId]],
+      ),
+    ).catch((err) => {
+      console.warn("[persistNormalizedDraft] del_desig warning:", err.message);
+    });
+  }
+
+  // Batch insert designations in chunks of 50
+  for (let i = 0; i < desigParams.length; i += 50) {
+    const chunk = desigParams.slice(i, i + 50);
+    const vals = [];
+    const pars = [];
+    let idx = 1;
+    for (const d of chunk) {
+      vals.push(
+        `($${idx}, $${idx + 1}, $${idx + 2}, $${idx + 3}, $${idx + 4}, $${idx + 5}, $${idx + 6}, $${idx + 7}, $${idx + 8}, $${idx + 9}, $${idx + 10}, NOW())`,
+      );
+      pars.push(
+        d.id,
+        d.personnel_id,
+        d.school_id,
+        d.designation_name,
+        d.key_stage,
+        d.grade_level,
+        d.subject_area,
+        d.track,
+        d.is_sds_approved,
+        d.sds_confirmed,
+        d.serialized_key,
+      );
+      idx += 11;
+    }
+    await client
+      .query(
+        `
+      INSERT INTO esf7_personnel_designations (
+        id, personnel_id, school_id, designation_name, key_stage, grade_level,
+        subject_area, track, is_sds_approved, sds_confirmed, serialized_key, updated_at
+      )
+      VALUES ${vals.join(", ")}
+      ON CONFLICT (personnel_id, serialized_key) DO UPDATE SET
+        school_id = EXCLUDED.school_id,
+        designation_name = EXCLUDED.designation_name,
+        key_stage = EXCLUDED.key_stage,
+        grade_level = EXCLUDED.grade_level,
+        subject_area = EXCLUDED.subject_area,
+        track = EXCLUDED.track,
+        is_sds_approved = EXCLUDED.is_sds_approved,
+        sds_confirmed = EXCLUDED.sds_confirmed,
+        updated_at = NOW()
+    `,
+        pars,
+      )
+      .catch((err) => {
+        console.warn(
+          "[persistNormalizedDraft] personnel_designations batch warning:",
+          err.message,
+        );
+      });
+  }
+
   // 3. Sections: Batch Upsert
   const incomingSections = Array.isArray(finalPayload.classSections)
     ? finalPayload.classSections
@@ -1187,12 +1403,35 @@ async function persistNormalizedDraft(
       : [];
 
   if (incomingSections.length > 0) {
+    const existingIdRes = await client.query(
+      "SELECT id FROM esf7_regular_sections WHERE school_id = $1",
+      [cleanId],
+    );
+    let currentMaxSeq = 0;
+    for (const r of existingIdRes.rows) {
+      const m = String(r.id).match(/(\d+)$/);
+      if (m) {
+        const val = parseInt(m[1], 10);
+        if (val > currentMaxSeq) currentMaxSeq = val;
+      }
+    }
     const sectionParams = [];
     for (const s of incomingSections) {
-      if (!s) continue;
-      const secId = s.id
-        ? String(s.id).trim()
-        : `sec-draft-${cleanId}-${Math.random().toString(36).substring(2, 7)}`;
+      const isDraftId =
+        !s.id ||
+        String(s.id).toLowerCase().startsWith("sec-draft-") ||
+        String(s.id).toLowerCase().startsWith("sec-temp-") ||
+        (String(s.id).toLowerCase().startsWith("sec-") &&
+          !String(s.id).startsWith("SEC-")) ||
+        String(s.id).toLowerCase().startsWith("draft-") ||
+        String(s.id).toLowerCase().startsWith("temp-");
+      let secId;
+      if (!isDraftId) {
+        secId = String(s.id).trim();
+      } else {
+        currentMaxSeq += 1;
+        secId = `SEC-${cleanId}-${currentMaxSeq}`;
+      }
       const gradeLevel = String(
         s.gradeLevel || s.grade_level || "Grade 7",
       ).trim();
@@ -1316,8 +1555,49 @@ async function persistNormalizedDraft(
     }
   }
 
-  // 4. Workloads: Batch Upsert
+  // 4. Workloads: Batch Upsert (Deduplicated with collision protection)
   const allWorkloadRows = [];
+  const seenWorkloadIds = new Set();
+  const seenWorkloadSigs = new Set();
+
+  function addWorkloadRow(w, pId) {
+    if (!w || !pId || !validPersonnelIds.has(pId)) return;
+    const rawId = w.id ? String(w.id).trim() : "";
+    if (rawId && seenWorkloadIds.has(rawId)) return;
+
+    const startTime = sanitizeTime(w.startTime || w.start_time);
+    const endTime = sanitizeTime(w.endTime || w.end_time);
+    const days = Array.isArray(w.days) ? w.days : ["M", "T", "W", "TH", "F"];
+    const daysStr = [...days].sort().join(",");
+    const term = w.term || "1st";
+    const sub = String(w.subject || "GENERAL")
+      .trim()
+      .toUpperCase();
+    const sec = String(w.sectionName || w.section_name || "")
+      .trim()
+      .toUpperCase();
+
+    // Deduplicate identical teacher schedule slot
+    const sig = `${pId}|${term}|${daysStr}|${startTime}|${endTime}|${sec}|${sub}`;
+    if (seenWorkloadSigs.has(sig)) return;
+
+    seenWorkloadSigs.add(sig);
+    const finalWId =
+      rawId ||
+      `WKL-${cleanId}-${pId}-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 7)}`;
+    seenWorkloadIds.add(finalWId);
+
+    allWorkloadRows.push({
+      ...w,
+      id: finalWId,
+      personnel_id: pId,
+      startTime,
+      endTime,
+      days,
+      term,
+    });
+  }
+
   for (const p of rawPersonnelList) {
     if (!p) continue;
     const targetPId = draftIdToFinalId.get(p.id) || p.id;
@@ -1327,7 +1607,7 @@ async function persistNormalizedDraft(
         ? p.workload_rows
         : [];
     for (const w of rows) {
-      if (w) allWorkloadRows.push({ ...w, personnel_id: targetPId });
+      addWorkloadRow(w, targetPId);
     }
   }
   if (Array.isArray(finalPayload.workloadRows)) {
@@ -1337,10 +1617,27 @@ async function persistNormalizedDraft(
           draftIdToFinalId.get(w.personnel_id || w.personnelId) ||
           w.personnel_id ||
           w.personnelId;
-        allWorkloadRows.push({ ...w, personnel_id: targetPId });
+        addWorkloadRow(w, targetPId);
       }
     }
   }
+
+  // Load school sections to resolve section_id and grade_level
+  const schoolSectionsRes = await client
+    .query(
+      `SELECT id, section_name, grade_level FROM esf7_regular_sections WHERE school_id = $1
+       UNION ALL
+       SELECT id, section_name, grade_level FROM esf7_sned_sections WHERE school_id = $1
+       UNION ALL
+       SELECT id, section_name, grade_level FROM esf7_als_sections WHERE school_id = $1
+       UNION ALL
+       SELECT id, section_name, grade_level FROM esf7_aral_sections WHERE school_id = $1
+       UNION ALL
+       SELECT id, section_name, grade_level FROM esf7_remedial_enrichment_sections WHERE school_id = $1`,
+      [cleanId],
+    )
+    .catch(() => ({ rows: [] }));
+  const schoolSecList = schoolSectionsRes.rows || [];
 
   for (let i = 0; i < allWorkloadRows.length; i += 50) {
     const chunk = allWorkloadRows.slice(i, i + 50);
@@ -1350,24 +1647,72 @@ async function persistNormalizedDraft(
 
     for (const w of chunk) {
       const pId = w.personnel_id;
-      if (!pId || !validPersonnelIds.has(pId)) continue;
-      const wId = w.id
-        ? String(w.id).trim()
-        : `WKL-${pId}-${Math.random().toString(36).substring(2, 7)}`;
-      const startTime = sanitizeTime(w.startTime || w.start_time);
-      const endTime = sanitizeTime(w.endTime || w.end_time);
-      const days = Array.isArray(w.days) ? w.days : ["M", "T", "W", "TH", "F"];
+      const wId = w.id;
+      const startTime = w.startTime;
+      const endTime = w.endTime;
+      const days = w.days;
+
+      let sectionId = w.sectionId || w.section_id || null;
+      let sectionName = w.sectionName || w.section_name || "";
+      let gradeLevel = w.gradeLevel || w.grade_level || "";
+
+      if (sectionId) {
+        const matched = schoolSecList.find(
+          (s) => String(s.id).toLowerCase() === String(sectionId).toLowerCase(),
+        );
+        if (matched) {
+          if (!sectionName) sectionName = matched.section_name;
+          if (!gradeLevel) gradeLevel = matched.grade_level;
+        }
+      }
+
+      if (sectionName) {
+        const cleanName = sectionName.trim().toLowerCase();
+        const matched = schoolSecList.find(
+          (s) => String(s.section_name).trim().toLowerCase() === cleanName,
+        );
+        if (matched) {
+          if (!sectionId) sectionId = matched.id;
+          if (!gradeLevel) gradeLevel = matched.grade_level;
+        } else if (!sectionId) {
+          const secSlug = sectionName
+            .trim()
+            .toUpperCase()
+            .replace(/[^A-Z0-9]/g, "-")
+            .replace(/-+/g, "-")
+            .slice(0, 30);
+          sectionId = `SEC-${cleanId}-${secSlug || "GEN"}`;
+        }
+      }
+
+      if (!sectionId) sectionId = `SEC-${cleanId}-GEN`;
+      if (!sectionName) sectionName = w.subject || "GENERAL";
+      if (!gradeLevel)
+        gradeLevel = w.category?.includes("Elementary") ? "Grade 1" : "Grade 7";
+
+      const subject = w.subject || "GENERAL";
+      let subjectId = w.subjectId || w.subject_id || null;
+      if (!subjectId) {
+        const subSlug = subject
+          .trim()
+          .toUpperCase()
+          .replace(/[^A-Z0-9]/g, "-")
+          .replace(/-+/g, "-")
+          .slice(0, 30);
+        subjectId = `SUB-${cleanId}-${subSlug || "GEN"}`;
+      }
+
       const extras = JSON.stringify(
         buildWorkloadExtras(w, {
           id: wId,
           personnel_id: pId,
           school_id: cleanId,
           school_year: schoolYear,
-          grade_level: w.gradeLevel || w.grade_level || null,
-          section_id: null,
-          section_name: w.sectionName || w.section_name || null,
-          subject: w.subject || "GENERAL",
-          subject_id: w.subjectId || w.subject_id || null,
+          grade_level: gradeLevel,
+          section_id: sectionId,
+          section_name: sectionName,
+          subject,
+          subject_id: subjectId,
           remediation_subject:
             w.remediationSubject || w.remediation_subject || null,
           start_time: startTime,
@@ -1385,11 +1730,11 @@ async function persistNormalizedDraft(
         pId,
         cleanId,
         schoolYear,
-        w.gradeLevel || w.grade_level || null,
-        null,
-        w.sectionName || w.section_name || null,
-        w.subject || "GENERAL",
-        w.subjectId || w.subject_id || null,
+        gradeLevel,
+        sectionId,
+        sectionName,
+        subject,
+        subjectId,
         w.remediationSubject || w.remediation_subject || null,
         startTime,
         endTime,
@@ -1401,39 +1746,42 @@ async function persistNormalizedDraft(
     }
 
     if (vals.length > 0) {
-      await client
-        .query(
+      await client.query("SAVEPOINT sp_workload_chunk");
+      try {
+        await client.query(
           `
-        INSERT INTO esf7_workload_rows (
-          id, personnel_id, school_id, school_year, grade_level, section_id, section_name,
-          subject, subject_id, remediation_subject, start_time, end_time, days, term, extras, updated_at
-        )
-        VALUES ${vals.join(", ")}
-        ON CONFLICT (id) DO UPDATE SET
-          personnel_id = EXCLUDED.personnel_id,
-          school_id = EXCLUDED.school_id,
-          school_year = EXCLUDED.school_year,
-          grade_level = EXCLUDED.grade_level,
-          section_id = EXCLUDED.section_id,
-          section_name = EXCLUDED.section_name,
-          subject = EXCLUDED.subject,
-          subject_id = EXCLUDED.subject_id,
-          remediation_subject = EXCLUDED.remediation_subject,
-          start_time = EXCLUDED.start_time,
-          end_time = EXCLUDED.end_time,
-          days = EXCLUDED.days,
-          term = EXCLUDED.term,
-          extras = EXCLUDED.extras,
-          updated_at = NOW()
-      `,
+          INSERT INTO esf7_workload_rows (
+            id, personnel_id, school_id, school_year, grade_level, section_id, section_name,
+            subject, subject_id, remediation_subject, start_time, end_time, days, term, extras, updated_at
+          )
+          VALUES ${vals.join(", ")}
+          ON CONFLICT (id) DO UPDATE SET
+            personnel_id = EXCLUDED.personnel_id,
+            school_id = EXCLUDED.school_id,
+            school_year = EXCLUDED.school_year,
+            grade_level = EXCLUDED.grade_level,
+            section_id = EXCLUDED.section_id,
+            section_name = EXCLUDED.section_name,
+            subject = EXCLUDED.subject,
+            subject_id = EXCLUDED.subject_id,
+            remediation_subject = EXCLUDED.remediation_subject,
+            start_time = EXCLUDED.start_time,
+            end_time = EXCLUDED.end_time,
+            days = EXCLUDED.days,
+            term = EXCLUDED.term,
+            extras = EXCLUDED.extras,
+            updated_at = NOW()
+        `,
           pars,
-        )
-        .catch((err) => {
-          console.warn(
-            "[persistNormalizedDraft] workload_rows batch warning:",
-            err.message,
-          );
-        });
+        );
+        await client.query("RELEASE SAVEPOINT sp_workload_chunk");
+      } catch (err) {
+        await client.query("ROLLBACK TO SAVEPOINT sp_workload_chunk");
+        console.warn(
+          "[persistNormalizedDraft] workload_rows batch warning (savepoint recovered):",
+          err.message,
+        );
+      }
     }
   }
 }
@@ -1451,6 +1799,7 @@ async function loadNormalizedDraft(schoolId, schoolYear) {
     sectionsRes,
     nodeStatusRes,
     deletedRes,
+    designationsRes,
   ] = await Promise.all([
     db
       .query(
@@ -1520,9 +1869,10 @@ async function loadNormalizedDraft(schoolId, schoolYear) {
         [sidPair],
       )
       .catch(() => ({ rows: [] })),
+    Promise.resolve({ rows: [] }),
     db
       .query(
-        "SELECT personnel_id, prn, employee_no, full_name_clean FROM esf7_deleted_personnel WHERE school_id = ANY($1)",
+        "SELECT * FROM esf7_personnel_designations WHERE school_id = ANY($1) ORDER BY created_at ASC",
         [sidPair],
       )
       .catch(() => ({ rows: [] })),
@@ -1578,28 +1928,77 @@ async function loadNormalizedDraft(schoolId, schoolYear) {
 
   // Group workloads by personnel_id
   const workloadsByPerson = new Map();
+  const allSchoolWorkloads = [];
   for (const w of workloadRes.rows) {
     const pId = String(w.personnel_id || "").trim();
     if (!pId) continue;
     if (!workloadsByPerson.has(pId)) workloadsByPerson.set(pId, []);
-    workloadsByPerson.get(pId).push({
+    const rawExtras = w.extras && typeof w.extras === "object" ? w.extras : {};
+    const formattedRow = {
+      ...rawExtras,
       id: w.id,
-      sectionId: w.section_id,
-      sectionName: w.section_name,
-      gradeLevel: w.grade_level,
-      subject: w.subject,
-      subjectId: w.subject_id,
-      remediationSubject: w.remediation_subject,
-      startTime: w.start_time,
-      endTime: w.end_time,
+      personnelId: w.personnel_id,
+      personnel_id: w.personnel_id,
+      schoolId: w.school_id,
+      school_id: w.school_id,
+      schoolYear: w.school_year,
+      school_year: w.school_year,
+      sectionId:
+        w.section_id || rawExtras.sectionId || rawExtras.section_id || null,
+      section_id:
+        w.section_id || rawExtras.sectionId || rawExtras.section_id || null,
+      sectionName:
+        w.section_name || rawExtras.sectionName || rawExtras.section_name || "",
+      section_name:
+        w.section_name || rawExtras.sectionName || rawExtras.section_name || "",
+      gradeLevel:
+        w.grade_level || rawExtras.gradeLevel || rawExtras.grade_level || "",
+      grade_level:
+        w.grade_level || rawExtras.gradeLevel || rawExtras.grade_level || "",
+      subject: w.subject || rawExtras.subject || rawExtras.subjectName || "",
+      subjectId: w.subject_id || rawExtras.subjectId || null,
+      subject_id: w.subject_id || rawExtras.subjectId || null,
+      remediationSubject:
+        w.remediation_subject || rawExtras.remediationSubject || null,
+      remediation_subject:
+        w.remediation_subject || rawExtras.remediationSubject || null,
+      startTime: w.start_time
+        ? String(w.start_time).substring(0, 5)
+        : rawExtras.startTime || null,
+      start_time: w.start_time
+        ? String(w.start_time).substring(0, 5)
+        : rawExtras.startTime || null,
+      endTime: w.end_time
+        ? String(w.end_time).substring(0, 5)
+        : rawExtras.endTime || null,
+      end_time: w.end_time
+        ? String(w.end_time).substring(0, 5)
+        : rawExtras.endTime || null,
       days: Array.isArray(w.days)
         ? w.days
         : typeof w.days === "string"
           ? w.days.split(",")
-          : [],
-      term: w.term,
-      schoolYear: w.school_year,
-    });
+          : ["M", "T", "W", "TH", "F"],
+      term: w.term || rawExtras.term || "1st",
+    };
+    workloadsByPerson.get(pId).push(formattedRow);
+    allSchoolWorkloads.push(formattedRow);
+  }
+
+  // Group designations by personnel_id
+  const designationsByPerson = new Map();
+  for (const d of designationsRes?.rows || []) {
+    const pId = String(d.personnel_id || "").trim();
+    if (!pId) continue;
+    const cleanKey = extractCleanDesignationKey(
+      d.serialized_key || d.designation_name,
+    );
+    if (!cleanKey || cleanKey === "[object Object]") continue;
+    if (!designationsByPerson.has(pId)) designationsByPerson.set(pId, []);
+    const list = designationsByPerson.get(pId);
+    if (!list.includes(cleanKey)) {
+      list.push(cleanKey);
+    }
   }
 
   // Build deleted set
@@ -1639,7 +2038,15 @@ async function loadNormalizedDraft(schoolId, schoolYear) {
     const wkl =
       workloadsByPerson.get(String(p.id)) ||
       workloadsByPerson.get(String(p.prn)) ||
+      workloadsByPerson.get(String(p.legacy_id)) ||
       [];
+
+    const pDesigs =
+      designationsByPerson.get(String(p.id)) ||
+      designationsByPerson.get(String(p.prn)) ||
+      designationsByPerson.get(String(p.legacy_id)) ||
+      [];
+    const primaryDesig = pDesigs.length > 0 ? pDesigs[0] : "";
 
     personnel.push({
       id: p.id,
@@ -1682,6 +2089,8 @@ async function loadNormalizedDraft(schoolId, schoolYear) {
       eligibility: Array.isArray(p.eligibility) ? p.eligibility : [],
       prcSpecialization: p.prc_specialization,
       matrixData: p.matrix_data || {},
+      designation: primaryDesig,
+      designations: pDesigs,
       workloadRows: wkl,
       is_db_saved: true,
     });
@@ -1723,6 +2132,7 @@ async function loadNormalizedDraft(schoolId, schoolYear) {
     schoolInfo,
     personnel: dedupePersonnel(personnel),
     classSections: dedupeSections(classSections),
+    workloadRows: allSchoolWorkloads,
     deletedPersonnelIds: Array.from(delKeys),
     journey_state: journeyState,
     lastUpdated: prof.updated_at || new Date().toISOString(),
@@ -1822,33 +2232,7 @@ const handleSaveDraft = async (req, res) => {
       const cleanSchoolId = schoolId.replace(/^SCH-/i, "");
       const sidPair = [schoolId, cleanSchoolId, "SCH-" + cleanSchoolId];
 
-      const delDbRes = await Promise.all([
-        db
-          .query(
-            `SELECT personnel_id, prn, employee_no, full_name_clean FROM esf7_deleted_personnel WHERE school_id = ANY($1)`,
-            [sidPair],
-          )
-          .catch(() => ({ rows: [] })),
-        db.getStagingPool
-          ? db
-              .getStagingPool()
-              .query(
-                `SELECT personnel_id, prn, employee_no, full_name_clean FROM esf7_deleted_personnel WHERE school_id = ANY($1)`,
-                [sidPair],
-              )
-              .catch(() => ({ rows: [] }))
-          : Promise.resolve({ rows: [] }),
-      ]).then(([r1, r2]) => [...(r1.rows || []), ...(r2.rows || [])]);
-
-      const dbTombstoneKeys = delDbRes
-        .flatMap((d) => [
-          d.personnel_id,
-          d.prn,
-          d.employee_no,
-          d.full_name_clean,
-        ])
-        .filter(Boolean)
-        .map((k) => String(k).trim().toLowerCase());
+      const dbTombstoneKeys = [];
 
       const rawDeletedPers = [
         ...(Array.isArray(payload.deletedPersonnelIds)
@@ -2049,18 +2433,22 @@ const handleSaveDraft = async (req, res) => {
       finalPayload.personnel = dedupePersonnel(finalPayload.personnel);
     }
 
-    // 3. Atomic school_drafts write
+    // 3. Atomic school_drafts write (if legacy table exists)
     const client = await acquireClient();
     let saved = null;
     let entityCounts = null;
-    const withVersion = await hasDraftVersionColumn();
+    const hasDraftTable = await hasSchoolDraftsTable();
+    const withVersion = hasDraftTable ? await hasDraftVersionColumn() : false;
 
     try {
       await client.query("BEGIN; SET LOCAL lock_timeout = '2500ms';");
 
       try {
-        if (process.env.DISABLE_BLOB_DRAFT_WRITES === "true") {
-          // Legacy blob archive is read-only: the normalized tables below are the only write target.
+        if (
+          !hasDraftTable ||
+          process.env.DISABLE_BLOB_DRAFT_WRITES === "true"
+        ) {
+          // Normalized tables are the primary write target; school_drafts blob table is omitted/deprecated.
           saved = {
             version: baseVersion ? Number(baseVersion) + 1 : 1,
             updatedAt: new Date().toISOString(),
@@ -2088,7 +2476,9 @@ const handleSaveDraft = async (req, res) => {
                   JSON.stringify(finalPayload),
                   baseVersion,
                 ];
-          const r = await client.query(sql, params);
+          const r = await safeDraftQuery(client, "sd_ver", () =>
+            client.query(sql, params),
+          );
 
           if (r.rows.length === 0) {
             await client.query("ROLLBACK");
@@ -2109,13 +2499,15 @@ const handleSaveDraft = async (req, res) => {
             updatedAt: r.rows[0].updated_at,
           };
         } else {
-          const r = await client.query(
-            `INSERT INTO school_drafts (school_id, school_year, payload, updated_at)
-             VALUES ($1, $2, $3, NOW())
-             ON CONFLICT (school_id, school_year)
-             DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()
-             RETURNING updated_at`,
-            [schoolId, schoolYear, JSON.stringify(finalPayload)],
+          const r = await safeDraftQuery(client, "sd_nover", () =>
+            client.query(
+              `INSERT INTO school_drafts (school_id, school_year, payload, updated_at)
+               VALUES ($1, $2, $3, NOW())
+               ON CONFLICT (school_id, school_year)
+               DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()
+               RETURNING updated_at`,
+              [schoolId, schoolYear, JSON.stringify(finalPayload)],
+            ),
           );
           saved = { version: undefined, updatedAt: r.rows[0].updated_at };
         }

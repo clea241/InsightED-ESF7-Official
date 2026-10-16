@@ -1,7 +1,6 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../../db");
-const { insightEdPool } = require("../../db");
 
 function formatLearningAreasRecord(row) {
   if (!row) return null;
@@ -15,7 +14,7 @@ function formatLearningAreasRecord(row) {
   };
 }
 
-// GET learning area matrix (supports query param personnelId)
+// GET learning area matrix (supports query param personnelId or personnel_id)
 router.get("/", async (req, res) => {
   const personnel_id = req.query.personnelId || req.query.personnel_id;
   if (!personnel_id) {
@@ -23,7 +22,10 @@ router.get("/", async (req, res) => {
   }
   try {
     const result = await db.query(
-      `SELECT * FROM esf7_personnel_learning_areas WHERE personnel_id = $1 LIMIT 1`,
+      `SELECT la.* FROM esf7_personnel_learning_areas la
+       LEFT JOIN esf7_personnel_profile p ON p.id = la.personnel_id
+       WHERE la.personnel_id = $1 OR p.prn = $1 OR p.legacy_id = $1
+       LIMIT 1`,
       [personnel_id],
     );
     if (result.rows.length === 0) {
@@ -43,64 +45,24 @@ router.post("/toggle", async (req, res) => {
     if (!personnelId)
       return res.status(400).json({ error: "personnelId is required" });
 
-    // 1. Ensure parent profile exists in esf7_personnel_profile to satisfy FK
+    // Ensure parent profile exists in esf7_personnel_profile
     const personRes = await db.query(
-      `SELECT school_id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
+      `SELECT id, school_id FROM esf7_personnel_profile WHERE id = $1 OR legacy_id = $1 OR prn = $1 LIMIT 1`,
       [personnelId],
     );
 
-    let schoolId = "108348";
-    if (personRes.rows.length > 0) {
-      schoolId = personRes.rows[0].school_id;
-    } else {
-      const idParts = String(personnelId).split("-");
-      schoolId = idParts.length > 1 ? idParts[1] : "108348";
-      const cleanSchoolId = schoolId.replace("SCH-", "");
-      const isTest =
-        db.isDivisionOrTestAccount && db.isDivisionOrTestAccount(cleanSchoolId);
-      const tableName = isTest ? "esf7_database_dummy" : "esf7_database";
-      const seqIndex = idParts.length > 2 ? parseInt(idParts[2], 10) - 1 : 0;
-      let masterRows = { rows: [] };
-      if (isTest) {
-        masterRows = await insightEdPool
-          .query(
-            `SELECT * FROM esf7_database_dummy WHERE school_id = $1 OR schoool_id = $1`,
-            [cleanSchoolId],
-          )
-          .catch(() => ({ rows: [] }));
-      } else {
-        masterRows = await insightEdPool
-          .query(`SELECT * FROM esf7_database WHERE school_id = $1`, [
-            cleanSchoolId,
-          ])
-          .catch(() => ({ rows: [] }));
-        if (masterRows.rows.length === 0) {
-          masterRows = await insightEdPool
-            .query(`SELECT * FROM esf7_database WHERE schoool_id = $1`, [
-              cleanSchoolId,
-            ])
-            .catch(() => ({ rows: [] }));
-        }
-      }
-
-      const masterRow = masterRows.rows[seqIndex] || masterRows.rows[0] || {};
-      const fName = masterRow.first || masterRow.first_name || "TEACHER";
-      const lName = masterRow.last || masterRow.last_name || "STAFF";
-      const prn = masterRow.prn || String(personnelId).replace("PER-", "PRN-");
-
-      await db
-        .query(
-          `INSERT INTO esf7_personnel_profile (id, prn, school_id, school_year, type, first_name, last_name, created_at, updated_at)
-         VALUES ($1, $2, $3, 'SY 26-27', 'teaching', $4, $5, NOW(), NOW())
-         ON CONFLICT (id) DO NOTHING`,
-          [personnelId, prn, schoolId, fName, lName],
-        )
-        .catch(() => {});
+    if (personRes.rows.length === 0) {
+      return res.status(404).json({
+        error: `Cannot toggle learning area: Personnel profile '${personnelId}' does not exist in esf7_personnel_profile.`,
+      });
     }
+
+    const resolvedPersonnelId = personRes.rows[0].id;
+    const schoolId = personRes.rows[0].school_id || "108348";
 
     const existing = await db.query(
       `SELECT matrix_data FROM esf7_personnel_learning_areas WHERE personnel_id = $1 LIMIT 1`,
-      [personnelId],
+      [resolvedPersonnelId],
     );
 
     let matrix =
@@ -115,11 +77,8 @@ router.post("/toggle", async (req, res) => {
       delete matrix[cellKey];
     }
 
-    const countRes = await db.query(
-      `SELECT COUNT(*) FROM esf7_personnel_learning_areas`,
-    );
-    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
-    const laId = `LA-${schoolId.replace("SCH-", "")}-${seq}`;
+    const cleanSchoolId = String(schoolId).replace(/^SCH-/i, "").trim();
+    const laId = `LA-${cleanSchoolId}-${resolvedPersonnelId.slice(0, 8)}`;
 
     const query = `
       INSERT INTO esf7_personnel_learning_areas (id, personnel_id, matrix_data, updated_at)
@@ -132,7 +91,7 @@ router.post("/toggle", async (req, res) => {
 
     const result = await db.query(query, [
       laId,
-      personnelId,
+      resolvedPersonnelId,
       JSON.stringify(matrix),
     ]);
 
@@ -147,15 +106,12 @@ router.post("/toggle", async (req, res) => {
 router.get("/:personnel_id", async (req, res) => {
   const { personnel_id } = req.params;
   try {
-    const altId = personnel_id.startsWith("PER-")
-      ? personnel_id.replace("PER-", "PRN-")
-      : personnel_id.startsWith("PRN-")
-        ? personnel_id.replace("PRN-", "PER-")
-        : personnel_id;
-
     const result = await db.query(
-      `SELECT * FROM esf7_personnel_learning_areas WHERE personnel_id = $1 OR personnel_id = $2 LIMIT 1`,
-      [personnel_id, altId],
+      `SELECT la.* FROM esf7_personnel_learning_areas la
+       LEFT JOIN esf7_personnel_profile p ON p.id = la.personnel_id
+       WHERE la.personnel_id = $1 OR p.prn = $1 OR p.legacy_id = $1
+       LIMIT 1`,
+      [personnel_id],
     );
     if (result.rows.length === 0) {
       return res.json({ learningAreaMap: {}, matrix_data: {} });
@@ -171,67 +127,30 @@ router.post("/:personnel_id", async (req, res) => {
   const { personnel_id } = req.params;
   try {
     const { learningAreaMap, matrix_data } = req.body;
-    const targetMap = learningAreaMap || matrix_data || {};
+    let targetMap = learningAreaMap || matrix_data || {};
+    if (typeof targetMap === "string") {
+      try {
+        targetMap = JSON.parse(targetMap);
+      } catch (e) {
+        targetMap = {};
+      }
+    }
 
     const personRes = await db.query(
-      `SELECT school_id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
+      `SELECT id, school_id FROM esf7_personnel_profile WHERE id = $1 OR legacy_id = $1 OR prn = $1 LIMIT 1`,
       [personnel_id],
     );
 
-    let schoolId = "108348";
-    if (personRes.rows.length > 0) {
-      schoolId = personRes.rows[0].school_id;
-    } else {
-      const idParts = String(personnel_id).split("-");
-      schoolId = idParts.length > 1 ? idParts[1] : "108348";
-      const cleanSchoolId = schoolId.replace("SCH-", "");
-      const isTest =
-        db.isDivisionOrTestAccount && db.isDivisionOrTestAccount(cleanSchoolId);
-      const tableName = isTest ? "esf7_database_dummy" : "esf7_database";
-      const seqIndex = idParts.length > 2 ? parseInt(idParts[2], 10) - 1 : 0;
-      let masterRows = { rows: [] };
-      if (isTest) {
-        masterRows = await insightEdPool
-          .query(
-            `SELECT * FROM esf7_database_dummy WHERE school_id = $1 OR schoool_id = $1`,
-            [cleanSchoolId],
-          )
-          .catch(() => ({ rows: [] }));
-      } else {
-        masterRows = await insightEdPool
-          .query(`SELECT * FROM esf7_database WHERE school_id = $1`, [
-            cleanSchoolId,
-          ])
-          .catch(() => ({ rows: [] }));
-        if (masterRows.rows.length === 0) {
-          masterRows = await insightEdPool
-            .query(`SELECT * FROM esf7_database WHERE schoool_id = $1`, [
-              cleanSchoolId,
-            ])
-            .catch(() => ({ rows: [] }));
-        }
-      }
-
-      const masterRow = masterRows.rows[seqIndex] || masterRows.rows[0] || {};
-      const fName = masterRow.first || masterRow.first_name || "TEACHER";
-      const lName = masterRow.last || masterRow.last_name || "STAFF";
-      const prn = masterRow.prn || String(personnel_id).replace("PER-", "PRN-");
-
-      await db
-        .query(
-          `INSERT INTO esf7_personnel_profile (id, prn, school_id, school_year, type, first_name, last_name, created_at, updated_at)
-         VALUES ($1, $2, $3, 'SY 26-27', 'teaching', $4, $5, NOW(), NOW())
-         ON CONFLICT (id) DO NOTHING`,
-          [personnel_id, prn, schoolId, fName, lName],
-        )
-        .catch(() => {});
+    if (personRes.rows.length === 0) {
+      return res.status(404).json({
+        error: `Cannot save learning area record: Personnel profile '${personnel_id}' does not exist in esf7_personnel_profile.`,
+      });
     }
 
-    const countRes = await db.query(
-      `SELECT COUNT(*) FROM esf7_personnel_learning_areas`,
-    );
-    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
-    const laId = `LA-${schoolId.replace("SCH-", "")}-${seq}`;
+    const resolvedPersonnelId = personRes.rows[0].id;
+    const schoolId = personRes.rows[0].school_id || "108348";
+    const cleanSchoolId = String(schoolId).replace(/^SCH-/i, "").trim();
+    const laId = `LA-${cleanSchoolId}-${resolvedPersonnelId.slice(0, 8)}`;
 
     const query = `
       INSERT INTO esf7_personnel_learning_areas (id, personnel_id, matrix_data, updated_at)
@@ -244,7 +163,7 @@ router.post("/:personnel_id", async (req, res) => {
 
     const result = await db.query(query, [
       laId,
-      personnel_id,
+      resolvedPersonnelId,
       JSON.stringify(targetMap),
     ]);
 

@@ -14011,10 +14011,13 @@ function WorkloadInner() {
     getDirtyReasons: () => {
       const reasons = [];
       const teacherName = currentPerson
-        ? `${currentPerson.firstName || ""} ${currentPerson.lastName || currentPerson.name || ""}`.trim() || String(currentPerson.id)
+        ? `${currentPerson.firstName || ""} ${currentPerson.lastName || currentPerson.name || ""}`.trim() ||
+          String(currentPerson.id)
         : "Selected Personnel";
       if (isCurrentTeacherDirty) {
-        const rowsCount = Array.isArray(currentPerson?.workloadRows) ? currentPerson.workloadRows.length : 0;
+        const rowsCount = Array.isArray(currentPerson?.workloadRows)
+          ? currentPerson.workloadRows.length
+          : 0;
         reasons.push({
           field: "workload-grid",
           title: `${teacherName} — Timetable (${activeTerm || "1st"} Term)`,
@@ -14026,7 +14029,8 @@ function WorkloadInner() {
         reasons.push({
           field: "workload-draft-banner",
           title: "Browser Drafts Pending",
-          subtitle: "Other teacher timetable edits saved locally in this browser",
+          subtitle:
+            "Other teacher timetable edits saved locally in this browser",
           targetId: "workload-draft-banner",
         });
       }
@@ -16746,18 +16750,39 @@ function WorkloadInner() {
   const handleSaveChangesDirectly = async () => {
     if (!currentPerson) return;
 
-    const hasIncompleteBlock = (currentPerson.workloadRows || []).some(
-      (row) => {
-        if (!row.subject) return true;
-        if (
-          isAdminTaskRow(row) ||
-          isNonTeachingTaskSubject(row.subject) ||
-          isNonTeachingPerson(currentPerson)
-        )
-          return false;
-        return !row.gradeLevel;
-      },
-    );
+    // Auto-enrich rows with section and grade level if available from classSections
+    const enrichedRows = (currentPerson.workloadRows || []).map((row) => {
+      const matched = matchSectionForWorkloadRow(row, classSections);
+      return {
+        ...row,
+        sectionId:
+          row.sectionId || row.section_id || (matched ? matched.id : null),
+        sectionName:
+          row.sectionName ||
+          row.section_name ||
+          (matched ? matched.sectionName || matched.section_name || "" : ""),
+        gradeLevel:
+          row.gradeLevel ||
+          row.grade_level ||
+          (matched ? matched.gradeLevel || matched.grade_level || "" : ""),
+      };
+    });
+
+    const hasIncompleteBlock = enrichedRows.some((row) => {
+      if (!row.subject) return true;
+      const normSub = String(row.subject).trim().toUpperCase();
+      if (
+        isAdminTaskRow(row) ||
+        isNonTeachingTaskSubject(row.subject) ||
+        isNonTeachingPerson(currentPerson) ||
+        normSub === "ADVISORY" ||
+        normSub === "HGP" ||
+        normSub.includes("HOMEROOM GUIDANCE")
+      )
+        return false;
+      return !row.gradeLevel;
+    });
+
     if (hasIncompleteBlock) {
       await showAlert(
         "Incomplete Schedule Block",
@@ -16767,7 +16792,7 @@ function WorkloadInner() {
     }
 
     // Check for workload conflicts (isolated per term)
-    const currentTermRows = (currentPerson.workloadRows || []).filter(
+    const currentTermRows = enrichedRows.filter(
       (row) => (row.term || "1st") === activeTerm,
     );
     const conflict = findWorkloadScheduleConflict(
@@ -16796,11 +16821,14 @@ function WorkloadInner() {
 
     setIsSaving(true);
     try {
-      const res = await persistWorkloadToServer(currentPerson);
-      // Only after the server confirmed (and the rows were verified): rebuild from the saved rows and clear the draft,
-      // keeping anything edited while the save was running as the new draft.
+      const personToPersist = {
+        ...currentPerson,
+        workloadRows: enrichedRows,
+      };
+
+      const res = await persistWorkloadToServer(personToPersist);
       const { person: updatedPerson, edited } = commitConfirmedSave(
-        currentPerson,
+        personToPersist,
         res,
       );
 
@@ -16813,6 +16841,7 @@ function WorkloadInner() {
 
       broadcastClusteredSlots(updatedPerson.workloadRows);
       setHasUnsavedChanges(edited);
+      removeTeacherWorkloadDraft(currentPerson.id);
 
       showToast("Workload changes saved to database.", "success");
     } catch (err) {
@@ -16827,8 +16856,49 @@ function WorkloadInner() {
   const handleSaveValidate = async () => {
     if (!currentPerson) return;
 
+    // Auto-enrich rows with section and grade level if available from classSections
+    const enrichedRows = (currentPerson.workloadRows || []).map((row) => {
+      const matched = matchSectionForWorkloadRow(row, classSections);
+      return {
+        ...row,
+        sectionId:
+          row.sectionId || row.section_id || (matched ? matched.id : null),
+        sectionName:
+          row.sectionName ||
+          row.section_name ||
+          (matched ? matched.sectionName || matched.section_name || "" : ""),
+        gradeLevel:
+          row.gradeLevel ||
+          row.grade_level ||
+          (matched ? matched.gradeLevel || matched.grade_level || "" : ""),
+      };
+    });
+
+    const hasIncompleteBlock = enrichedRows.some((row) => {
+      if (!row.subject) return true;
+      const normSub = String(row.subject).trim().toUpperCase();
+      if (
+        isAdminTaskRow(row) ||
+        isNonTeachingTaskSubject(row.subject) ||
+        isNonTeachingPerson(currentPerson) ||
+        normSub === "ADVISORY" ||
+        normSub === "HGP" ||
+        normSub.includes("HOMEROOM GUIDANCE")
+      )
+        return false;
+      return !row.gradeLevel;
+    });
+
+    if (hasIncompleteBlock) {
+      await showAlert(
+        "Incomplete Schedule Block",
+        "Cannot save. One or more schedule blocks are missing a Subject or Class Section/Grade Level. Please complete them first.",
+      );
+      return;
+    }
+
     // Check for workload conflicts (isolated per term)
-    const currentTermRows = (currentPerson.workloadRows || []).filter(
+    const currentTermRows = enrichedRows.filter(
       (row) => (row.term || "1st") === activeTerm,
     );
     const conflict = findWorkloadScheduleConflict(
@@ -16846,11 +16916,11 @@ function WorkloadInner() {
     try {
       const updated = {
         ...currentPerson,
+        workloadRows: enrichedRows,
         workloadVerified: true,
         workloadValidated: true,
       };
 
-      // The server must confirm the write before anything is marked verified or the browser copy is removed.
       const res = await persistWorkloadToServer(updated);
       const { person: fullyUpdated, edited } = commitConfirmedSave(
         updated,
@@ -16863,9 +16933,9 @@ function WorkloadInner() {
         });
       }
 
-      // Validated only if nothing was edited while the save was running.
       markTeacherValidated(currentPerson.id, !edited);
       setHasUnsavedChanges(edited);
+      removeTeacherWorkloadDraft(currentPerson.id);
 
       showToast(
         edited
@@ -16874,8 +16944,8 @@ function WorkloadInner() {
         edited ? "warning" : "success",
       );
     } catch (err) {
-      console.warn("Save and validate workload error:", err);
-      const errMsg = err?.message || "Failed to save and validate workload";
+      console.warn("Save workload error:", err);
+      const errMsg = err?.message || "Failed to save workload schedule";
       await showAlert("Error", errMsg);
     } finally {
       setIsSaving(false);
@@ -17444,9 +17514,11 @@ function WorkloadInner() {
                   type="button"
                   className="btn primary"
                   onClick={handleSaveValidate}
+                  disabled={isSaving}
                   style={{
-                    background:
-                      "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)",
+                    background: isSaving
+                      ? "#94A3B8"
+                      : "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)",
                     color: "white",
                     fontWeight: "800",
                     borderRadius: "8px",
@@ -17456,13 +17528,14 @@ function WorkloadInner() {
                     alignItems: "center",
                     gap: "7px",
                     boxShadow: "0 2px 6px rgba(2, 132, 199, 0.3)",
-                    cursor: "pointer",
+                    cursor: isSaving ? "not-allowed" : "pointer",
                     border: "none",
                     transition: "all 0.15s ease",
                   }}
                   title="Validate and save workload changes for active teacher"
                 >
-                  <FiCheckCircle size={15} /> Save & Validate Teacher Workload
+                  <FiCheckCircle size={15} />{" "}
+                  {isSaving ? "Saving..." : "Save & Validate Teacher Workload"}
                 </button>
               )}
               {/* Temporarily hidden: Delegation Package (HTML) & Import Batch (.json) */}

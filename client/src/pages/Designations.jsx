@@ -673,12 +673,48 @@ export default function Designations() {
       designations: uniqueDesigs,
     };
     setPersonnel((prev) =>
-      prev.map((p) =>
-        String(p.id) === String(person.id) ||
-        (p.prn && person.prn && String(p.prn) === String(person.prn))
-          ? updatedPerson
-          : p,
-      ),
+      prev.map((p) => {
+        const isCurrentPerson =
+          String(p.id) === String(person.id) ||
+          (p.prn && person.prn && String(p.prn) === String(person.prn));
+        if (isCurrentPerson) {
+          return updatedPerson;
+        }
+
+        const pDesigStr =
+          typeof p.designation === "string"
+            ? p.designation
+            : p.designation?.name || p.designation?.designation || "";
+        const pDesigsList = Array.isArray(p.designations)
+          ? p.designations.map((d) =>
+              typeof d === "string"
+                ? d
+                : d?.name || d?.designation || d?.title || String(d || ""),
+            )
+          : [];
+
+        const hasTarget =
+          isAssignedToKey(pDesigStr, targetKey) ||
+          pDesigsList.some((d) => isAssignedToKey(d, targetKey));
+        if (!hasTarget) return p;
+
+        const newDesigs = pDesigsList.filter(
+          (d) => !isAssignedToKey(d, targetKey),
+        );
+        let newPrimary = pDesigStr;
+        if (isAssignedToKey(newPrimary, targetKey)) {
+          newPrimary = newDesigs.length > 0 ? newDesigs[0] : "";
+        }
+        const cleanedList = Array.from(
+          new Set(newDesigs.map((d) => String(d).trim())),
+        ).filter((d) => Boolean(d) && !isAssignedToKey(d, newPrimary));
+
+        return {
+          ...p,
+          designation: newPrimary,
+          designations: cleanedList,
+        };
+      }),
     );
     showToast(
       `✓ Assigned ${person.firstName} ${person.lastName} as ${targetKey}`,
