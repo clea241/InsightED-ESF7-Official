@@ -1,5 +1,5 @@
 // Rule: a teaching / teaching-related teacher with no classes assigned in Personnel Profiling
-// cannot have teaching workload blocks persisted. Admin / relieving-duty blocks are unaffected.
+// cannot have teaching workload blocks persisted. Admin / relieving-duty / advisory / HGP blocks are unaffected.
 
 const NON_TEACHING_POSITION_HINTS = [
   "ADMINISTRATIVE",
@@ -28,7 +28,7 @@ function parseGrades(raw) {
   return Array.isArray(raw) ? raw.filter(Boolean) : [];
 }
 
-function getAssignedGrades(profileRow) {
+function getAssignedGrades(profileRow, existingRows) {
   if (!profileRow) return [];
   const raw = profileRow.extras || {};
   const candidates = [
@@ -41,6 +41,15 @@ function getAssignedGrades(profileRow) {
   for (const c of candidates) {
     const g = parseGrades(c);
     if (g.length > 0) return g;
+  }
+  // Fallback: check existing saved workload rows for grade levels
+  if (Array.isArray(existingRows)) {
+    const gradesFromRows = existingRows
+      .map((r) => r && (r.grade_level || r.gradeLevel))
+      .filter(Boolean);
+    if (gradesFromRows.length > 0) {
+      return Array.from(new Set(gradesFromRows));
+    }
   }
   return [];
 }
@@ -76,21 +85,55 @@ function isAdminRow(row) {
     .includes("ADMIN");
 }
 
-function isTeachingPlotLocked(profileRow) {
+function isExemptFromTeachingLock(row) {
+  if (!row) return false;
+  if (isAdminRow(row)) return true;
+  if (row.is_admin_task || row.isAdminTask) return true;
+  if (row.is_teaching_related || row.isTeachingRelated) return true;
+  const id = String(row.id || "").toLowerCase();
+  if (
+    id.startsWith("wk-adv-") ||
+    id.startsWith("wk-hgp-") ||
+    id.startsWith("wk-tr-") ||
+    id.startsWith("wk-adm-")
+  ) {
+    return true;
+  }
+  const subj = String(
+    row.subject || row.subjectName || row.task || row.task_name || "",
+  )
+    .toUpperCase()
+    .trim();
+  if (
+    subj === "ADVISORY" ||
+    subj === "CLASS ADVISING" ||
+    subj === "CLASS ADVISORY" ||
+    subj === "HGP" ||
+    subj === "HOMEROOM GUIDANCE" ||
+    subj === "HOMEROOM GUIDANCE PROGRAM" ||
+    subj.includes("RELIEVING")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function isTeachingPlotLocked(profileRow, existingRows) {
   return (
     !!profileRow &&
     !isNonTeaching(profileRow) &&
-    getAssignedGrades(profileRow).length === 0
+    getAssignedGrades(profileRow, existingRows).length === 0
   );
 }
 
-// Teaching rows that would be newly persisted. Rows already saved (same id) are kept as-is
-// so legacy data is flagged for the user rather than silently deleted.
+// Teaching rows that would be newly persisted. Rows already saved (same id),
+// or non-teaching blocks (admin, advisory, HGP, teaching-related) are exempt.
 function findBlockedTeachingRows(profileRow, incomingRows, existingRows) {
-  if (!isTeachingPlotLocked(profileRow)) return [];
+  if (!isTeachingPlotLocked(profileRow, existingRows)) return [];
   const existingIds = new Set((existingRows || []).map((r) => String(r.id)));
   return (incomingRows || []).filter(
-    (r) => !isAdminRow(r) && !(r.id && existingIds.has(String(r.id))),
+    (r) =>
+      !isExemptFromTeachingLock(r) && !(r.id && existingIds.has(String(r.id))),
   );
 }
 
@@ -98,4 +141,5 @@ module.exports = {
   getAssignedGrades,
   isTeachingPlotLocked,
   findBlockedTeachingRows,
+  isExemptFromTeachingLock,
 };

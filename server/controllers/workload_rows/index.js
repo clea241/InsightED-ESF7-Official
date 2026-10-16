@@ -11,6 +11,16 @@ const {
 } = require("../../utils/workloadPayload");
 const { codec } = require("../../utils/payloadExtras");
 
+function sanitizeTime(val) {
+  if (!val || typeof val !== "string") return null;
+  const m = val.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return null;
+  const hh = m[1].padStart(2, "0");
+  const mm = m[2];
+  const ss = m[3] ? m[3] : "00";
+  return `${hh}:${mm}:${ss}`;
+}
+
 // esf7_workload_rows keeps typed columns plus a slim `extras` JSONB (keys without a typed column). The old whole-body
 // copy in raw_payload is no longer written or read here; see utils/workloadPayload.js.
 function formatWorkloadRecord(row) {
@@ -335,28 +345,33 @@ router.post("/", async (req, res) => {
 });
 
 // Batch replace workload rows for a personnel (supports PUT/POST /personnel/:personnel_id and POST /bulk)
-// A payload can repeat the same block id (e.g. a block copied in the editor). Keep the first one; ids that the server
-// replaces anyway (new-/wk-) may repeat freely.
+// Deduplicates by explicit ID and schedule slot to prevent constraint violations and ghost duplicates.
+const rowSignature = (r) =>
+  [
+    r.subject || r.subjectName || r.subject_name || "",
+    r.startTime || r.start_time || "",
+    r.endTime || r.end_time || "",
+    Array.isArray(r.days) ? [...r.days].sort().join(",") : String(r.days || ""),
+    r.sectionId || r.section_id || r.sectionName || r.section_name || "",
+    r.term || "1st",
+  ].join("|");
+
 function dedupeRowsById(rows) {
-  const seen = new Set();
+  const seenIds = new Set();
+  const seenSigs = new Set();
   return rows.filter((r) => {
-    const id = r && r.id ? String(r.id) : "";
-    if (!id || id.startsWith("new-") || id.startsWith("wk-")) return true;
-    if (seen.has(id)) return false;
-    seen.add(id);
+    if (!r) return false;
+    const id = r.id ? String(r.id).trim() : "";
+    if (id && seenIds.has(id)) return false;
+
+    const sig = rowSignature(r);
+    if (seenSigs.has(sig)) return false;
+
+    if (id) seenIds.add(id);
+    seenSigs.add(sig);
     return true;
   });
 }
-
-const rowSignature = (r) =>
-  [
-    r.subject,
-    r.startTime || r.start_time,
-    r.endTime || r.end_time,
-    JSON.stringify(r.days || []),
-    r.sectionId || r.section_id,
-    r.term || "1st",
-  ].join("|");
 
 // Violations (from shared/timeAllotment.js) that involve at least one new or changed incoming row.
 async function findTimeAllotmentViolations(
@@ -630,53 +645,145 @@ const saveWorkloadBatchHandler = async (req, res) => {
     targetSchoolId = String(targetSchoolId).replace("SCH-", "");
 
     // 2. Delete existing workload rows for this personnel (scoped by terms present in payload to preserve other terms)
+    const allTargetPersonIds = Array.from(
+      new Set(
+        [
+          targetPersonId,
+          targetPersonnelId,
+          resolvedId,
+          personRes.rows[0]?.legacy_id,
+          personRes.rows[0]?.prn,
+        ]
+          .filter(Boolean)
+          .map(String),
+      ),
+    );
     const termsInPayload = replaceTerms();
     if (termsInPayload.length > 0) {
       await client.query(
-        `DELETE FROM esf7_workload_rows WHERE personnel_id = $1 AND COALESCE(term, '1st') = ANY($2::text[])`,
-        [targetPersonId, termsInPayload],
+        `DELETE FROM esf7_workload_rows WHERE personnel_id = ANY($1::text[]) AND COALESCE(term, '1st') = ANY($2::text[])`,
+        [allTargetPersonIds, termsInPayload],
       );
     } else if (targetTerm) {
       await client.query(
-        `DELETE FROM esf7_workload_rows WHERE personnel_id = $1 AND (term = $2 OR (term IS NULL AND $2 = '1st'))`,
-        [targetPersonId, targetTerm],
+        `DELETE FROM esf7_workload_rows WHERE personnel_id = ANY($1::text[]) AND (term = $2 OR (term IS NULL AND $2 = '1st'))`,
+        [allTargetPersonIds, targetTerm],
       );
     } else {
       await client.query(
-        `DELETE FROM esf7_workload_rows WHERE personnel_id = $1`,
-        [targetPersonId],
+        `DELETE FROM esf7_workload_rows WHERE personnel_id = ANY($1::text[])`,
+        [allTargetPersonIds],
       );
     }
 
-    // 3. Insert each workload row
+    // 3. Load school sections to resolve and guarantee all section columns (section_id, section_name, grade_level)
+    let schoolSections = [];
+    try {
+      const secRes = await client.query(
+        `SELECT id, section_name, grade_level FROM esf7_regular_sections WHERE school_id = $1
+         UNION ALL
+         SELECT id, section_name, grade_level FROM esf7_sned_sections WHERE school_id = $1
+         UNION ALL
+         SELECT id, section_name, grade_level FROM esf7_als_sections WHERE school_id = $1
+         UNION ALL
+         SELECT id, section_name, grade_level FROM esf7_aral_sections WHERE school_id = $1
+         UNION ALL
+         SELECT id, section_name, grade_level FROM esf7_remedial_enrichment_sections WHERE school_id = $1`,
+        [targetSchoolId],
+      );
+      schoolSections = secRes.rows || [];
+    } catch (_secErr) {
+      schoolSections = [];
+    }
+
+    // 4. Insert each workload row
     const insertedRows = [];
     for (let i = 0; i < rowsToSave.length; i++) {
       const r = rowsToSave[i];
       const seq = String(i + 1).padStart(3, "0");
-      const wklId =
-        r.id &&
-        !String(r.id).startsWith("new-") &&
-        !String(r.id).startsWith("wk-")
-          ? String(r.id)
-          : `WKL-${targetSchoolId}-${targetPersonId.replace("PER-", "").replace("PRN-", "")}-${seq}-${Date.now().toString(36).slice(-4)}`;
+      const rawId = r.id ? String(r.id).trim() : "";
+      const isEphemeral =
+        !rawId ||
+        rawId.startsWith("new-") ||
+        rawId.startsWith("wk-") ||
+        rawId.startsWith("incoming-");
+      const wklId = !isEphemeral
+        ? rawId
+        : `WKL-${targetSchoolId}-${targetPersonId.replace("PER-", "").replace("PRN-", "")}-${seq}-${Date.now().toString(36).slice(-4)}-${Math.random().toString(36).substring(2, 6)}`;
 
-      const gradeLevel = r.gradeLevel || r.grade_level || "";
-      const sectionId = r.sectionId || r.section_id || null;
-      const sectionName = r.sectionName || r.section_name || "";
+      let sectionId = r.sectionId || r.section_id || null;
+      let sectionName = r.sectionName || r.section_name || "";
+      let gradeLevel = r.gradeLevel || r.grade_level || "";
+
+      // Match against school sections if sectionId is provided
+      if (sectionId) {
+        const matched = schoolSections.find(
+          (s) => String(s.id).toLowerCase() === String(sectionId).toLowerCase(),
+        );
+        if (matched) {
+          if (!sectionName) sectionName = matched.section_name;
+          if (!gradeLevel) gradeLevel = matched.grade_level;
+        }
+      }
+
+      // Match against school sections if sectionName is provided
+      if (sectionName) {
+        const cleanName = sectionName.trim().toLowerCase();
+        const matched = schoolSections.find(
+          (s) => String(s.section_name).trim().toLowerCase() === cleanName,
+        );
+        if (matched) {
+          if (!sectionId) sectionId = matched.id;
+          if (!gradeLevel) gradeLevel = matched.grade_level;
+        } else if (!sectionId) {
+          const secSlug = sectionName
+            .trim()
+            .toUpperCase()
+            .replace(/[^A-Z0-9]/g, "-")
+            .replace(/-+/g, "-")
+            .slice(0, 30);
+          sectionId = `SEC-${targetSchoolId}-${secSlug || "GEN"}`;
+        }
+      }
+
+      if (!sectionId) {
+        sectionId = `SEC-${targetSchoolId}-GEN`;
+      }
+      if (!sectionName) {
+        sectionName = r.subject || "GENERAL";
+      }
+      if (!gradeLevel) {
+        gradeLevel = r.category?.includes("Elementary") ? "Grade 1" : "Grade 7";
+      }
+
       const subject =
         r.subject || r.subjectName || r.subject_name || "MATHEMATICS";
-      const subjectId = r.subjectId || r.subject_id || null;
+      let subjectId = r.subjectId || r.subject_id || null;
+      if (!subjectId) {
+        const subSlug = subject
+          .trim()
+          .toUpperCase()
+          .replace(/[^A-Z0-9]/g, "-")
+          .replace(/-+/g, "-")
+          .slice(0, 30);
+        subjectId = `SUB-${targetSchoolId}-${subSlug || "GEN"}`;
+      }
+
       const remediationSubject =
         r.remediationSubject || r.remediation_subject || null;
-      const startTime = r.startTime || r.start_time || null;
-      const endTime = r.endTime || r.end_time || null;
-      const days =
+      const startTime = sanitizeTime(r.startTime || r.start_time) || "08:00:00";
+      const endTime = sanitizeTime(r.endTime || r.end_time) || "09:00:00";
+      const rawDays =
         r.days ||
         (r.daySchedule
           ? String(r.daySchedule)
               .split(",")
               .map((s) => s.trim())
           : ["M", "T", "W", "TH", "F"]);
+      const days =
+        Array.isArray(rawDays) && rawDays.length > 0
+          ? rawDays
+          : ["M", "T", "W", "TH", "F"];
       const term = r.term || targetTerm || "1st";
 
       const insertQuery = `
@@ -685,6 +792,22 @@ const saveWorkloadBatchHandler = async (req, res) => {
           subject, subject_id, remediation_subject, start_time, end_time, days, term, extras, created_at, updated_at
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, $15::jsonb, NOW(), NOW())
+        ON CONFLICT (id) DO UPDATE SET
+          personnel_id = EXCLUDED.personnel_id,
+          school_id = EXCLUDED.school_id,
+          school_year = EXCLUDED.school_year,
+          grade_level = EXCLUDED.grade_level,
+          section_id = EXCLUDED.section_id,
+          section_name = EXCLUDED.section_name,
+          subject = EXCLUDED.subject,
+          subject_id = EXCLUDED.subject_id,
+          remediation_subject = EXCLUDED.remediation_subject,
+          start_time = EXCLUDED.start_time,
+          end_time = EXCLUDED.end_time,
+          days = EXCLUDED.days,
+          term = EXCLUDED.term,
+          extras = EXCLUDED.extras,
+          updated_at = NOW()
         RETURNING *;
       `;
 
@@ -729,6 +852,8 @@ const saveWorkloadBatchHandler = async (req, res) => {
               sectionName,
               gradeLevel,
               subject,
+              subjectId,
+              remediationSubject,
               startTime,
               endTime,
               days,
@@ -818,8 +943,8 @@ const saveWorkloadBatchHandler = async (req, res) => {
     // 5. Ingest Teaching-Related Tasks (esf7_related_task)
     if (Array.isArray(teachingRelatedRows)) {
       await client.query(
-        "DELETE FROM esf7_related_task WHERE personnel_id = $1",
-        [targetPersonId],
+        "DELETE FROM esf7_related_task WHERE personnel_id = ANY($1::text[])",
+        [allTargetPersonIds],
       );
       let trCounter = 1;
       for (const tr of teachingRelatedRows) {
@@ -867,7 +992,18 @@ const saveWorkloadBatchHandler = async (req, res) => {
           `INSERT INTO esf7_related_task (
              id, personnel_id, school_id, school_year, task_name, frequency,
              duration_minutes, term1_hours, is_designation_synced, extras, created_at, updated_at
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())`,
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, NOW(), NOW())
+           ON CONFLICT (id) DO UPDATE SET
+             personnel_id = EXCLUDED.personnel_id,
+             school_id = EXCLUDED.school_id,
+             school_year = EXCLUDED.school_year,
+             task_name = EXCLUDED.task_name,
+             frequency = EXCLUDED.frequency,
+             duration_minutes = EXCLUDED.duration_minutes,
+             term1_hours = EXCLUDED.term1_hours,
+             is_designation_synced = EXCLUDED.is_designation_synced,
+             extras = EXCLUDED.extras,
+             updated_at = NOW()`,
           [
             trId,
             targetPersonId,
@@ -901,13 +1037,13 @@ const saveWorkloadBatchHandler = async (req, res) => {
     if (Array.isArray(administrativeRows)) {
       if (targetTerm) {
         await client.query(
-          "DELETE FROM esf7_admin_task WHERE personnel_id = $1 AND (term = $2 OR (term IS NULL AND $2 = '1st'))",
-          [targetPersonId, targetTerm],
+          "DELETE FROM esf7_admin_task WHERE personnel_id = ANY($1::text[]) AND (term = $2 OR (term IS NULL AND $2 = '1st'))",
+          [allTargetPersonIds, targetTerm],
         );
       } else {
         await client.query(
-          "DELETE FROM esf7_admin_task WHERE personnel_id = $1",
-          [targetPersonId],
+          "DELETE FROM esf7_admin_task WHERE personnel_id = ANY($1::text[])",
+          [allTargetPersonIds],
         );
       }
       let admCounter = 1;
@@ -978,7 +1114,26 @@ const saveWorkloadBatchHandler = async (req, res) => {
              start_date, end_date, start_time, end_time, days, dates, term,
              duration_minutes, term_total_hours, is_designation_synced, status,
              extras, created_at, updated_at
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14, $15, $16, $17, $18::jsonb, NOW(), NOW())`,
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14, $15, $16, $17, $18::jsonb, NOW(), NOW())
+           ON CONFLICT (id) DO UPDATE SET
+             personnel_id = EXCLUDED.personnel_id,
+             school_id = EXCLUDED.school_id,
+             school_year = EXCLUDED.school_year,
+             task_name = EXCLUDED.task_name,
+             task_category = EXCLUDED.task_category,
+             start_date = EXCLUDED.start_date,
+             end_date = EXCLUDED.end_date,
+             start_time = EXCLUDED.start_time,
+             end_time = EXCLUDED.end_time,
+             days = EXCLUDED.days,
+             dates = EXCLUDED.dates,
+             term = EXCLUDED.term,
+             duration_minutes = EXCLUDED.duration_minutes,
+             term_total_hours = EXCLUDED.term_total_hours,
+             is_designation_synced = EXCLUDED.is_designation_synced,
+             status = EXCLUDED.status,
+             extras = EXCLUDED.extras,
+             updated_at = NOW()`,
           [
             admId,
             targetPersonId,

@@ -223,11 +223,8 @@ async function migrate() {
     const secondaryTables = [
       ["esf7_personnel_node_status", "personnel_id"],
       ["esf7_personnel_allowances", "personnel_id"],
-      ["esf7_personnel_submission", "personnel_id"],
       ["esf7_personnel_submission_archive", "personnel_id"],
-      ["esf7_deleted_personnel", "personnel_id"],
       ["esf7_personnel_extra_tasks", "personnel_id"],
-      ["esf7_room_submissions_staging", "personnel_id"],
       ["overload_late_undertime", "personnel_id"],
     ];
 

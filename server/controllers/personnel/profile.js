@@ -16,6 +16,7 @@ const {
   formatPersonnelRecord,
   fetchMasterPersonnelFromInsightEd,
   resolvePersonnelIdentity,
+  safeCoerceDate,
 } = require("./common");
 
 router.get("/autofill-template", async (req, res) => {
@@ -94,6 +95,8 @@ router.get("/:id", async (req, res) => {
         e.position_category,
         e.position,
         e.step_increment,
+        e.actual_step,
+        e.school_reported_step,
         e.fund_source,
         e.nature_of_appointment,
         e.hiring_arrangement,
@@ -208,8 +211,8 @@ async function syncTrainingsInTransaction(
     const type = (t.training_type || t.type || "OTHER").toUpperCase();
     const title = t.title || "Professional Training";
     const conductor = t.conductor || "NEAP / DepEd";
-    const startDate = t.startDate || t.start_date || null;
-    const endDate = t.endDate || t.end_date || null;
+    const startDate = safeCoerceDate(t.startDate || t.start_date, "start_date");
+    const endDate = safeCoerceDate(t.endDate || t.end_date, "end_date");
     const days = t.days ? Number(t.days) : 0;
     const totalHours = t.totalHours
       ? Number(t.totalHours)
@@ -245,23 +248,62 @@ async function syncLearningAreasInTransaction(
   matrix_data,
   reqBody,
 ) {
-  const targetMap = learningAreaMap || matrix_data;
+  let targetMap = learningAreaMap || matrix_data;
   if (!targetMap) return;
+  if (typeof targetMap === "string") {
+    try {
+      targetMap = JSON.parse(targetMap);
+    } catch (e) {
+      targetMap = {};
+    }
+  }
 
-  const countRes = await client.query(
-    `SELECT COUNT(*) FROM esf7_personnel_learning_areas`,
-  );
-  const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
-  const laId = `LA-${targetSchoolId.replace("SCH-", "")}-${seq}`;
+  const cleanSchoolId = String(targetSchoolId || "108348")
+    .replace(/^SCH-/i, "")
+    .trim();
+  const laId = `LA-${cleanSchoolId}-${String(personnelId).slice(0, 8)}`;
 
   await client.query(
-    `INSERT INTO esf7_personnel_learning_areas (id, personnel_id, matrix_data)
-     VALUES ($1, $2, $3::jsonb)
+    `INSERT INTO esf7_personnel_learning_areas (id, personnel_id, matrix_data, updated_at)
+     VALUES ($1, $2, $3::jsonb, NOW())
      ON CONFLICT (personnel_id) DO UPDATE SET
        matrix_data = EXCLUDED.matrix_data,
        updated_at = NOW()`,
     [laId, personnelId, JSON.stringify(targetMap)],
   );
+}
+
+function extractCleanDesignationKey(item) {
+  if (!item) return "";
+  if (typeof item === "string") {
+    const s = item.replace(/::APPROVED_SDS/gi, "").trim();
+    if (
+      !s ||
+      s === "[object Object]" ||
+      s === "object Object" ||
+      s === "{}" ||
+      s.startsWith("[object")
+    ) {
+      return "";
+    }
+    return s;
+  }
+  if (typeof item === "object") {
+    const candidate =
+      (typeof item.serializedKey === "string" && item.serializedKey) ||
+      (typeof item.serialized_key === "string" && item.serialized_key) ||
+      (typeof item.designationName === "string" && item.designationName) ||
+      (typeof item.designation_name === "string" && item.designation_name) ||
+      (typeof item.designation === "string" && item.designation) ||
+      (typeof item.name === "string" && item.name) ||
+      (typeof item.title === "string" && item.title) ||
+      "";
+    if (candidate) return extractCleanDesignationKey(candidate);
+    if (item.designation && typeof item.designation === "object") {
+      return extractCleanDesignationKey(item.designation);
+    }
+  }
+  return "";
 }
 
 // Helper function to sync designations in transaction
@@ -302,8 +344,13 @@ async function syncDesignationsInTransaction(
       const isSds =
         rawStr.includes("::APPROVED_SDS") ||
         rawStr.toUpperCase().includes("APPROVED_SDS");
-      const cleanKey = rawStr.replace(/::APPROVED_SDS/gi, "").trim();
-      if (!cleanKey || processedKeys.has(cleanKey.toUpperCase())) continue;
+      const cleanKey = extractCleanDesignationKey(item);
+      if (
+        !cleanKey ||
+        cleanKey === "[object Object]" ||
+        processedKeys.has(cleanKey.toUpperCase())
+      )
+        continue;
       processedKeys.add(cleanKey.toUpperCase());
 
       let dsgName = cleanKey;
@@ -437,18 +484,13 @@ async function syncDesignationsInTransaction(
         },
       };
     } else if (typeof item === "object") {
-      const rawKey =
-        item.serializedKey ||
-        item.serialized_key ||
-        item.designation ||
-        item.designationName ||
-        item.designation_name ||
-        item.name ||
-        "OFFICIAL DESIGNATION";
-      const cleanKey = String(rawKey)
-        .replace(/::APPROVED_SDS/gi, "")
-        .trim();
-      if (!cleanKey || processedKeys.has(cleanKey.toUpperCase())) continue;
+      const cleanKey = extractCleanDesignationKey(item);
+      if (
+        !cleanKey ||
+        cleanKey === "[object Object]" ||
+        processedKeys.has(cleanKey.toUpperCase())
+      )
+        continue;
       processedKeys.add(cleanKey.toUpperCase());
 
       const upper = cleanKey.toUpperCase();
@@ -488,6 +530,8 @@ async function syncDesignationsInTransaction(
         }
       }
 
+      const rawKey =
+        item.serializedKey || item.serialized_key || item.key || cleanKey;
       const isSds = !!(
         item.isSdsApproved ||
         item.is_sds_approved ||
@@ -523,8 +567,17 @@ async function syncDesignationsInTransaction(
     await client.query(
       `INSERT INTO esf7_personnel_designations (
         id, personnel_id, school_id, designation_name, key_stage, grade_level, subject_area, track,
-        is_sds_approved, sds_confirmed, serialized_key
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        is_sds_approved, sds_confirmed, serialized_key, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+       ON CONFLICT (personnel_id, serialized_key) DO UPDATE SET
+        designation_name = EXCLUDED.designation_name,
+        key_stage = EXCLUDED.key_stage,
+        grade_level = EXCLUDED.grade_level,
+        subject_area = EXCLUDED.subject_area,
+        track = EXCLUDED.track,
+        is_sds_approved = EXCLUDED.is_sds_approved,
+        sds_confirmed = EXCLUDED.sds_confirmed,
+        updated_at = NOW()`,
       [
         dsgId,
         personnelId,
@@ -849,7 +902,13 @@ router.post("/", async (req, res) => {
           catObj.category ||
           "TEACHING"
         ).toUpperCase();
-    const empStep = Number(step_increment || stepIncrement || 1);
+    const empStep = sanitizeStepIncrement(step_increment || stepIncrement);
+    const empActualStep = sanitizeStepIncrement(
+      req.body.actual_step || req.body.actualStep || empStep,
+    );
+    const empSchoolReportedStep = sanitizeStepIncrement(
+      req.body.school_reported_step || req.body.schoolReportedStep || empStep,
+    );
     let empFund = (
       fund_source ||
       fundSource ||
@@ -878,15 +937,18 @@ router.post("/", async (req, res) => {
 
     const insertEmpQuery = `
       INSERT INTO esf7_personnel_employment (
-        id, personnel_id, position_category, position, step_increment, fund_source, nature_of_appointment,
+        id, personnel_id, position_category, position, step_increment,
+        actual_step, school_reported_step, fund_source, nature_of_appointment,
         hiring_arrangement, deployment_status, assigned_schools, grade_levels_taught,
         first_service_date, last_promotion_date, new_station_date, last_lateral_movement_date
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13, $14, $15)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15, $16, $17)
       ON CONFLICT (personnel_id) DO UPDATE SET
         position_category = EXCLUDED.position_category,
         position = EXCLUDED.position,
         step_increment = EXCLUDED.step_increment,
+        actual_step = EXCLUDED.actual_step,
+        school_reported_step = EXCLUDED.school_reported_step,
         fund_source = EXCLUDED.fund_source,
         nature_of_appointment = EXCLUDED.nature_of_appointment,
         hiring_arrangement = EXCLUDED.hiring_arrangement,
@@ -907,6 +969,8 @@ router.post("/", async (req, res) => {
       empCat,
       empPos,
       empStep,
+      empActualStep,
+      empSchoolReportedStep,
       empFund,
       empAppt,
       empHire,
@@ -1101,6 +1165,8 @@ router.post("/", async (req, res) => {
         e.position_category,
         e.position,
         e.step_increment,
+        e.actual_step,
+        e.school_reported_step,
         e.fund_source,
         e.nature_of_appointment,
         e.hiring_arrangement,
@@ -1618,6 +1684,12 @@ router.put("/:id", async (req, res) => {
           "TEACHING"
         ).toUpperCase();
     const empStep = sanitizeStepIncrement(step_increment || stepIncrement);
+    const empActualStep = sanitizeStepIncrement(
+      req.body.actual_step || req.body.actualStep || empStep,
+    );
+    const empSchoolReportedStep = sanitizeStepIncrement(
+      req.body.school_reported_step || req.body.schoolReportedStep || empStep,
+    );
     let empFund = (
       fund_source ||
       fundSource ||
@@ -1646,16 +1718,19 @@ router.put("/:id", async (req, res) => {
 
     const upsertEmpQuery = `
       INSERT INTO esf7_personnel_employment (
-        id, personnel_id, position_category, position, step_increment, fund_source,
+        id, personnel_id, position_category, position, step_increment,
+        actual_step, school_reported_step, fund_source,
         nature_of_appointment, hiring_arrangement, deployment_status, assigned_schools,
         grade_levels_taught, first_service_date, last_promotion_date, new_station_date,
         last_lateral_movement_date
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13, $14, $15)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15, $16, $17)
       ON CONFLICT (personnel_id) DO UPDATE SET
         position_category = EXCLUDED.position_category,
         position = EXCLUDED.position,
         step_increment = EXCLUDED.step_increment,
+        actual_step = EXCLUDED.actual_step,
+        school_reported_step = EXCLUDED.school_reported_step,
         fund_source = EXCLUDED.fund_source,
         nature_of_appointment = EXCLUDED.nature_of_appointment,
         hiring_arrangement = EXCLUDED.hiring_arrangement,
@@ -1676,6 +1751,8 @@ router.put("/:id", async (req, res) => {
       empCat,
       empPos,
       empStep,
+      empActualStep,
+      empSchoolReportedStep,
       empFund,
       empAppt,
       empHire,
@@ -1884,6 +1961,8 @@ router.put("/:id", async (req, res) => {
       position_category: empRes.rows[0].position_category,
       position: empRes.rows[0].position,
       step_increment: empRes.rows[0].step_increment,
+      actual_step: empRes.rows[0].actual_step,
+      school_reported_step: empRes.rows[0].school_reported_step,
       fund_source: empRes.rows[0].fund_source,
       nature_of_appointment: empRes.rows[0].nature_of_appointment,
       hiring_arrangement: empRes.rows[0].hiring_arrangement,

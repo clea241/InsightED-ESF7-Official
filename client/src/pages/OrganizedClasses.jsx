@@ -3397,7 +3397,10 @@ export default function OrganizedClasses() {
           : updatedToolObj.levels[0])
       : undefined;
 
-    await updateSectionDetails(sec.id, {
+    const updatePayload = {
+      id: sec.id,
+      schoolId: schoolInfo?.schoolId,
+      schoolYear: schoolInfo?.schoolYear || "SY 26-27",
       sectionName: cleanSectionName,
       gradeLevel: finalGradeLevel,
       sectionType: finalSectionType,
@@ -3408,7 +3411,7 @@ export default function OrganizedClasses() {
       aralBasis: isAral ? editingRowData.aralBasis : undefined,
       aralGrade: isAral ? editingRowData.aralGrade : undefined,
       aralToolKey: updatedToolKey,
-      aralTool: isAral ? updatedToolObj.tool : undefined,
+      aralTool: isAral ? updatedToolObj?.tool : undefined,
       aralProfileLevel: updatedLevel,
       sizeStatus: getSectionSizeStatus(finalGradeLevel, total, finalSectionType)
         .status,
@@ -3422,7 +3425,33 @@ export default function OrganizedClasses() {
       tutorId: editingRowData.tutorId || editingRowData.advisorId,
       adviserRemarks: editingRowData.adviserRemarks || null,
       adviser_remarks: editingRowData.adviserRemarks || null,
-    });
+    };
+
+    if (isReg) {
+      try {
+        await api.addRegularSection(updatePayload);
+      } catch (err) {
+        console.warn("[handleSaveInlineEdit] Instant DB update warning:", err);
+      }
+    } else {
+      try {
+        await api.addSection({ ...sec, ...updatePayload });
+      } catch (err) {
+        console.warn("[handleSaveInlineEdit] Instant DB update warning:", err);
+      }
+    }
+
+    await updateSectionDetails(sec.id, updatePayload);
+
+    if (savedSectionsSnapshotRef.current) {
+      try {
+        const snapList = JSON.parse(savedSectionsSnapshotRef.current);
+        savedSectionsSnapshotRef.current = JSON.stringify([
+          ...snapList.filter((s) => s.id !== sec.id),
+          { ...sec, ...updatePayload },
+        ]);
+      } catch (e) {}
+    }
 
     if (showToast)
       showToast(
@@ -3522,10 +3551,13 @@ export default function OrganizedClasses() {
       return;
     }
 
-    await addClassSection({
+    const payloadToSave = {
+      schoolId: schoolInfo?.schoolId,
+      schoolYear: schoolInfo?.schoolYear || "SY 26-27",
       gradeLevel: finalGradeLevel,
       sectionName: inlineAddData.sectionName.toUpperCase().trim(),
       advisorId: inlineAddData.advisorId || null,
+      adviserId: inlineAddData.advisorId || null,
       sectionType: finalSectionType,
       maleLearners: mVal,
       femaleLearners: fVal,
@@ -3539,7 +3571,27 @@ export default function OrganizedClasses() {
         total,
         finalSectionType,
       ).status,
-    });
+    };
+
+    let savedSec = null;
+    try {
+      savedSec = await api.addRegularSection(payloadToSave);
+    } catch (apiErr) {
+      console.warn("[handleSaveInlineAdd] Instant DB save warning:", apiErr);
+    }
+
+    const finalSecToStage = savedSec && savedSec.id ? savedSec : payloadToSave;
+    await addClassSection(finalSecToStage);
+
+    if (savedSectionsSnapshotRef.current) {
+      try {
+        const snapList = JSON.parse(savedSectionsSnapshotRef.current);
+        savedSectionsSnapshotRef.current = JSON.stringify([
+          ...snapList.filter((s) => s.id !== finalSecToStage.id),
+          finalSecToStage,
+        ]);
+      } catch (e) {}
+    }
 
     setInlineAddData({
       sectionType: "MONO GRADE",
@@ -3598,8 +3650,10 @@ export default function OrganizedClasses() {
 
     const secId = `ARAL-${schoolInfo?.schoolId || "SCH"}-${Date.now().toString(36).toUpperCase()}`;
 
-    await addClassSection({
+    const aralPayload = {
       id: secId,
+      schoolId: schoolInfo?.schoolId,
+      schoolYear: schoolInfo?.schoolYear || "SY 26-27",
       gradeLevel: resGrade,
       sectionName: secId,
       advisorId: inlineAralData.tutorId || null,
@@ -3616,7 +3670,25 @@ export default function OrganizedClasses() {
       aralProfileLevel: levelToSave,
       numberOfLearners: Number(inlineAralData.aralLearners) || 0,
       aralLearners: Number(inlineAralData.aralLearners) || 0,
-    });
+    };
+
+    try {
+      await api.addSection(aralPayload);
+    } catch (e) {
+      console.warn("[handleSaveInlineAddAral] DB save warning:", e);
+    }
+
+    await addClassSection(aralPayload);
+
+    if (savedSectionsSnapshotRef.current) {
+      try {
+        const snapList = JSON.parse(savedSectionsSnapshotRef.current);
+        savedSectionsSnapshotRef.current = JSON.stringify([
+          ...snapList.filter((s) => s.id !== secId),
+          aralPayload,
+        ]);
+      } catch (e) {}
+    }
 
     setInlineAralData({
       aralBasis: "grade",
@@ -3676,17 +3748,38 @@ export default function OrganizedClasses() {
     const pfx = cat === "ENRICHMENT" ? "ENR" : "REM";
     const secId = `${pfx}-${schoolInfo?.schoolId || "SCH"}-${Date.now().toString(36).toUpperCase()}`;
 
-    await addClassSection({
+    const remPayload = {
       id: secId,
+      schoolId: schoolInfo?.schoolId,
+      schoolYear: schoolInfo?.schoolYear || "SY 26-27",
       gradeLevel: inlineRemedialData.gradeLevel,
       sectionName: secId,
       advisorId: inlineRemedialData.teacherId || null,
       adviserId: inlineRemedialData.teacherId || null,
+      teacherId: inlineRemedialData.teacherId || null,
       sectionType: cat,
       maleLearners: mVal,
       femaleLearners: fVal,
       numberOfLearners: total,
-    });
+    };
+
+    try {
+      await api.addSection(remPayload);
+    } catch (e) {
+      console.warn("[handleSaveInlineAddRemedial] DB save warning:", e);
+    }
+
+    await addClassSection(remPayload);
+
+    if (savedSectionsSnapshotRef.current) {
+      try {
+        const snapList = JSON.parse(savedSectionsSnapshotRef.current);
+        savedSectionsSnapshotRef.current = JSON.stringify([
+          ...snapList.filter((s) => s.id !== secId),
+          remPayload,
+        ]);
+      } catch (e) {}
+    }
 
     setInlineRemedialData({
       interventionCategory: "REMEDIAL",
@@ -3732,8 +3825,10 @@ export default function OrganizedClasses() {
 
     const secId = `SNED-${schoolInfo?.schoolId || "SCH"}-${Date.now().toString(36).toUpperCase()}`;
 
-    await addClassSection({
+    const snedPayload = {
       id: secId,
+      schoolId: schoolInfo?.schoolId,
+      schoolYear: schoolInfo?.schoolYear || "SY 26-27",
       gradeLevel:
         inlineSnedData.gradeLevel ||
         availableSnedGrades[0] ||
@@ -3745,7 +3840,25 @@ export default function OrganizedClasses() {
       maleLearners: mVal,
       femaleLearners: fVal,
       numberOfLearners: total,
-    });
+    };
+
+    try {
+      await api.addSection(snedPayload);
+    } catch (e) {
+      console.warn("[handleSaveInlineAddSned] DB save warning:", e);
+    }
+
+    await addClassSection(snedPayload);
+
+    if (savedSectionsSnapshotRef.current) {
+      try {
+        const snapList = JSON.parse(savedSectionsSnapshotRef.current);
+        savedSectionsSnapshotRef.current = JSON.stringify([
+          ...snapList.filter((s) => s.id !== secId),
+          snedPayload,
+        ]);
+      } catch (e) {}
+    }
 
     setInlineSnedData({
       gradeLevel: availableSnedGrades[0] || "SNED-ES (NON-GRADED)",
@@ -3790,8 +3903,10 @@ export default function OrganizedClasses() {
 
     const secId = `ALS-${schoolInfo?.schoolId || "SCH"}-${Date.now().toString(36).toUpperCase()}`;
 
-    await addClassSection({
+    const alsPayload = {
       id: secId,
+      schoolId: schoolInfo?.schoolId,
+      schoolYear: schoolInfo?.schoolYear || "SY 26-27",
       gradeLevel: inlineAlsData.gradeLevel || availableAlsGrades[0] || "ALS-ES",
       sectionName: inlineAlsData.sectionName
         ? inlineAlsData.sectionName.toUpperCase().trim()
@@ -3802,7 +3917,25 @@ export default function OrganizedClasses() {
       maleLearners: mVal,
       femaleLearners: fVal,
       numberOfLearners: total,
-    });
+    };
+
+    try {
+      await api.addSection(alsPayload);
+    } catch (e) {
+      console.warn("[handleSaveInlineAddAls] DB save warning:", e);
+    }
+
+    await addClassSection(alsPayload);
+
+    if (savedSectionsSnapshotRef.current) {
+      try {
+        const snapList = JSON.parse(savedSectionsSnapshotRef.current);
+        savedSectionsSnapshotRef.current = JSON.stringify([
+          ...snapList.filter((s) => s.id !== secId),
+          alsPayload,
+        ]);
+      } catch (e) {}
+    }
 
     setInlineAlsData({
       gradeLevel: availableAlsGrades[0] || "ALS-ES",
@@ -6056,7 +6189,9 @@ export default function OrganizedClasses() {
                       {totalItems}
                     </strong>
                   </span>
-                  <span style={{ color: "#CBD5E1", userSelect: "none" }}>|</span>
+                  <span style={{ color: "#CBD5E1", userSelect: "none" }}>
+                    |
+                  </span>
                   <span style={{ whiteSpace: "nowrap", fontWeight: "500" }}>
                     Per page:
                   </span>

@@ -43,6 +43,17 @@ function storedAdviser(row) {
   return v ? String(v) : null;
 }
 
+// Canonical personnel resolver across id, prn, and legacy_id to enforce Foreign Key validity
+async function resolvePersonnelId(clientOrDb, rawId) {
+  if (!rawId || String(rawId).trim() === "") return null;
+  const trimmed = String(rawId).trim();
+  const res = await clientOrDb.query(
+    "SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 OR legacy_id = $1 LIMIT 1",
+    [trimmed],
+  );
+  return res.rows.length > 0 ? res.rows[0].id : null;
+}
+
 function formatRegularRecord(row) {
   if (!row || isInvalidSectionRecord(row)) return null;
   const raw = row.extras || {};
@@ -480,11 +491,7 @@ async function upsertRegularSection(client, body) {
 
   let validAdviserId = null;
   if (targetAdviserId) {
-    const pCheck = await client.query(
-      "SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1",
-      [targetAdviserId],
-    );
-    if (pCheck.rows.length > 0) validAdviserId = pCheck.rows[0].id;
+    validAdviserId = await resolvePersonnelId(client, targetAdviserId);
   }
 
   const sidPair = [targetSchoolId, "SCH-" + targetSchoolId];
@@ -570,12 +577,28 @@ async function upsertRegularSection(client, body) {
     return r.rows[0];
   }
 
-  const countRes = await client.query(
-    "SELECT COUNT(*) FROM esf7_regular_sections WHERE school_id = $1",
+  const idRes = await client.query(
+    "SELECT id FROM esf7_regular_sections WHERE school_id = $1",
     [targetSchoolId],
   );
-  const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
-  const secId = id || "REG-" + targetSchoolId + "-" + seq;
+  let maxSeq = 0;
+  for (const row of idRes.rows) {
+    const m = String(row.id).match(/(\d+)$/);
+    if (m) {
+      const val = parseInt(m[1], 10);
+      if (val > maxSeq) maxSeq = val;
+    }
+  }
+  const seq = String(maxSeq + 1);
+  const isDraftId =
+    !id ||
+    String(id).toLowerCase().startsWith("sec-draft-") ||
+    String(id).toLowerCase().startsWith("sec-temp-") ||
+    (String(id).toLowerCase().startsWith("sec-") &&
+      !String(id).startsWith("SEC-")) ||
+    String(id).toLowerCase().startsWith("draft-") ||
+    String(id).toLowerCase().startsWith("temp-");
+  const secId = !isDraftId ? id : "SEC-" + targetSchoolId + "-" + seq;
   const r = await client.query(
     "INSERT INTO esf7_regular_sections (id, school_id, school_year, grade_level, section_name, section_type, " +
       "adviser_id, male_learners, female_learners, number_of_learners, size_status, extras) " +
@@ -741,15 +764,29 @@ router.post("/sned", async (req, res) => {
     calculateSizeStatus("SNED", totalLearners, "SNED (NON-GRADED)");
 
   try {
-    const countRes = await db.query(
-      `SELECT COUNT(*) FROM esf7_sned_sections WHERE school_id = $1`,
+    const idRes = await db.query(
+      `SELECT id FROM esf7_sned_sections WHERE school_id = $1`,
       [targetSchoolId],
     );
-    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
-    const secId =
-      id && !String(id).startsWith("sec-draft-")
-        ? id
-        : `SNED-${targetSchoolId.replace(/^SCH-/i, "")}-${seq}`;
+    let maxSeq = 0;
+    for (const row of idRes.rows) {
+      const m = String(row.id).match(/(\d+)$/);
+      if (m) {
+        const val = parseInt(m[1], 10);
+        if (val > maxSeq) maxSeq = val;
+      }
+    }
+    const seq = String(maxSeq + 1).padStart(3, "0");
+    const isDraftId =
+      !id ||
+      String(id).toLowerCase().startsWith("sec-") ||
+      String(id).toLowerCase().startsWith("sned-draft-") ||
+      String(id).toLowerCase().startsWith("draft-") ||
+      String(id).toLowerCase().startsWith("temp-") ||
+      !String(id).startsWith("SNED-");
+    const secId = !isDraftId
+      ? id
+      : `SNED-${targetSchoolId.replace(/^SCH-/i, "")}-${seq}`;
     const targetSectionType =
       section_type || sectionType || "SNED (NON-GRADED)";
     const targetSectionName = (section_name || sectionName || secId)
@@ -758,11 +795,7 @@ router.post("/sned", async (req, res) => {
 
     let validAdviserId = null;
     if (targetAdviserId) {
-      const pCheck = await db.query(
-        `SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
-        [targetAdviserId],
-      );
-      if (pCheck.rows.length > 0) validAdviserId = pCheck.rows[0].id;
+      validAdviserId = await resolvePersonnelId(db, targetAdviserId);
     }
 
     const query = `
@@ -859,15 +892,29 @@ router.post("/als", async (req, res) => {
     calculateSizeStatus("ALS", totalLearners, "ALS");
 
   try {
-    const countRes = await db.query(
-      `SELECT COUNT(*) FROM esf7_als_sections WHERE school_id = $1`,
+    const idRes = await db.query(
+      `SELECT id FROM esf7_als_sections WHERE school_id = $1`,
       [targetSchoolId],
     );
-    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
-    const secId =
-      id && !String(id).startsWith("sec-draft-")
-        ? id
-        : `ALS-${targetSchoolId.replace(/^SCH-/i, "")}-${seq}`;
+    let maxSeq = 0;
+    for (const row of idRes.rows) {
+      const m = String(row.id).match(/(\d+)$/);
+      if (m) {
+        const val = parseInt(m[1], 10);
+        if (val > maxSeq) maxSeq = val;
+      }
+    }
+    const seq = String(maxSeq + 1).padStart(3, "0");
+    const isDraftId =
+      !id ||
+      String(id).toLowerCase().startsWith("sec-") ||
+      String(id).toLowerCase().startsWith("als-draft-") ||
+      String(id).toLowerCase().startsWith("draft-") ||
+      String(id).toLowerCase().startsWith("temp-") ||
+      !String(id).startsWith("ALS-");
+    const secId = !isDraftId
+      ? id
+      : `ALS-${targetSchoolId.replace(/^SCH-/i, "")}-${seq}`;
     const targetSectionType = section_type || sectionType || "ALS";
     const targetSectionName = (section_name || sectionName || secId)
       .toUpperCase()
@@ -875,11 +922,7 @@ router.post("/als", async (req, res) => {
 
     let validAdviserId = null;
     if (targetAdviserId) {
-      const pCheck = await db.query(
-        `SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
-        [targetAdviserId],
-      );
-      if (pCheck.rows.length > 0) validAdviserId = pCheck.rows[0].id;
+      validAdviserId = await resolvePersonnelId(db, targetAdviserId);
     }
 
     const query = `
@@ -972,15 +1015,29 @@ router.post("/aral", async (req, res) => {
       : mVal + fVal;
 
   try {
-    const countRes = await db.query(
-      `SELECT COUNT(*) FROM esf7_aral_sections WHERE school_id = $1`,
+    const idRes = await db.query(
+      `SELECT id FROM esf7_aral_sections WHERE school_id = $1`,
       [targetSchoolId],
     );
-    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
-    const secId =
-      id && !String(id).startsWith("sec-draft-")
-        ? id
-        : `ARAL-${targetSchoolId.replace(/^SCH-/i, "")}-${seq}`;
+    let maxSeq = 0;
+    for (const row of idRes.rows) {
+      const m = String(row.id).match(/(\d+)$/);
+      if (m) {
+        const val = parseInt(m[1], 10);
+        if (val > maxSeq) maxSeq = val;
+      }
+    }
+    const seq = String(maxSeq + 1).padStart(3, "0");
+    const isDraftId =
+      !id ||
+      String(id).toLowerCase().startsWith("sec-") ||
+      String(id).toLowerCase().startsWith("aral-draft-") ||
+      String(id).toLowerCase().startsWith("draft-") ||
+      String(id).toLowerCase().startsWith("temp-") ||
+      !String(id).startsWith("ARAL-");
+    const secId = !isDraftId
+      ? id
+      : `ARAL-${targetSchoolId.replace(/^SCH-/i, "")}-${seq}`;
     const targetSectionType = section_type || sectionType || "ARAL";
     const targetName = (section_name || sectionName || secId)
       .toUpperCase()
@@ -988,11 +1045,7 @@ router.post("/aral", async (req, res) => {
 
     let validTutorId = null;
     if (targetTutorId) {
-      const pCheck = await db.query(
-        `SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
-        [targetTutorId],
-      );
-      if (pCheck.rows.length > 0) validTutorId = pCheck.rows[0].id;
+      validTutorId = await resolvePersonnelId(db, targetTutorId);
     }
 
     const query = `
@@ -1088,16 +1141,33 @@ router.post("/remedial-enrichment", async (req, res) => {
       : mVal + fVal;
 
   try {
-    const countRes = await db.query(
-      `SELECT COUNT(*) FROM esf7_remedial_enrichment_sections WHERE school_id = $1`,
+    const idRes = await db.query(
+      `SELECT id FROM esf7_remedial_enrichment_sections WHERE school_id = $1`,
       [targetSchoolId],
     );
-    const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
-    const prefix = targetIntervention.includes("ENRICHMENT") ? "ENR" : "REM";
-    const secId =
-      id && !String(id).startsWith("sec-draft-")
-        ? id
-        : `${prefix}-${targetSchoolId.replace(/^SCH-/i, "")}-${seq}`;
+    let maxSeq = 0;
+    for (const row of idRes.rows) {
+      const m = String(row.id).match(/(\d+)$/);
+      if (m) {
+        const val = parseInt(m[1], 10);
+        if (val > maxSeq) maxSeq = val;
+      }
+    }
+    const seq = String(maxSeq + 1).padStart(3, "0");
+    const isDraftId =
+      !id ||
+      String(id).toLowerCase().startsWith("sec-") ||
+      String(id).toLowerCase().startsWith("rem-draft-") ||
+      String(id).toLowerCase().startsWith("enr-draft-") ||
+      String(id).toLowerCase().startsWith("draft-") ||
+      String(id).toLowerCase().startsWith("temp-") ||
+      (!String(id).startsWith("REM-") && !String(id).startsWith("ENR-"));
+    const prefix = targetIntervention.toUpperCase().includes("ENRICHMENT")
+      ? "ENR"
+      : "REM";
+    const secId = !isDraftId
+      ? id
+      : `${prefix}-${targetSchoolId.replace(/^SCH-/i, "")}-${seq}`;
     const targetSectionType = targetIntervention.includes("ENRICHMENT")
       ? "ENRICHMENT"
       : "REMEDIAL";
@@ -1107,11 +1177,7 @@ router.post("/remedial-enrichment", async (req, res) => {
 
     let validTeacherId = null;
     if (targetTeacherId) {
-      const pCheck = await db.query(
-        `SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 LIMIT 1`,
-        [targetTeacherId],
-      );
-      if (pCheck.rows.length > 0) validTeacherId = pCheck.rows[0].id;
+      validTeacherId = await resolvePersonnelId(db, targetTeacherId);
     }
 
     const query = `
