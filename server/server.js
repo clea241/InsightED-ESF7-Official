@@ -65,6 +65,13 @@ app.use((req, res, next) => {
   next();
 });
 
+// Watchdog liveness: registered before compression, helmet, CORS, body parsing, auth, rate limiting and DB middleware
+// so it stays reachable under pressure. Only the in-flight tracker above runs first (it just counts requests).
+app.get(
+  "/api/health/live",
+  require("./middleware/liveness").createLivenessHandler(),
+);
+
 // Middleware
 try {
   app.use(require("compression")()); // gzip JSON responses if compression package installed
