@@ -198,3 +198,6 @@
 - Principals exempt from Classes-Organized workload generation.
 - By-Section slot conflict relaxed for JHS/SHS different subjects.
 - Row 18 verified only (no change), Row 21 no action, Row 20 pending.
+
+## 2026-10-17 - Room QR accept fix
+- executeMultiRowUpsert (server/controllers/room_profiling/index.js) now supports esf7_personnel_ld_trainings and esf7_personnel_designations; "Approve and Merge All" no longer fails with "Unsupported table".

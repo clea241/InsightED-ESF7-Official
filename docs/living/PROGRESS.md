@@ -104,3 +104,6 @@ Done in code; not browser-tested. TODO: user runs `node server/migrations/add_sc
 
 ## 2026-10-09 session 4 - Rows 17-22
 Done: 17, 19, 22, last row. Row 18: Home Economics / Digital Literacy NOT in the SHS subject lists (Workload.jsx / OrganizedClasses.jsx) - awaiting user. Row 20: needs a CLC assignment-location field - awaiting user. Row 21: no action. Not browser-tested. Server has no Department Head requirement check, so rule 19 is client-only (shared fn ready).
+
+## 2026-10-17 session - Room QR accept
+Done: added the two missing tables to the upsert whitelist. Not run against a DB or browser-tested. Open: confirm ld_trainings has a unique/primary key on id; verify the portal payload row shape end to end.

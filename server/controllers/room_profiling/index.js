@@ -513,6 +513,12 @@ async function executeMultiRowUpsert(
       case "esf7_personnel_learning_areas":
         sql = `INSERT INTO esf7_personnel_learning_areas (${columns.join(", ")}) VALUES ${valueClauses.join(", ")} ON CONFLICT ${conflictTarget} ${doClause} ${retClause}`;
         break;
+      case "esf7_personnel_ld_trainings":
+        sql = `INSERT INTO esf7_personnel_ld_trainings (${columns.join(", ")}) VALUES ${valueClauses.join(", ")} ON CONFLICT ${conflictTarget} ${doClause} ${retClause}`;
+        break;
+      case "esf7_personnel_designations":
+        sql = `INSERT INTO esf7_personnel_designations (${columns.join(", ")}) VALUES ${valueClauses.join(", ")} ON CONFLICT ${conflictTarget} ${doClause} ${retClause}`;
+        break;
       case "esf7_personnel_submission_archive":
         sql = `INSERT INTO esf7_personnel_submission_archive (${columns.join(", ")}) VALUES ${valueClauses.join(", ")} ON CONFLICT ${conflictTarget} ${doClause} ${retClause}`;
         break;
