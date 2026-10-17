@@ -107,3 +107,18 @@ Done: 17, 19, 22, last row. Row 18: Home Economics / Digital Literacy NOT in the
 
 ## 2026-10-17 session - Room QR accept
 Done: added the two missing tables to the upsert whitelist. Not run against a DB or browser-tested. Open: confirm ld_trainings has a unique/primary key on id; verify the portal payload row shape end to end.
+
+## 2026-10-17 session - By Personnel Add Schedule Slot
+Done: shared modal, By Personnel button + section picker, live conflicts, server section-clash rule (unit-checked with a mocked DB). Not browser-tested; no automated test added for the server rule. Open: Save (not the modal) is what writes to the database, same as By Section.
+
+## 2026-10-17 session - profile-based Section/Subject filters
+Done: client filter + empty states, shared matcher, server SECTION_NOT_IN_PROFILE rule (mock-DB checked). Not browser-tested. Open: By Section view can now hit the server rule if a section outside the teacher's grades is chosen; subject-by-grade not enforced server-side.
+
+## 2026-10-17 session - sidebar removal
+Done: sidebar + helper removed, full-width chart, horizontal scroll. Not browser-tested (drag, Ctrl+C/V/Z/Y, Del, conflict detection untouched in code but unverified). Open: confirm the "Add Admin Task" card covers non-teaching staff.
+
+## 2026-10-17 session - Gantt vertical scroll
+Done: full-day grid with scroll viewport, sticky header/TIME, edge markers, drag scroll compensation + auto-scroll. Not browser-tested; the drag math (scroll offset added to pointer distance) and the sticky layout are the first things to check.
+
+## 2026-10-17 session - Visible Grid removed
+Done: fixed-range chart, selector and all supporting code removed (checked in headless Chrome: opens at 4:00 AM, labels to 10:00 PM, old keys cleared, buttons right-aligned). Not exercised in a browser: drag-to-move / drag-create (the test teacher is locked by the no-classes rule) - positions still use the same 1.1 px/min and 4:00 AM origin as before.

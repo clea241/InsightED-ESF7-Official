@@ -3542,7 +3542,7 @@ export const AppProvider = ({ children }) => {
   const isNodeUnlocked = (nodeId) => {
     if (bypassNodeLocks) return true;
     // Nodes locked by default for DepEd review & alignment
-    if (["overload", "workload", "allowances"].includes(nodeId)) return false;
+    if (["overload", "allowances"].includes(nodeId)) return false;
     if (!nodeId) return true;
     return true;
   };

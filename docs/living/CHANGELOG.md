@@ -271,3 +271,86 @@
 
 ## 2026-10-17 - Deploy scripts rebuilt on one shared module
 - deploy_common.py holds all logic; deploy_esf7_staging.py / deploy_esf7_prod.py are thin Target configs. Gate restored (prod strict, staging light, explicit --skip-gate), same-environment config check, BUILD_INFO.json verified on the server and via /api/health/readiness (now reports build.sha), PM2/health/pipeline/schema/smoke checks all required, automatic rollback from .prev with non-zero exit, backup-then-parity-migration on both, no local .env shipped (root cause of a possible prod->staging DB repoint), stale-file cleanup that keeps uploads/logs/.env/node_modules, no ignored command failures, reload-if-exists on both. See docs/ops/deploy.md.
+
+## 2026-10-17 - Workload / By Personnel: Add Schedule Slot
+- The Add Schedule Slot modal is now one shared function (`renderAddSlotModal`) used by By Section and By Personnel. From By Personnel the teacher is fixed and a Section picker is added; subtitle reads "Assign a section to <name>".
+- Conflict check runs live on section, subject, times and days (subject was previously not re-checked) and covers the section's existing slots plus the teacher's own busy schedule.
+- Server: `POST/PUT /api/workloads/...` batch save now also rejects (422 `SECTION_SCHEDULE_CONFLICT`) a new or changed block that overlaps another teacher's saved block in the same section and term. The teacher's own overlaps were already rejected.
+
+## 2026-10-17 - Add Schedule Slot: Section/Subject follow the teacher's profile
+- By Personnel modal: Section lists only sections matching the grade levels assigned to the teacher in Personnel Profiling (same data as the sidebar note); no assigned grades shows "No assigned grades/subjects in profile". Subject stays narrowed by the chosen section's grade and is empty until a section is picked; changing Section keeps the subject only if the grade list is unchanged.
+- `isSectionMatchingTeacherGrades` moved to `shared/teacherSections.js` (client re-exports it) so the server applies the same rule.
+- Server: workload save returns 422 `SECTION_NOT_IN_PROFILE` for a new teaching block whose section is outside the teacher's `esf7_personnel_employment.grade_levels_taught` (read from the database, not the request) and not one they advise.
+
+## 2026-10-17 - Weekly Schedule Editor: right sidebar removed
+- Removed the docked "Select a Schedule Block" panel (Organized Classes, Subjects Taught, Administrative Tasks lists) and its `organizedClassesList` helper. The Gantt chart now fills the editor card; day columns have a 96px minimum and the chart scrolls sideways on narrow screens.
+- Block edit/delete stays in the floating Block Inspector; blocks are created from Add Schedule Slot, the Administrative Tasks card, or by clicking/dragging an empty slot (creates a blank block to complete in the inspector). Pick-a-class/subject-then-click-grid is gone.
+
+## 2026-10-17 - Weekly Schedule Editor toolbar: right-side cluster, time dropdowns
+- Visible Grid, the weekend toggle and Add Schedule Slot now sit together at the right of the toolbar row.
+- Visible Grid start/end are dropdowns (4:00 AM to 10:00 PM, 30-minute steps, 12-hour labels). Options that would make the end not later than the start, or hide scheduled blocks, are disabled. Saving of the range is unchanged.
+
+## 2026-10-17 - Weekly Schedule Editor: free Visible Grid range + vertical scroll
+- Removed the clamp (and its toast) that pulled the Visible Grid start/end back to the earliest/latest scheduled block, and the matching disabled dropdown options. Any start/end within 4:00 AM to 10:00 PM (end after start) is allowed.
+- The grid now always holds the full 4:00 AM to 10:00 PM day inside a scroll area. The chosen range sets the viewport height and the initial scroll position (start time at the top); day header and TIME column stay pinned. Blocks outside the range stay in the grid; a small "N blocks above / below" marker shows at the edges (replaces the Auto-Fit badge). Dragging near the top/bottom edge auto-scrolls.
+
+## 2026-10-17 - Gantt chart height follows the window
+- The scrolling chart now fills the window height below the page header/title/toolbar (window height minus 160px, at least 420px). The Visible Grid range is stretched to fill it (1.1 to 3 px per minute), so the start time stays at the top and the end time at the bottom; very long ranges scroll instead.
+
+## 2026-10-17 - Visible Grid: early-morning range fix, scroll re-apply
+- Fixed: choosing 4:00 or 5:xx AM in the Visible Grid dropdowns was stored as the same hour in the afternoon (`parseMins` guesses PM for hours 1-5 with no AM/PM). The range now uses an exact 24-hour parser (`parseGridTime`).
+- The scroll-to-start is applied after layout and re-applied when sizes change. Checked in headless Chrome at 1366x768 and 1920x1080: 7:00 AM start scrolls to 198px, 9 AM / 5 AM / end changes, reload and Reset all land the start under the header.
+
+## 2026-10-17 - Visible Grid positioning rebuilt as one function
+- `scrollGridToRange` is the single place that positions the chart: target scrollTop is measured from the DOM (body top + minutes since 4:00 AM x px/min - header height). It runs after layout on range / teacher / term / weekend / zoom / size changes, on the dropdowns and the Reset icon (even when the value did not change), for ~20 frames after each change, and again if the scroll slips back, until the user scrolls or clicks in the chart. Console helper: `__ganttScrollDebug()`.
+
+## 2026-10-17 - Visible Grid removed; Gantt chart is a fixed 4:00 AM - 10:00 PM day
+- Removed the Visible Grid selector (label, start/end dropdowns, reset icon) and everything behind it: range state, handlers, reset toast, localStorage saving, the scroll-to-range routine and its console helper, the clamp logic, the "N blocks above/below" markers, and the zoom that stretched the range to the window.
+- The chart uses constants (GRID_START_MINS = 4:00 AM, GRID_END_MINS = 10:00 PM, 1.1 px/min) for the time axis, rows, block positions and heights. It opens at the top (4:00 AM), scrolls inside itself (height = window height - 160px, at least 420px), with the sticky day header and TIME column.
+- Old `esf7_grid_range_*` browser values are deleted on load and nothing reads them.
+- Weekend toggle and Add Schedule Slot are right-aligned together.
+
+## 2026-10-17 - Add Schedule Slot: occupied times are blocked in the dropdowns
+- Start / End time are dropdowns (5-minute steps, 4:00 AM to 10:00 PM). Times the selected teacher already has taken on the toggled days (class slots, advisory, HGP, ARAL, teaching-related and admin tasks of the active term) are disabled and marked "Occupied"; back-to-back slots are allowed. Options recompute live when days or teacher change; an invalid start/end is cleared instead of kept. No free time: "No available times on the selected days." and Add stays disabled.
+- Removed the red "Teacher Schedule Conflict" alert and the "Fix Conflict to Add" label; the section-conflict alert is unchanged.
+- New `shared/occupiedIntervals.js` (interval helper). Saved row times are read as exact 24-hour text on the client (4:00-5:59 AM no longer read as afternoon), and the server's `timeToMins` now treats zero-padded hours ("05:30") as morning.
+- The server still rejects overlapping blocks on save (422 SCHEDULE_CONFLICT) as the final safeguard.
+
+## 2026-10-17 - Weekly Schedule Editor: full screen + floating teacher switcher
+- New icon button left of the weekend toggle ("View full screen" / "Exit full screen"). The editor card becomes a fixed full-viewport layer (z-index 9000) and the browser Fullscreen API is requested on the page; Esc and the browser's own exit both flip the icon back. The card stays in the same place in the React tree, so unsaved edits and the selected teacher are kept. The chart grows to the available height (sticky header and TIME column kept).
+- In full screen a floating pill (bottom-left, in a reserved strip so it covers nothing) shows the current teacher and opens a searchable list on hover or tap. It reuses the page's filtered teacher list and its `confirmAction(() => setActivePersonnelId(id))`, so the unsaved-changes check still applies.
+
+## 2026-10-17 - Sections outside a teacher's profile are blocked everywhere, and flagged when loaded
+- One helper, `isSectionAllowedForPersonnel` (profile grade levels or a section the teacher advises; no grades = no sections), now drives: the Add Schedule Slot section list (and, from By Section, the teacher list), the block inspector's section dropdown (it used to fall back to "every section" when none matched, which let Grade 7 SAWFISH in), Ctrl+V paste and drag-create (a copied section outside the profile is refused / ignored).
+- Blocks already loaded with such a section get a red banner (section, subject, days, time) with "Remove these blocks" (only those blocks; other unsaved edits stay) and a dashed red outline on the chart. A 422 SECTION_NOT_IN_PROFILE shows the server's message and flags the `blockedRowIds` the same way.
+- Server: the profile lookup on workload save now prefers an exact id match over a legacy id / PRN with the same text (plus same school), so the grades checked are those of the person being saved.
+
+## 2026-10-17 - Duplicate subject assignments are prevented, not just reported
+- New `shared/duplicateAssignment.js` (`isDuplicateAssignment`): the one rule (same section, term, subject, a shared day; multigrade grades separate). The Workload page's lookup and the red "Duplicate Subject Assignment" message now use it through `isSubjectAvailableForSection`, and the server uses it on save.
+- Add Schedule Slot and the block inspector grey out subjects already held by another teacher ("Already assigned (Name)") and sections with no free subject left ("no free subjects"). Changing the section (or days / teacher) clears a subject that is no longer free. Moving a block to a day, or toggling a day, that would create a duplicate is refused with a toast (blocks that are already duplicates stay editable and keep the red badge).
+- Server: workload save returns 422 DUPLICATE_SUBJECT_ASSIGNMENT (with blockedRowIds) for a new or changed block that duplicates another teacher's subject in the section.
+
+## 2026-10-17 - Full screen: teacher selector moved into the header row
+- The teacher switcher is now inline at the left of the toolbar controls (full screen only): "TEACHER:" label, person icon, bold name, chevron, accent border and soft shadow, 36px tall. The list opens downward above the chart. The reserved strip at the bottom of the full-screen card is gone. Behavior and data source are unchanged.
+
+## 2026-10-17 - Full screen: Save Changes / Discard in the editor header
+- In full screen, when the draft has unsaved changes (same `isCurrentTeacherDirty` flag as the page banner) the header shows "Save Changes" (spinner and disabled while saving) and "Discard" at the left of the Teacher selector. Save is the banner's `handleSaveChangesDirectly`; Discard is now one shared `discardWorkloadDraft` used by the banner too. A red "N blocks can't be saved (outlined in red)" chip shows while blocks are flagged. The save dialog, toasts and confirmations already render above the full-screen layer.
+
+## 2026-10-17 - Gantt chart scale doubled (1.1 -> 2 px per minute)
+- `GRID_PX_PER_MIN` is now 2 (an hour = 120px; a 30-minute block = 60px), still the single constant behind the time labels, grid lines, block top/height, drag / resize snapping and click-to-create. Hour label boxes now follow it. The Overlap / error badge row only shows on blocks 68px tall or more; every block's tooltip lists subject, grade, section, teacher, time range and any error.
+
+## 2026-10-17 - TIME column: time-of-day gradient and icons
+- The sticky TIME column has one pastel vertical gradient (pre-dawn blue, morning green, late-morning yellow-green, lunch yellow, afternoon orange, evening blue, late-evening violet). Stops are placed as (minutes since GRID_START) / (total grid minutes) from the grid constants, so it follows the hour rows at any scale and scrolls with the grid. Hour labels are #475569 (contrast 6.0:1 or better on every tint).
+- Eight small, faint, non-interactive icons (star, sunrise, three suns drifting left to right, sunset, two moons) sit mid-hour at key times; aria-hidden, pointer-events none.
+
+## 2026-10-17 - Fix: Workload page crash (recordUndoSnapshot / setHasUnsavedChanges)
+- `recordUndoSnapshot` is now declared right after the undo/redo state, above the Clear Invalid Assignments code that lists it in a dependency array (a render-time read before the declaration = "Cannot access 'recordUndoSnapshot' before initialization").
+- `setHasUnsavedChanges` was used inside the editor component but never passed to it (a second ReferenceError behind the first); the page now passes it down.
+- Checked afterwards: no other use-before-define at render time and no undefined names in Workload.jsx. Undo/redo of Clear Invalid, Delete, drag and Paste confirmed in a browser.
+
+## 2026-10-17 - TIME column: stronger time-of-day colours
+- The gradient now uses saturated hues at 45-60% opacity over white (pre-dawn blue, green, yellow-green, yellow, a true orange `#F97316` at 60% for 2-5 PM, evening blue, violet), defined once in `TIME_OF_DAY_STOPS` in Workload.jsx with the same stop positions. Hour labels are `#1E293B` (7.5:1 or better on every stop). The icons are 16px at 90% opacity in darker phase tones (amber, deep orange, indigo, violet); still decorative, aria-hidden and not clickable.
+
+## 2026-10-17 - Unsaved-change markers on schedule blocks
+- `getWorkloadRowChangeStatus(person, term)` compares the current rows with `person.workloadBaseRows` (the same id-keyed baseline the draft delta uses) and returns per-row "new" / "modified" plus a removed count; it only runs while the banner's own dirty flag is on. Blocks show an amber left accent, a corner dot with an accessible label, a dashed amber outline (outside the card) and a tooltip line ("New, not saved yet" / "Modified, not saved yet"). A multi-day block flags every day's card. Nothing changes the card's size.
+- The page banner shows "N unsaved changes" (changed blocks plus removed ones) and the full-screen button reads "Save Changes (N)". Markers clear on save, on Undo back to the saved state, and on Discard; a failed save keeps them.

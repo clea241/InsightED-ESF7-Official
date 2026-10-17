@@ -97,6 +97,20 @@ Each row object inside `workloadRows` contains:
 
 ## 4. Versioned Flow History Log
 
+* **Version 2.0 (2026-10-17)**: Compact Visible Grid Toolbar Controls & 4:00 AM – 10:00 PM Bound Enforcement.
+  * Standardized Visible Grid toolbar container height to 28px and inputs to 20px, aligning with neighboring toolbar controls (Undo/Redo, Show Weekend, + Add Admin Task, Save Schedule).
+  * Reduced input font size (10px), font weight (600), and horizontal padding (0 3px) with a slim 86px width that displays the full time value, AM/PM suffix, and native browser clock icon without text truncation or oversized inputs.
+  * Enforced strict 4:00 AM (`04:00` / 240m) minimum and 10:00 PM (`22:00` / 1320m) maximum bounds across input `min`/`max` attributes and state validation logic.
+  * Guaranteed `endMins > startMins` invariant across typing, pasting, and edge clamping, clamping start to at most 9:30 PM (1290m) and end to at least 4:30 AM (270m).
+  * Expanded `<datalist id="school-times">` to span all 30-minute intervals from `04:00` to `22:00`.
+  * Preserved scheduled block anti-clipping protection, alert badges, and default 7:00 AM – 5:00 PM reset button functionality.
+* **Version 1.9 (2026-10-17)**: Teacher Schedule Weekly Time-Grid Toolbar User-Adjustable Time Range Selector.
+  * Added customizable Start Time and End Time inputs to the Gantt timetable toolbar (`customStartTime`, `customEndTime`) right next to Undo/Redo and Show Weekend controls.
+  * Replaced hardcoded 7:00 AM – 2:00 PM/6:00 PM bounds with user-adjustable values, driving grid row/hour generation (`hourLabels`), total height (`gridHeight`), time-axis tick labels, and vertical card placement across class blocks, admin tasks, and HGP/Advisory cards.
+  * Enforced 30-minute snapping to match datalist increments (`#school-times`), sensible bounds (05:00 AM min, 22:00 PM max, minimum 60-minute duration between start and end).
+  * Prevented range selection from clipping or hiding already-scheduled blocks: clamps selection to earliest and latest scheduled block times with warning notification toasts, backed by dynamic `gridBounds` auto-expansion fallback and toolbar `Auto-Fit` badge.
+  * Persisted chosen time range per user, schedule, and term in `localStorage` (`esf7_grid_range_${schoolId}_${personnelId}_${activeTerm}` and fallback `esf7_grid_range_${schoolId}`).
+  * Preserved drag-to-move, drag-to-resize, drag-to-create, conflict/duplicate detection, and Undo/Redo history across the dynamic time range.
 * **Version 1.8 (2026-10-10)**: Real-Time Dynamic Workload Schedule Conflict Validation & In-Memory Desynchronization Root Fix.
   * Resolved ghost row duplication in Gantt drag-to-move, edge-resize, time-input edits, and day-splitting (`handleMouseUp`, `updateWorkloadRowWithHistory`, `updateWorkloadRowFields`). Fixed index lookup fallback that previously indexed into `allRows` using `rawRows` activeTerm index, creating duplicate/stale rows in state.
   * Corrected singleton special slot day-lock bug (`isSpecialSingletonRow ? rowDays : [targetDay]`) so moving HGP or single-day blocks across days updates `days`, `daySchedule`, and `day_schedule` properly.

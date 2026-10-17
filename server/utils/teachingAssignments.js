@@ -138,6 +138,8 @@ function findBlockedTeachingRows(profileRow, incomingRows, existingRows) {
 }
 
 module.exports = {
+  parseGrades,
+  isNonTeaching,
   getAssignedGrades,
   isTeachingPlotLocked,
   findBlockedTeachingRows,

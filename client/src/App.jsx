@@ -477,11 +477,10 @@ function MainAppContent() {
               {(activeView === "classes" ||
                 activeView === "organized_classes" ||
                 activeView === "organized-classes") && <OrganizedClasses />}
-              {/* DepEd Locked Modules: Workload, Allowances, Overload */}
+              {activeView === "workload" && <Workload />}
+              {/* DepEd Locked Modules: Allowances, Overload */}
               {!appState.bypassNodeLocks &&
-              (activeView === "workload" ||
-                activeView === "allowances" ||
-                activeView === "overload") ? (
+              (activeView === "allowances" || activeView === "overload") ? (
                 <div
                   style={{
                     padding: "60px 20px",
@@ -569,7 +568,6 @@ function MainAppContent() {
                 </div>
               ) : (
                 <>
-                  {activeView === "workload" && <Workload />}
                   {activeView === "overload" && <Overload />}
                   {activeView === "allowances" && <Allowances />}
                 </>

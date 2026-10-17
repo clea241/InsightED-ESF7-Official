@@ -2,9 +2,22 @@ const express = require("express");
 const router = express.Router();
 const db = require("../../db");
 const { resolvePersonnelId } = require("../personnel/common");
-const { findBlockedTeachingRows } = require("../../utils/teachingAssignments");
-const { loadTimeAllotment } = require("../../utils/sharedRules");
-const { validateWorkloadSchedules } = require("../../utils/scheduleValidator");
+const {
+  findBlockedTeachingRows,
+  isExemptFromTeachingLock,
+  isNonTeaching,
+  parseGrades,
+} = require("../../utils/teachingAssignments");
+const {
+  loadTimeAllotment,
+  loadSchoolLevel,
+  loadTeacherSections,
+  loadDuplicateAssignment,
+} = require("../../utils/sharedRules");
+const {
+  validateWorkloadSchedules,
+  timeToMins,
+} = require("../../utils/scheduleValidator");
 const {
   buildExtras,
   reconstructPayload,
@@ -373,6 +386,256 @@ function dedupeRowsById(rows) {
   });
 }
 
+// A teaching block may only be saved for a section that belongs to a grade level assigned to the teacher in
+// Personnel Profiling (esf7_personnel_employment.grade_levels_taught), or one they advise. Read from the database,
+// never from the request. Only new rows, or rows moved to another section, are checked; blocks already saved,
+// admin / advisory / HGP / teaching-related blocks, and non-teaching staff are left alone.
+async function findSectionsOutsideProfile(
+  client,
+  personId,
+  profileGrades,
+  incomingRows,
+  existingRows,
+  profileRow,
+) {
+  if (isNonTeaching(profileRow)) return [];
+  const savedSection = new Map(
+    (existingRows || []).map((r) => [String(r.id), String(r.section_id || "")]),
+  );
+  const toCheck = incomingRows.filter((r) => {
+    if (!r || isExemptFromTeachingLock(r)) return false;
+    const sid = String(r.sectionId || r.section_id || "");
+    if (!sid) return false;
+    return !(r.id && savedSection.get(String(r.id)) === sid);
+  });
+  if (toCheck.length === 0) return [];
+
+  const sectionIds = [
+    ...new Set(toCheck.map((r) => String(r.sectionId || r.section_id))),
+  ];
+  let secRows = [];
+  try {
+    const secRes = await client.query(
+      `SELECT id, grade_level, section_name, COALESCE(section_type, 'MONO GRADE') AS section_type FROM esf7_regular_sections WHERE id = ANY($1)
+       UNION ALL
+       SELECT id, grade_level, section_name, 'SNED' AS section_type FROM esf7_sned_sections WHERE id = ANY($1)
+       UNION ALL
+       SELECT id, grade_level, section_name, 'ALS' AS section_type FROM esf7_als_sections WHERE id = ANY($1)
+       UNION ALL
+       SELECT id, grade_level, section_name, 'ARAL' AS section_type FROM esf7_aral_sections WHERE id = ANY($1)
+       UNION ALL
+       SELECT id, grade_level, section_name, COALESCE(intervention_type, 'REMEDIAL') AS section_type FROM esf7_remedial_enrichment_sections WHERE id = ANY($1)`,
+      [sectionIds],
+    );
+    secRows = secRes.rows;
+  } catch (e) {
+    return []; // section tables unavailable: other rules still apply
+  }
+  const advised = new Set();
+  try {
+    const advRes = await client.query(
+      `SELECT id FROM esf7_regular_sections WHERE id = ANY($1) AND adviser_id = $2`,
+      [sectionIds, personId],
+    );
+    advRes.rows.forEach((r) => advised.add(String(r.id)));
+  } catch (e) {}
+
+  const { isSectionMatchingTeacherGrades } = await loadTeacherSections();
+  const bySection = new Map(secRows.map((s) => [String(s.id), s]));
+  const blocked = [];
+  for (const r of toCheck) {
+    const sid = String(r.sectionId || r.section_id);
+    const sec = bySection.get(sid);
+    if (!sec) continue; // unknown section id: nothing to match against
+    if (advised.has(sid)) continue;
+    const ok =
+      profileGrades.length > 0 &&
+      isSectionMatchingTeacherGrades(
+        {
+          gradeLevel: sec.grade_level,
+          sectionType: sec.section_type,
+          sectionName: sec.section_name,
+        },
+        profileGrades,
+      );
+    if (!ok) blocked.push({ id: r.id || null, section: sec });
+  }
+  return blocked;
+}
+
+// The same subject cannot be held by two teachers in one section, term and shared day (the rule the Workload page
+// shows as "Duplicate Subject Assignment", from shared/duplicateAssignment.js). Only new or changed rows are checked,
+// so older data does not block unrelated edits.
+async function findDuplicateAssignments(client, personId, incomingRows) {
+  const toCheck = incomingRows.filter(
+    (r) => r && !isExemptFromTeachingLock(r) && (r.sectionId || r.section_id),
+  );
+  if (toCheck.length === 0) return [];
+  const sectionIds = [
+    ...new Set(toCheck.map((r) => String(r.sectionId || r.section_id))),
+  ];
+  const dayKey = (d) =>
+    (Array.isArray(d) ? d : [])
+      .map((x) => String(x).trim().toUpperCase())
+      .sort()
+      .join(",");
+  const sig = (r) =>
+    [
+      String(r.sectionId || r.section_id || ""),
+      String(r.subject || "")
+        .trim()
+        .toUpperCase(),
+      timeToMins(r.startTime || r.start_time),
+      timeToMins(r.endTime || r.end_time),
+      dayKey(r.days),
+      r.term || "1st",
+    ].join("|");
+  const mineRes = await client.query(
+    `SELECT section_id, subject, start_time, end_time, days, term FROM esf7_workload_rows WHERE personnel_id = $1`,
+    [personId],
+  );
+  const saved = new Set(mineRes.rows.map((r) => sig(r)));
+  const othersRes = await client.query(
+    `SELECT w.section_id, w.section_name, w.grade_level, w.subject, w.days, w.term, w.extras,
+            p.first_name, p.last_name
+       FROM esf7_workload_rows w
+       LEFT JOIN esf7_personnel_profile p ON p.id = w.personnel_id
+      WHERE w.section_id = ANY($1) AND w.personnel_id <> $2`,
+    [sectionIds, personId],
+  );
+  const { isDuplicateAssignment } = await loadDuplicateAssignment();
+  const found = [];
+  for (const row of toCheck) {
+    if (saved.has(sig(row))) continue;
+    const candidate = {
+      sectionId: row.sectionId || row.section_id,
+      sectionName: row.sectionName || row.section_name,
+      gradeLevel: row.gradeLevel || row.grade_level,
+      subject: row.subject,
+      term: row.term || "1st",
+      days: row.days,
+      subjectGradeLevel: row.subjectGradeLevel || row.subject_grade_level,
+    };
+    for (const o of othersRes.rows) {
+      const ex = o.extras || {};
+      const other = {
+        sectionId: o.section_id,
+        sectionName: o.section_name,
+        gradeLevel: o.grade_level,
+        subject: o.subject,
+        term: o.term || "1st",
+        days: o.days,
+        subjectGradeLevel: ex.subjectGradeLevel || ex.subject_grade_level,
+      };
+      if (!isDuplicateAssignment(candidate, other)) continue;
+      const who =
+        `${o.first_name || ""} ${o.last_name || ""}`.trim() ||
+        "another teacher";
+      found.push({
+        rowId: row.id || null,
+        message: `Duplicate Subject Assignment: Section "${candidate.sectionName || candidate.sectionId}" already has "${row.subject}" assigned to Teacher ${who} in ${candidate.term} Term.`,
+      });
+      break;
+    }
+  }
+  return found;
+}
+
+// A section holds one class at a time (elementary) or one class per subject (JHS/SHS splits). Rejects a new or
+// changed row that overlaps, in the same term, a row another teacher already holds for the same section.
+// Rows saved earlier are left alone so legacy data does not block unrelated edits.
+async function findSectionClashes(client, personId, incomingRows) {
+  const sectionIds = [
+    ...new Set(
+      incomingRows
+        .map((r) => r && (r.sectionId || r.section_id))
+        .filter(Boolean)
+        .map(String),
+    ),
+  ];
+  if (sectionIds.length === 0) return [];
+
+  const dayList = (d) =>
+    (Array.isArray(d) ? d : []).map((x) => String(x).trim().toUpperCase());
+  const norm = (r) =>
+    [
+      String(r.sectionId || r.section_id || ""),
+      String(r.subject || "")
+        .trim()
+        .toUpperCase(),
+      timeToMins(r.startTime || r.start_time),
+      timeToMins(r.endTime || r.end_time),
+      dayList(r.days).sort().join(","),
+      r.term || "1st",
+    ].join("|");
+
+  const mineRes = await client.query(
+    `SELECT section_id, subject, start_time, end_time, days, term FROM esf7_workload_rows WHERE personnel_id = $1`,
+    [personId],
+  );
+  const alreadySaved = new Set(mineRes.rows.map((r) => norm(r)));
+
+  const othersRes = await client.query(
+    `SELECT w.section_id, w.grade_level, w.subject, w.start_time, w.end_time, w.days, w.term, w.extras,
+            p.first_name, p.last_name
+       FROM esf7_workload_rows w
+       LEFT JOIN esf7_personnel_profile p ON p.id = w.personnel_id
+      WHERE w.section_id = ANY($1) AND w.personnel_id <> $2`,
+    [sectionIds, personId],
+  );
+  const { isSectionSlotClash } = await loadSchoolLevel();
+  const isAdvisory = (s) =>
+    String(s || "")
+      .trim()
+      .toUpperCase() === "ADVISORY";
+  const perGrade = (r, ex) =>
+    String((ex || r).subjectGradeLevel || (ex || r).subject_grade_level || "")
+      .trim()
+      .toUpperCase();
+
+  const found = [];
+  for (const row of incomingRows) {
+    if (!row) continue;
+    const sectionId = String(row.sectionId || row.section_id || "");
+    if (!sectionId || isAdvisory(row.subject) || alreadySaved.has(norm(row)))
+      continue;
+    const ns = timeToMins(row.startTime || row.start_time);
+    const ne = timeToMins(row.endTime || row.end_time);
+    if (ns >= 99999 || ne >= 99999 || ns >= ne) continue;
+    const days = dayList(row.days);
+    const term = row.term || "1st";
+    const rowGrade = perGrade(row);
+
+    for (const o of othersRes.rows) {
+      if (String(o.section_id) !== sectionId || (o.term || "1st") !== term)
+        continue;
+      if (isAdvisory(o.subject)) continue;
+      const oGrade = perGrade(o, o.extras || {});
+      if (rowGrade && oGrade && rowGrade !== oGrade) continue; // multigrade: other grade, same slot
+      if (!dayList(o.days).some((d) => days.includes(d))) continue;
+      if (!(ns < timeToMins(o.end_time) && ne > timeToMins(o.start_time)))
+        continue;
+      if (
+        !isSectionSlotClash(
+          row.gradeLevel || row.grade_level || o.grade_level,
+          o.subject,
+          row.subject,
+        )
+      )
+        continue;
+      const who =
+        `${o.first_name || ""} ${o.last_name || ""}`.trim() ||
+        "another teacher";
+      found.push({
+        rowId: row.id || null,
+        message: `This section already has ${o.subject} scheduled (${String(o.start_time).slice(0, 5)} – ${String(o.end_time).slice(0, 5)}, assigned to ${who}). Choose a different time or day.`,
+      });
+      break;
+    }
+  }
+  return found;
+}
+
 // Violations (from shared/timeAllotment.js) that involve at least one new or changed incoming row.
 async function findTimeAllotmentViolations(
   client,
@@ -516,8 +779,17 @@ const saveWorkloadBatchHandler = async (req, res) => {
     // 1. Locate or create personnel profile record to satisfy FK
     const resolvedId = await resolvePersonnelId(client, targetPersonnelId);
     let personRes = await client.query(
-      `SELECT id, school_id, school_year FROM esf7_personnel_profile WHERE id = $1 OR legacy_id = $1 OR prn = $1 OR id = $2 LIMIT 1`,
-      [targetPersonnelId, resolvedId],
+      // An exact id match always wins over a legacy id / PRN that happens to be the same text (a numeric legacy id such as
+      // "176505" could otherwise pick another person's profile, and the profile grades checked below would be theirs).
+      `SELECT id, school_id, school_year FROM esf7_personnel_profile
+        WHERE id = $1 OR legacy_id = $1 OR prn = $1 OR id = $2
+        ORDER BY (id = $1) DESC, (id = $2) DESC, (school_id = $3) DESC, (prn = $1) DESC
+        LIMIT 1`,
+      [
+        targetPersonnelId,
+        resolvedId,
+        String(bodySchoolId || bodySnakeSchoolId || "").replace(/^SCH-/i, ""),
+      ],
     );
 
     // Rule: no teaching blocks for a teacher with no classes assigned in Personnel Profiling.
@@ -549,6 +821,23 @@ const saveWorkloadBatchHandler = async (req, res) => {
         rowsToSave,
         existingSaved,
       );
+      const outsideProfile = await findSectionsOutsideProfile(
+        client,
+        personRes.rows[0].id,
+        parseGrades(empRes.rows[0] && empRes.rows[0].grade_levels_taught),
+        rowsToSave,
+        existingSaved,
+        profileForRule,
+      );
+      if (blocked.length === 0 && outsideProfile.length > 0) {
+        await client.query("ROLLBACK");
+        const first = outsideProfile[0].section;
+        return res.status(422).json({
+          error: "SECTION_NOT_IN_PROFILE",
+          message: `${first.grade_level} — ${first.section_name} is not among the grade levels assigned to this teacher in Personnel Profiling. Update the assignment there first.`,
+          blockedRowIds: outsideProfile.map((b) => b.id),
+        });
+      }
       if (blocked.length > 0) {
         await client.query("ROLLBACK");
         return res.status(422).json({
@@ -591,6 +880,36 @@ const saveWorkloadBatchHandler = async (req, res) => {
       return res.status(422).json({
         error: "SCHEDULE_CONFLICT",
         message: scheduleConflict.error,
+      });
+    }
+
+    // Rule: a section holds one class at a time; another teacher's saved block for it cannot be overlapped.
+    const sectionClashes = await findSectionClashes(
+      client,
+      personRes.rows[0] ? personRes.rows[0].id : targetPersonnelId,
+      rowsToSave,
+    );
+    if (sectionClashes.length > 0) {
+      await client.query("ROLLBACK");
+      return res.status(422).json({
+        error: "SECTION_SCHEDULE_CONFLICT",
+        message: sectionClashes[0].message,
+        blockedRowIds: sectionClashes.map((c) => c.rowId),
+      });
+    }
+
+    // Rule: the same subject cannot be assigned to two teachers in one section (see findDuplicateAssignments).
+    const duplicates = await findDuplicateAssignments(
+      client,
+      personRes.rows[0] ? personRes.rows[0].id : targetPersonnelId,
+      rowsToSave,
+    );
+    if (duplicates.length > 0) {
+      await client.query("ROLLBACK");
+      return res.status(422).json({
+        error: "DUPLICATE_SUBJECT_ASSIGNMENT",
+        message: duplicates[0].message,
+        blockedRowIds: duplicates.map((d) => d.rowId),
       });
     }
 

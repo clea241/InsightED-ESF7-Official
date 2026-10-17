@@ -143,11 +143,12 @@ export default function NodeMap() {
           id: "workload",
           nodeNumber: "06",
           title: "Workload & Timetable",
-          subtitle: "Module temporarily locked for DepEd review & alignment",
+          subtitle: "Teaching schedules, period durations & timetable",
           Icon: FiClock,
           view: "workload",
-          isLockedNode: true,
-          summary: "Locked for DepEd Policy Review",
+          summary: !isInitialized
+            ? "Loading slots..."
+            : `${personnel.reduce((acc, p) => acc + (p.workloadRows?.length || 0), 0)} Workload Slots`,
         },
       ],
     },
@@ -421,11 +422,12 @@ export default function NodeMap() {
                 "requests",
                 "classes",
                 "designation",
+                "workload",
                 "validation",
               ].includes(node.id);
               const isExplicitlyLocked =
                 !bypassNodeLocks &&
-                (["overload", "workload", "allowances"].includes(node.id) ||
+                (["overload", "allowances"].includes(node.id) ||
                   Boolean(node.isLockedNode));
               const isUnlocked =
                 !isExplicitlyLocked &&

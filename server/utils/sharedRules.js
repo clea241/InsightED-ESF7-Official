@@ -41,4 +41,31 @@ async function loadAllowanceRules() {
   return allowanceRules;
 }
 
-module.exports = { loadTimeAllotment, loadScheduleRules, loadAllowanceRules };
+let schoolLevel;
+let teacherSections;
+async function loadSchoolLevel() {
+  if (!schoolLevel) schoolLevel = import(resolveSharedUrl("schoolLevel.js"));
+  return schoolLevel;
+}
+
+let duplicateAssignment;
+async function loadDuplicateAssignment() {
+  if (!duplicateAssignment)
+    duplicateAssignment = import(resolveSharedUrl("duplicateAssignment.js"));
+  return duplicateAssignment;
+}
+
+async function loadTeacherSections() {
+  if (!teacherSections)
+    teacherSections = import(resolveSharedUrl("teacherSections.js"));
+  return teacherSections;
+}
+
+module.exports = {
+  loadTimeAllotment,
+  loadScheduleRules,
+  loadAllowanceRules,
+  loadSchoolLevel,
+  loadTeacherSections,
+  loadDuplicateAssignment,
+};

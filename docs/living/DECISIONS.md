@@ -45,3 +45,6 @@ The whole-body copy is removed in separate steps so a failed check leaves the ol
 
 ## 2026-10-10 One generic payload engine instead of per-table scripts
 The six remaining tables share `utils/payloadExtras.js` (per-table column kinds, strict equality) and one CLI (`migrations/payload_extras.js`). No fills into typed columns: filling would change foreign-key and empty-value behavior (for example `esf7_regular_sections.adviser_id`), so a differing or empty value stays in `extras`. Aliases that a formatter does not re-emit can be listed in the table's `exclude` config so they stay in `extras`; the old-vs-new response comparison is what shows whether any is needed (none was).
+
+## 2026-10-17 - Subject filter uses grade only, not the Learning Area matrix
+Personnel Profiling has no per-teacher subject list; the Learning Area matrix uses its own subject keys. Subjects are narrowed by the section's grade (client catalogue) only. Server-side subject-by-grade checks need the ~1,300-line subject catalogue moved to `shared/`; not done. Revisit if the matrix should gate subjects.

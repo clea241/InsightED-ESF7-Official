@@ -82,7 +82,6 @@ export default function Sidebar() {
           view: "workload",
           label: "06. Workload & Timetable",
           Icon: FiClock,
-          isLocked: !bypassNodeLocks,
         },
       ],
     },

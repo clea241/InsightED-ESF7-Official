@@ -1,7 +1,10 @@
 import { describe, test, expect } from "vitest";
-import { findWorkloadScheduleConflict } from "../../src/pages/Workload.jsx";
+import {
+  findWorkloadScheduleConflict,
+  parseMins,
+} from "../../src/pages/Workload.jsx";
 import scheduleValidatorModule from "../../../server/utils/scheduleValidator.js";
-const { validateWorkloadSchedules } = scheduleValidatorModule;
+const { validateWorkloadSchedules, timeToMins } = scheduleValidatorModule;
 
 describe("findWorkloadScheduleConflict", () => {
   const teacher = {
@@ -520,6 +523,42 @@ describe("findWorkloadScheduleConflict", () => {
         findWorkloadScheduleConflict(advisoryAndScience, acupidoTeacher, "1st"),
       ).toBeNull();
       expect(validateWorkloadSchedules(advisoryAndScience)).toBeNull();
+    });
+
+    test("(18) parseMins and server timeToMins accurately handle AM/PM and 24-hr zero-padded values without false afternoon conversions", () => {
+      // 4:00 AM to 5:00 AM (240 to 300 minutes from midnight)
+      expect(parseMins("04:00")).toBe(240);
+      expect(parseMins("05:00")).toBe(300);
+      expect(parseMins("4:00 AM")).toBe(240);
+      expect(parseMins("5:00 AM")).toBe(300);
+      if (typeof timeToMins === "function") {
+        expect(timeToMins("04:00")).toBe(240);
+        expect(timeToMins("05:00")).toBe(300);
+        expect(timeToMins("4:00 AM")).toBe(240);
+        expect(timeToMins("5:00 AM")).toBe(300);
+      }
+
+      // Boundary: 11:30 AM - 12:15 PM
+      expect(parseMins("11:30 AM")).toBe(690);
+      expect(parseMins("12:15 PM")).toBe(735);
+      expect(parseMins("11:30")).toBe(690);
+      expect(parseMins("12:15")).toBe(735);
+
+      // 12:00 PM (noon = 720 mins) vs 12:00 AM (midnight = 0 mins)
+      expect(parseMins("12:00 PM")).toBe(720);
+      expect(parseMins("12:30 PM")).toBe(750);
+      expect(parseMins("12:00 AM")).toBe(0);
+      expect(parseMins("12:30 AM")).toBe(30);
+
+      // Normal afternoon PM slot (4:00 PM to 5:00 PM = 960 to 1020)
+      expect(parseMins("4:00 PM")).toBe(960);
+      expect(parseMins("5:00 PM")).toBe(1020);
+      expect(parseMins("16:00")).toBe(960);
+      expect(parseMins("17:00")).toBe(1020);
+
+      // Bare single digit without AM/PM falls back to afternoon heuristic
+      expect(parseMins("4:00")).toBe(960);
+      expect(parseMins("1:00")).toBe(780);
     });
   });
 });

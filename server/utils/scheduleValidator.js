@@ -49,7 +49,9 @@ function timeToMins(t) {
   if (isPM && hours < 12) hours += 12;
   if (isAM && hours === 12) hours = 0;
 
-  if (!isPM && !isAM && hours >= 1 && hours < 6) {
+  // A zero-padded hour ("05:30") is 24-hour text, so it is the morning; only bare "2:30"-style times are guessed as PM.
+  const zeroPadded = parts[0].length === 2 && parts[0][0] === "0";
+  if (!isPM && !isAM && hours >= 1 && hours < 6 && !zeroPadded) {
     hours += 12;
   }
 

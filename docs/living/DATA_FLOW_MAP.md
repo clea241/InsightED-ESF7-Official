@@ -50,3 +50,5 @@ Personnel Profile > Learning Area > "Disable Years" -> person.disabledServiceYea
 - Scripts and migrations connect through `DB_DIRECT_PORT`; the app and the worker connect through `DB_PORT`.
 
 | Designations page Save | PUT /api/designations/personnel/:id (per changed person) -> esf7_personnel_designations; PUT /api/designations/na -> esf7_school_designation_na |
+
+| Workload > By Personnel > "+ Add Schedule Slot" > Add Slot to Section | Edits React state only (adds a row to that teacher's workloadRows, marks unsaved). Written to esf7_workload_rows only when Save runs (persistWorkloadToServer -> batch save), where the server checks teacher overlap and section clash. Same path as By Section. |

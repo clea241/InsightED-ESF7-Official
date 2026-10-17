@@ -87,3 +87,11 @@ Sections live in `esf7_regular_sections` (and sibling sned/als/aral/remedial tab
 - A submission is always for the logged-in user's own school. If the request names a different school (in the body or inside the payload) it is refused with 403; if the login has no school it is refused with 403. There is no default school.
 
 - School Head: set/changed ONLY via PUT /api/personnel/school-head-config or PUT /:id/school-head (atomic, verified). Roster bulk save never changes the flag on existing people.
+
+- Section clash (server-enforced on workload save): a new or changed block is refused if it overlaps, in the same term and on a shared day, a block another teacher already has saved for the same section. Elementary: any overlap. JHS/SHS: only the same subject. ADVISORY rows and multigrade blocks for a different grade are exempt. Blocks saved earlier are not re-checked.
+
+- Section vs profile (server-enforced on workload save): a new teaching block (or one moved to another section) must be for a section matching the teacher's assigned grade levels in Personnel Profiling, or one the teacher advises. Exempt: saved blocks, admin / advisory / HGP / teaching-related blocks, non-teaching staff. Subjects are not limited per teacher (the profile has no subject list); the Learning Area matrix is not used.
+
+- The same section-vs-profile rule is applied in the UI (Add Schedule Slot, block inspector, paste, drag-create) so a section outside the teacher's profile cannot be added there; loaded blocks that violate it are flagged and must be removed (or the profile updated) before they can be saved.
+
+- Duplicate subject (UI and server): one subject in one section can be held by only one teacher per term on any shared day. A different grade level of a multigrade section counts as a separate assignment. Applies to new or changed blocks on save; existing duplicates stay visible with the red badge until fixed.
