@@ -324,6 +324,8 @@ class DeployFlow(unittest.TestCase):
             calls, _, _ = self.run_deploy(fail_at=step)
             self.assertIn("release_lock", calls, step)
             self.assertIn("cleanup_archive", calls, step)
+        calls, _, _ = self.run_deploy(fail_at="post_deploy_checks")
+        self.assertLess(calls.index("rollback"), calls.index("release_lock"))
 
     def test_a_failed_rollback_is_reported_loudly(self):
         _, out, code = self.run_deploy(fail_at="post_deploy_checks", rollback_ok=False)

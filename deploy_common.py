@@ -363,17 +363,38 @@ SMOKE_TAGS = (
 def script_smoke(t):
     base = f"http://127.0.0.1:{t.port}/api"
     token_b64 = base64.b64encode(smoke_token_js(t).encode()).decode()
-    hdr = "-H 'Content-Type: application/json' -H 'x-school-id: 000000' -H 'x-smoke-test: 1' -H \"Authorization: Bearer $TOKEN\""
-    body = '{"schoolYear":"SMOKE","payload":{"schoolInfo":{"schoolId":"000000"},"personnel":[],"smoke":true}}'
+    body = '{"schoolYear":"SMOKE","payload":{"schoolInfo":{"schoolId":"000000","schoolName":"SMOKE TEST SCHOOL"},"personnel":[]}}'
     return (
-        f"{PATH_EXPORT}; set -e; "
+        f"{PATH_EXPORT}; "
         f"TOKEN=$(cd {t.remote_root}/server && echo {token_b64} | base64 -d | node -); "
-        f"curl -sf {base}/health/readiness | grep -q '\"db\":\"up\"' && echo HEALTH_OK; "
-        f"test \"$(curl -s -o /dev/null -w '%{{http_code}}' -H 'x-school-id: 000000' '{base}/school/draft?schoolYear=SMOKE')\" = 401 && echo AUTH_OK; "
-        f"curl -s -X POST -H 'Content-Type: application/json' -d '{{\"schoolId\":\"000000\",\"passcode\":\"TEST999\"}}' {base}/room-profiling/verify-passcode | grep -q 'success' && echo PASSCODE_OK; "
-        f"curl -sf -X PUT {hdr} -d '{body}' {base}/school/draft | grep -q '\"success\":true' && echo SAVE_OK; "
-        f"curl -sf {hdr} '{base}/school/draft?schoolYear=SMOKE' | grep -q '\"smoke\":true' && echo READ_OK; "
-        f"curl -sf -X DELETE {hdr} '{base}/school/draft?schoolYear=SMOKE' | grep -q '\"success\":true' && echo CLEANUP_OK"
+        f"H_RES=$(curl -s -w '\\n%{{http_code}}' '{base}/health/readiness'); "
+        f"H_CODE=$(echo \"$H_RES\" | tail -n1); "
+        f"H_BODY=$(echo \"$H_RES\" | sed '$d'); "
+        f"if [ \"$H_CODE\" = \"200\" ] && echo \"$H_BODY\" | grep -q '\"db\":\"up\"'; then echo HEALTH_OK; "
+        f"else echo \"[SMOKE FAIL: HEALTH status=$H_CODE body=$(echo $H_BODY | cut -c 1-200)]\"; fi; "
+        f"A_CODE=$(curl -s -o /dev/null -w '%{{http_code}}' -H 'x-school-id: 000000' '{base}/school/draft?schoolYear=SMOKE'); "
+        f"if [ \"$A_CODE\" = \"401\" ]; then echo AUTH_OK; "
+        f"else echo \"[SMOKE FAIL: AUTH expected 401, got $A_CODE]\"; fi; "
+        f"P_RES=$(curl -s -w '\\n%{{http_code}}' -X POST -H 'Content-Type: application/json' -d '{{\"schoolId\":\"000000\",\"passcode\":\"TEST999\"}}' '{base}/room-profiling/verify-passcode'); "
+        f"P_CODE=$(echo \"$P_RES\" | tail -n1); "
+        f"P_BODY=$(echo \"$P_RES\" | sed '$d'); "
+        f"if [ \"$P_CODE\" = \"200\" ] && echo \"$P_BODY\" | grep -q 'success'; then echo PASSCODE_OK; "
+        f"else echo \"[SMOKE FAIL: PASSCODE status=$P_CODE body=$(echo $P_BODY | cut -c 1-200)]\"; fi; "
+        f"S_RES=$(curl -s -w '\\n%{{http_code}}' -X PUT -H 'Content-Type: application/json' -H 'x-school-id: 000000' -H 'x-smoke-test: 1' -H \"Authorization: Bearer $TOKEN\" -d '{body}' '{base}/school/draft'); "
+        f"S_CODE=$(echo \"$S_RES\" | tail -n1); "
+        f"S_BODY=$(echo \"$S_RES\" | sed '$d'); "
+        f"if [ \"$S_CODE\" = \"200\" ] && echo \"$S_BODY\" | grep -q '\"success\":true'; then echo SAVE_OK; "
+        f"else echo \"[SMOKE FAIL: SAVE status=$S_CODE body=$(echo $S_BODY | cut -c 1-200)]\"; fi; "
+        f"R_RES=$(curl -s -w '\\n%{{http_code}}' -H 'Content-Type: application/json' -H 'x-school-id: 000000' -H 'x-smoke-test: 1' -H \"Authorization: Bearer $TOKEN\" '{base}/school/draft?schoolYear=SMOKE'); "
+        f"R_CODE=$(echo \"$R_RES\" | tail -n1); "
+        f"R_BODY=$(echo \"$R_RES\" | sed '$d'); "
+        f"if [ \"$R_CODE\" = \"200\" ] && node -e \"const d=JSON.parse(process.argv[1]); const s=d&&d.payload&&d.payload.schoolInfo; if(s&&s.schoolId==='000000'&&s.schoolYear==='SMOKE'&&d.version>=1)process.exit(0); process.exit(1);\" \"$R_BODY\" 2>/dev/null; then echo READ_OK; "
+        f"else echo \"[SMOKE FAIL: READ status=$R_CODE body=$(echo $R_BODY | cut -c 1-200)]\"; fi; "
+        f"C_RES=$(curl -s -w '\\n%{{http_code}}' -X DELETE -H 'Content-Type: application/json' -H 'x-school-id: 000000' -H 'x-smoke-test: 1' -H \"Authorization: Bearer $TOKEN\" '{base}/school/draft?schoolYear=SMOKE'); "
+        f"C_CODE=$(echo \"$C_RES\" | tail -n1); "
+        f"C_BODY=$(echo \"$C_RES\" | sed '$d'); "
+        f"if [ \"$C_CODE\" = \"200\" ] && echo \"$C_BODY\" | grep -q '\"success\":true'; then echo CLEANUP_OK; "
+        f"else echo \"[SMOKE FAIL: CLEANUP status=$C_CODE body=$(echo $C_BODY | cut -c 1-200)]\"; fi"
     )
 
 
@@ -714,6 +735,9 @@ class Deployer:
             (success if tag in out else error)(f"Smoke test: {label}")
             ok = ok and tag in out
         if not ok:
+            for line in out.splitlines():
+                if "SMOKE FAIL:" in line:
+                    error(line.strip())
             raise DeployError("Smoke test failed")
 
     def post_deploy_checks(self):
@@ -739,10 +763,14 @@ class Deployer:
             time.sleep(8)
             self.check_health(expect_sha=False, attempts=8)
             self.check_pm2()
+            info("Note: database migrations, consolidation and backfills were NOT reverted (they are additive and safe to stay applied).")
+            info("Verifying the restored previous release against the database schema...")
+            self.check_pipeline_and_schema()
+            self.smoke_test()
         except DeployError as e:
             error(f"Rolled back, but the previous release is not healthy either: {e}")
             return False
-        success("Rolled back: the previous release is running and healthy.")
+        success("Rolled back: the previous release is running and healthy against the migrated schema.")
         return True
 
     # --- main ---
@@ -789,18 +817,24 @@ class Deployer:
             failed = e
         except KeyboardInterrupt:
             failed = DeployError("Interrupted by the user")
-        finally:
-            self.release_lock()
-            self.cleanup_archive()
+        except Exception as e:
+            failed = DeployError(f"Unexpected error: {e}")
 
         if failed is not None:
             error(f"DEPLOY FAILED: {failed}")
-            if self.touched_server:
-                restored = self.rollback()
-                error("Deployment did NOT complete. " + ("The previous release was restored." if restored else "ROLLBACK DID NOT SUCCEED."))
-            else:
-                error("Deployment did NOT complete. The server was not modified.")
+            try:
+                if self.touched_server:
+                    restored = self.rollback()
+                    error("Deployment did NOT complete. " + ("The previous release was restored." if restored else "ROLLBACK DID NOT SUCCEED."))
+                else:
+                    error("Deployment did NOT complete. The server was not modified.")
+            finally:
+                self.release_lock()
+                self.cleanup_archive()
             sys.exit(1)
+
+        self.release_lock()
+        self.cleanup_archive()
 
         print(f"\n{YELLOW}✔️   [6/6] DONE{NC}")
         print(f"\n{GREEN}" + "=" * 60 + f"{NC}")

@@ -2643,6 +2643,34 @@ router.delete("/draft", async (req, res) => {
       if (e.code !== "42P01") throw e;
     }
 
+    if (cleanSchoolId === "000000") {
+      const sidPair = ["000000", "SCH-000000"];
+      await db
+        .query(
+          "DELETE FROM esf7_school_profile WHERE school_id = ANY($1) AND school_year = $2",
+          [sidPair, schoolYear],
+        )
+        .catch(() => {});
+      await db
+        .query(
+          "DELETE FROM esf7_regular_sections WHERE school_id = ANY($1) AND school_year = $2",
+          [sidPair, schoolYear],
+        )
+        .catch(() => {});
+      await db
+        .query(
+          "DELETE FROM esf7_workload_rows WHERE school_id = ANY($1) AND school_year = $2",
+          [sidPair, schoolYear],
+        )
+        .catch(() => {});
+      await db
+        .query(
+          "DELETE FROM esf7_personnel_profile WHERE school_id = ANY($1) AND school_year = $2",
+          [sidPair, schoolYear],
+        )
+        .catch(() => {});
+    }
+
     res.json({ success: true, message: "Draft deleted successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
