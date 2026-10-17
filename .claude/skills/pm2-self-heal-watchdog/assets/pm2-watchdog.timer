@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the PM2 self-heal watchdog every 30 seconds
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=30s
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

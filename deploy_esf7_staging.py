@@ -148,61 +148,74 @@ def main():
 
     # 3. Prepare remote and upload with Auto-Revive retry
     ssh_target = f"{REMOTE_USER}@{REMOTE_HOST}"
-    print(f"\n{YELLOW}📂 [3/5] UPLOADING archive to {REMOTE_HOST} inside {REMOTE_ROOT}...{NC}")
-    
-    prep_cmd = ["ssh"] + SSH_OPTS + [ssh_target, f"mkdir -p {REMOTE_ROOT}"]
-    run_command(prep_cmd, retries=8, delay=5)
+    info("Engaging PM2 watchdog deploy lock (/var/lib/pm2-watchdog/deploy.lock)...")
+    run_command(["ssh"] + SSH_OPTS + [ssh_target, "sudo mkdir -p /var/lib/pm2-watchdog && sudo touch /var/lib/pm2-watchdog/deploy.lock"], retries=3, delay=2)
 
-    scp_cmd = ["scp"] + SSH_OPTS + [ARCHIVE_NAME, f"{ssh_target}:{REMOTE_ROOT}/"]
-    upload_res = run_command(scp_cmd, retries=8, delay=5, timeout=600)
-    if upload_res.returncode != 0:
-        error("Upload failed after 8 attempts! Check SSH key and connection.")
-        sys.exit(1)
-    success("Upload complete.")
+    try:
+        print(f"\n{YELLOW}📂 [3/5] UPLOADING archive to {REMOTE_HOST} inside {REMOTE_ROOT}...{NC}")
+        
+        prep_cmd = ["ssh"] + SSH_OPTS + [ssh_target, f"mkdir -p {REMOTE_ROOT}"]
+        run_command(prep_cmd, retries=8, delay=5)
 
-    # 4. Remote Extraction and PM2 Reset with Auto-Revive retry
-    print(f"\n{YELLOW}⚡ [4/5] REMOTE extraction, production install, and PM2 reset...{NC}")
-    remote_script = (
-        f"mkdir -p {REMOTE_ROOT}/logs {REMOTE_ROOT}/client/dist {REMOTE_ROOT}/dist && "
-        f"cd {REMOTE_ROOT} && "
-        f"tar -xzf {ARCHIVE_NAME} && "
-        f"cp -rf {REMOTE_ROOT}/client/dist/* {REMOTE_ROOT}/dist/ 2>/dev/null || true && "
-        f"sudo chown -R {REMOTE_USER}:{REMOTE_USER} {REMOTE_ROOT} && "
-        "export PATH=$PATH:/usr/local/bin:/home/Administrator1/.local/share/pnpm; "
-        "echo \"       -> Running production npm install...\" && "
-        "npm install --omit=dev --legacy-peer-deps --prefer-offline --no-audit --no-fund 2>&1 | tail -n 10 && "
-        "cd server && npm install --omit=dev --legacy-peer-deps --prefer-offline --no-audit --no-fund 2>&1 | tail -n 10 && "
-        f"cd {REMOTE_ROOT} && "
-        f"pm2 flush {PM2_NAME} 2>/dev/null || true; "
-        f"pm2 delete {PM2_NAME} 2>/dev/null || true; "
-        f"pm2 start {ECOSYSTEM_CONFIG} --update-env && "
-        f"rm -f {ARCHIVE_NAME}"
-    )
-    
-    ssh_deploy_cmd = ["ssh"] + SSH_OPTS + [ssh_target, remote_script]
-    deploy_res = run_command(ssh_deploy_cmd, retries=8, delay=5, timeout=300)
-    if deploy_res.returncode != 0:
-        error("Remote setup failed after retries.")
-        sys.exit(1)
-    success("Remote setup complete.")
+        scp_cmd = ["scp"] + SSH_OPTS + [ARCHIVE_NAME, f"{ssh_target}:{REMOTE_ROOT}/"]
+        upload_res = run_command(scp_cmd, retries=8, delay=5, timeout=600)
+        if upload_res.returncode != 0:
+            error("Upload failed after 8 attempts! Check SSH key and connection.")
+            sys.exit(1)
+        success("Upload complete.")
 
-    # 5. Final Health Check & Auto-Revive Verification
-    print(f"\n{YELLOW}🔍 [5/5] VERIFYING remote PM2 status & API health...{NC}")
-    info("Checking PM2 status...")
-    show_cmd = ["ssh"] + SSH_OPTS + [ssh_target, f"pm2 show {PM2_NAME} | grep status"]
-    res = run_command(show_cmd, capture=True, retries=4, delay=3)
-    print(res.stdout, flush=True)
+        # 4. Remote Extraction and PM2 Reset with Auto-Revive retry
+        print(f"\n{YELLOW}⚡ [4/5] REMOTE extraction, production install, and PM2 reset...{NC}")
+        remote_script = (
+            f"mkdir -p {REMOTE_ROOT}/logs {REMOTE_ROOT}/client/dist {REMOTE_ROOT}/dist && "
+            f"cd {REMOTE_ROOT} && "
+            f"tar -xzf {ARCHIVE_NAME} && "
+            f"cp -rf {REMOTE_ROOT}/client/dist/* {REMOTE_ROOT}/dist/ 2>/dev/null || true && "
+            f"sudo chown -R {REMOTE_USER}:{REMOTE_USER} {REMOTE_ROOT} && "
+            "export PATH=$PATH:/usr/local/bin:/home/Administrator1/.local/share/pnpm; "
+            "echo \"       -> Running production npm install...\" && "
+            "npm install --omit=dev --legacy-peer-deps --prefer-offline --no-audit --no-fund 2>&1 | tail -n 10 && "
+            "cd server && npm install --omit=dev --legacy-peer-deps --prefer-offline --no-audit --no-fund 2>&1 | tail -n 10 && "
+            f"cd {REMOTE_ROOT} && "
+            f"pm2 flush {PM2_NAME} 2>/dev/null || true; "
+            f"pm2 delete {PM2_NAME} 2>/dev/null || true; "
+            f"pm2 start {ECOSYSTEM_CONFIG} --update-env && "
+            f"rm -f {ARCHIVE_NAME}"
+        )
+        
+        ssh_deploy_cmd = ["ssh"] + SSH_OPTS + [ssh_target, remote_script]
+        deploy_res = run_command(ssh_deploy_cmd, retries=8, delay=5, timeout=300)
+        if deploy_res.returncode != 0:
+            error("Remote setup failed after retries.")
+            sys.exit(1)
+        success("Remote setup complete.")
 
-    if "errored" in res.stdout or "stopped" in res.stdout:
-        warn("PM2 process detected in errored/stopped state! Triggering Auto-Revive restart...")
-        revive_cmd = ["ssh"] + SSH_OPTS + [ssh_target, f"pm2 restart {PM2_NAME} --update-env"]
-        run_command(revive_cmd, retries=4, delay=3)
-        success("Auto-Revive triggered for PM2 process.")
+        # 5. Final Health Check & Auto-Revive Verification
+        print(f"\n{YELLOW}🔍 [5/5] VERIFYING remote PM2 status & API health...{NC}")
+        info("Checking PM2 status...")
+        show_cmd = ["ssh"] + SSH_OPTS + [ssh_target, f"pm2 show {PM2_NAME} | grep status"]
+        res = run_command(show_cmd, capture=True, retries=4, delay=3)
+        print(res.stdout, flush=True)
 
-    info("Checking local API endpoint (port 5035)...")
-    verify_cmd = "curl -sf http://127.0.0.1:5035/health || curl -sf http://127.0.0.1:5035/api/health || curl -sf http://127.0.0.1:5035/ || true"
-    health_cmd = ["ssh"] + SSH_OPTS + [ssh_target, verify_cmd]
-    run_command(health_cmd, capture=False, retries=4, delay=3)
+        if "errored" in res.stdout or "stopped" in res.stdout:
+            warn("PM2 process detected in errored/stopped state! Triggering Auto-Revive restart...")
+            revive_cmd = ["ssh"] + SSH_OPTS + [ssh_target, f"pm2 restart {PM2_NAME} --update-env"]
+            run_command(revive_cmd, retries=4, delay=3)
+            success("Auto-Revive triggered for PM2 process.")
+
+        info("Checking local API endpoint (port 5035)...")
+        verify_cmd = "curl -sf http://127.0.0.1:5035/health || curl -sf http://127.0.0.1:5035/api/health || curl -sf http://127.0.0.1:5035/ || true"
+        health_cmd = ["ssh"] + SSH_OPTS + [ssh_target, verify_cmd]
+        run_command(health_cmd, capture=False, retries=4, delay=3)
+    finally:
+        info("Releasing watchdog deploy lock and recording fresh env/config hashes...")
+        unlock_and_hash_cmd = (
+            "sudo rm -f /var/lib/pm2-watchdog/deploy.lock; "
+            "if [ -f /usr/local/bin/watchdog.py ]; then "
+            "sudo python3 /usr/local/bin/watchdog.py --record-hashes 2>/dev/null || true; "
+            "fi"
+        )
+        run_command(["ssh"] + SSH_OPTS + [ssh_target, unlock_and_hash_cmd], retries=3, delay=2)
 
     # Local cleanup
     try:

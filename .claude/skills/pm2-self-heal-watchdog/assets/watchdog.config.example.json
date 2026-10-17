@@ -1,0 +1,107 @@
+{
+  "dry_run": true,
+  "apps": [
+    {
+      "name": "esf7-staging-backend",
+      "pm2_name": "insighted-esf7-staging-backend",
+      "mode": "cluster",
+      "expected_instances": 2,
+      "health_url": "http://127.0.0.1:5035/api/health/live",
+      "health_timeout_s": 5,
+      "port": 5035,
+      "instance_health_base_port": 5300,
+      "lag_field": "event_loop_lag_ms",
+      "env_files": [
+        "/mnt/insighted-esf7-staging/.env",
+        "/mnt/insighted-esf7-staging/ecosystem.esf7-staging.config.cjs"
+      ],
+      "depends_on": ["pgbouncer", "redis", "postgres"],
+      "app_log_files": [],
+      "ecosystem_file": "/mnt/insighted-esf7-staging/ecosystem.esf7-staging.config.cjs",
+      "kill_timeout_ms": 25000,
+      "readiness_url": "http://127.0.0.1:5035/api/health/readiness"
+    },
+    {
+      "name": "esf7-staging-worker",
+      "pm2_name": "insighted-esf7-staging-worker",
+      "mode": "fork",
+      "expected_instances": 1,
+      "health_url": "",
+      "port": 0,
+      "env_files": ["/mnt/insighted-esf7-staging/.env"],
+      "depends_on": ["redis", "postgres"],
+      "heartbeat_file": "/mnt/insighted-esf7-staging/run/worker.heartbeat",
+      "app_log_files": [],
+      "ecosystem_file": "/mnt/insighted-esf7-staging/ecosystem.esf7-staging.config.cjs",
+      "kill_timeout_ms": 25000,
+      "heartbeat_action": "alert"
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "pgbouncer",
+      "systemd_unit": "pgbouncer",
+      "host": "127.0.0.1",
+      "port": 6432,
+      "kind": "pgbouncer"
+    },
+    {
+      "name": "redis",
+      "systemd_unit": "redis-server",
+      "host": "127.0.0.1",
+      "port": 6379,
+      "kind": "redis"
+    },
+    {
+      "name": "postgres",
+      "systemd_unit": "postgresql",
+      "host": "127.0.0.1",
+      "port": 5432,
+      "kind": "postgres"
+    }
+  ],
+  "thresholds": {
+    "check_interval_s": 30,
+    "failure_threshold": 3,
+    "lag_ms": 500,
+    "lag_sustained_s": 180,
+    "cpu_stuck_pct": 90,
+    "cpu_stuck_checks": 3,
+    "cpu_sibling_median_pct": 50,
+    "nginx_burst_count": 10,
+    "nginx_burst_window_s": 60,
+    "fd_pct": 80,
+    "close_wait_max": 500,
+    "heartbeat_stale_s": 300,
+    "idle_in_tx_s": 60,
+    "stagger_wait_s": 60,
+    "kill_escalation_wait_s": 10,
+    "cap_restarts": 3,
+    "cap_window_s": 900,
+    "disk_pct": 97,
+    "alert_dedupe_s": 60,
+    "disk_warn_pct": 90,
+    "pool_starvation_count": 10,
+    "startup_grace_s": 60
+  },
+  "paths": {
+    "state_file": "/var/lib/pm2-watchdog/state.json",
+    "deploy_lock": "/var/lib/pm2-watchdog/deploy.lock",
+    "disabled_file": "/etc/pm2-watchdog/DISABLED",
+    "nginx_error_log": "/var/log/nginx/error.log",
+    "log_file": "/var/log/pm2-watchdog/watchdog.log",
+    "disk_paths": ["/", "/mnt"]
+  },
+  "binaries": {
+    "pm2_bin": "/usr/bin/pm2",
+    "systemctl_bin": "/usr/bin/systemctl",
+    "ss_bin": "/usr/bin/ss"
+  },
+  "alerts": {
+    "channel": "none",
+    "host_label": "insighted-staging"
+  },
+  "nginx_maintenance": {
+    "enabled": false
+  }
+}

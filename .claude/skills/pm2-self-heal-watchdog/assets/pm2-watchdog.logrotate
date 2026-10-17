@@ -1,0 +1,8 @@
+/var/log/pm2-watchdog/*.log {
+    daily
+    rotate 14
+    compress
+    missingok
+    notifempty
+    copytruncate
+}
