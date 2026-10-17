@@ -58,6 +58,10 @@ import { hasActiveAllowance, isAllowanceDisabled } from "@shared/allowances.js";
 import { isRosterSchoolHead } from "@shared/schoolHead.js";
 import { requiresDepartmentHead } from "@shared/schoolLevel.js";
 import {
+  verifyStoredPersonnel,
+  STORED_FIELDS_TO_ADOPT,
+} from "../utils/verifyStored";
+import {
   checkBeforeLeave,
   checkBeforeLeaveDetailed,
   allowNextUnload,
@@ -7002,8 +7006,9 @@ export const AppProvider = ({ children }) => {
       const payloadToPersist = cleanPersonnelDates(
         mergedSnapshot || updatedPerson,
       );
+      let storedRecord = null;
       try {
-        await retryTransient(() =>
+        storedRecord = await retryTransient(() =>
           api.updatePersonnel(rawTargetId, {
             ...payloadToPersist,
             school_id:
@@ -7030,6 +7035,28 @@ export const AppProvider = ({ children }) => {
         failure.cause = apiErr;
         throw failure;
       }
+
+      // The server answered with the record it READ BACK after committing. "Saved" is only true if that record
+      // holds what was sent (first day of service, PhilSys, L&D rows); anything else is an error, never a toast.
+      const problems = verifyStoredPersonnel(payloadToPersist, storedRecord);
+      if (problems.length > 0) {
+        const mismatch = new Error(
+          `Personnel record was not stored as requested: ${problems.join("; ")}`,
+        );
+        mismatch.problems = problems;
+        throw mismatch;
+      }
+      // From here the screen shows what the database holds for these fields, not the local guess.
+      setPersonnel((prev) =>
+        (prev || []).map((p) => {
+          if (String(p.id) !== String(storedRecord.id ?? rawTargetId)) return p;
+          const adopted = {};
+          for (const k of STORED_FIELDS_TO_ADOPT) {
+            if (storedRecord[k] !== undefined) adopted[k] = storedRecord[k];
+          }
+          return { ...p, ...adopted };
+        }),
+      );
     }
 
     if (options.markSaved) {

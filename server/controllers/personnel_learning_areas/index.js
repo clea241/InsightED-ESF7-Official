@@ -1,16 +1,20 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../../db");
+const {
+  resolvePersonnelAliasIds,
+  serializeLearningAreas,
+} = require("../../services/personnelSharedReader");
 
 function formatLearningAreasRecord(row) {
-  if (!row) return null;
+  if (!row) return { learningAreaMap: {}, matrix_data: {} };
+  const serialized = serializeLearningAreas(row);
   return {
     id: row.id,
     personnelId: row.personnel_id,
     personnel_id: row.personnel_id,
-    learningAreaMap: row.matrix_data || {},
-    matrix_data: row.matrix_data || {},
-    rawPayload: row.matrix_data || {},
+    ...serialized,
+    rawPayload: serialized.matrix_data,
   };
 }
 
@@ -21,12 +25,15 @@ router.get("/", async (req, res) => {
     return res.json({ learningAreaMap: {}, matrix_data: {} });
   }
   try {
+    const aliasIds = await resolvePersonnelAliasIds(db, personnel_id);
+    const targetIds = aliasIds.length > 0 ? aliasIds : [personnel_id];
+
     const result = await db.query(
       `SELECT la.* FROM esf7_personnel_learning_areas la
-       LEFT JOIN esf7_personnel_profile p ON p.id = la.personnel_id
-       WHERE la.personnel_id = $1 OR p.prn = $1 OR p.legacy_id = $1
+       WHERE la.personnel_id = ANY($1::text[])
+       ORDER BY la.updated_at DESC
        LIMIT 1`,
-      [personnel_id],
+      [targetIds],
     );
     if (result.rows.length === 0) {
       return res.json({ learningAreaMap: {}, matrix_data: {} });
@@ -45,10 +52,13 @@ router.post("/toggle", async (req, res) => {
     if (!personnelId)
       return res.status(400).json({ error: "personnelId is required" });
 
+    const aliasIds = await resolvePersonnelAliasIds(db, personnelId);
+    const targetIds = aliasIds.length > 0 ? aliasIds : [personnelId];
+
     // Ensure parent profile exists in esf7_personnel_profile
     const personRes = await db.query(
-      `SELECT id, school_id FROM esf7_personnel_profile WHERE id = $1 OR legacy_id = $1 OR prn = $1 LIMIT 1`,
-      [personnelId],
+      `SELECT id, school_id FROM esf7_personnel_profile WHERE id = ANY($1::text[]) OR legacy_id = ANY($1::text[]) OR prn = ANY($1::text[]) LIMIT 1`,
+      [targetIds],
     );
 
     if (personRes.rows.length === 0) {
@@ -61,14 +71,21 @@ router.post("/toggle", async (req, res) => {
     const schoolId = personRes.rows[0].school_id || "108348";
 
     const existing = await db.query(
-      `SELECT matrix_data FROM esf7_personnel_learning_areas WHERE personnel_id = $1 LIMIT 1`,
-      [resolvedPersonnelId],
+      `SELECT matrix_data FROM esf7_personnel_learning_areas WHERE personnel_id = ANY($1::text[]) ORDER BY updated_at DESC LIMIT 1`,
+      [targetIds],
     );
 
     let matrix =
       existing.rows.length > 0 && existing.rows[0].matrix_data
         ? existing.rows[0].matrix_data
         : {};
+    if (typeof matrix === "string") {
+      try {
+        matrix = JSON.parse(matrix);
+      } catch (e) {
+        matrix = {};
+      }
+    }
     const cellKey = `${schoolYear}||${learningArea}`;
 
     if (checked) {
@@ -89,13 +106,20 @@ router.post("/toggle", async (req, res) => {
       RETURNING *;
     `;
 
-    const result = await db.query(query, [
-      laId,
-      resolvedPersonnelId,
-      JSON.stringify(matrix),
-    ]);
+    await db.query(query, [laId, resolvedPersonnelId, JSON.stringify(matrix)]);
 
-    res.json(formatLearningAreasRecord(result.rows[0]));
+    // Verify stored
+    const verifyRes = await db.query(
+      `SELECT * FROM esf7_personnel_learning_areas WHERE personnel_id = $1`,
+      [resolvedPersonnelId],
+    );
+    if (verifyRes.rows.length === 0) {
+      throw new Error(
+        "Verification failed: learning area matrix was not persisted.",
+      );
+    }
+
+    res.json(formatLearningAreasRecord(verifyRes.rows[0]));
   } catch (err) {
     console.error("Error toggling learning area:", err);
     res.status(500).json({ error: err.message });
@@ -106,12 +130,15 @@ router.post("/toggle", async (req, res) => {
 router.get("/:personnel_id", async (req, res) => {
   const { personnel_id } = req.params;
   try {
+    const aliasIds = await resolvePersonnelAliasIds(db, personnel_id);
+    const targetIds = aliasIds.length > 0 ? aliasIds : [personnel_id];
+
     const result = await db.query(
       `SELECT la.* FROM esf7_personnel_learning_areas la
-       LEFT JOIN esf7_personnel_profile p ON p.id = la.personnel_id
-       WHERE la.personnel_id = $1 OR p.prn = $1 OR p.legacy_id = $1
+       WHERE la.personnel_id = ANY($1::text[])
+       ORDER BY la.updated_at DESC
        LIMIT 1`,
-      [personnel_id],
+      [targetIds],
     );
     if (result.rows.length === 0) {
       return res.json({ learningAreaMap: {}, matrix_data: {} });
@@ -136,9 +163,12 @@ router.post("/:personnel_id", async (req, res) => {
       }
     }
 
+    const aliasIds = await resolvePersonnelAliasIds(db, personnel_id);
+    const targetIds = aliasIds.length > 0 ? aliasIds : [personnel_id];
+
     const personRes = await db.query(
-      `SELECT id, school_id FROM esf7_personnel_profile WHERE id = $1 OR legacy_id = $1 OR prn = $1 LIMIT 1`,
-      [personnel_id],
+      `SELECT id, school_id FROM esf7_personnel_profile WHERE id = ANY($1::text[]) OR legacy_id = ANY($1::text[]) OR prn = ANY($1::text[]) LIMIT 1`,
+      [targetIds],
     );
 
     if (personRes.rows.length === 0) {
@@ -167,7 +197,12 @@ router.post("/:personnel_id", async (req, res) => {
       JSON.stringify(targetMap),
     ]);
 
-    res.json(formatLearningAreasRecord(result.rows[0]));
+    const verifyRes = await db.query(
+      `SELECT * FROM esf7_personnel_learning_areas WHERE personnel_id = $1`,
+      [resolvedPersonnelId],
+    );
+
+    res.json(formatLearningAreasRecord(verifyRes.rows[0] || result.rows[0]));
   } catch (err) {
     console.error("Error upserting esf7_personnel_learning_areas:", err);
     res.status(500).json({ error: err.message });

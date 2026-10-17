@@ -260,3 +260,14 @@
 - Root cause (client): the Roster ignored designateSchoolHeadsConfig result and fired "designated as School Head" + synced its baseline regardless.
 - Now: PUT /api/personnel/school-head-config (and PUT /:id/school-head) = one transaction, advisory lock, savepoints for secondary tables, exact-row checks, commit, then read-back and compare; any mismatch = error, nothing reported saved. Client renders the card from the heads the server returns; failure keeps the previous head; no toast (the shared saving modal is the only confirmation).
 - Bulk roster saves (incl. replayed outbox copies) can no longer change is_school_head/is_main_sh on existing rows. Read-back verification added to bulk roster save, personnel delete, and designation N/A save.
+
+## 2026-10-17 - Staging/localhost parity: first day of service, L&D, PhilSys
+- Root cause: staging deploy never runs migrations; startup applies schema.sql only to a brand-new database; several columns the code uses (actual_step, school_reported_step, school_head_level, disabled_service_years, profile.deleted) existed only on dev machines. Room QR roster loader swallowed the resulting query errors (empty roster); Room QR accept dropped L&D conductor/dates/days; free-text dates could shift a day on non-UTC servers.
+- Added server/db/personnelParity.js, migrations/add_personnel_parity_columns.js (additive, idempotent, --dry-run/--check), startup parity check, post-save verification of the stored record, full-row L&D write in Room QR accept, loud Room QR roster errors, timezone-proof date coercion. See docs/ops/staging-parity-checklist.md for deploy steps and the staging checklist.
+
+## 2026-10-17 - Approve & Merge: registry, verification, deploy check
+- executeMultiRowUpsert now uses controllers/room_profiling/upsertRegistry.js (single source of truth; a test fails if the accept code uses an unregistered table). The staging error came from an older build without that table registered.
+- Accept verifies every table inside the transaction before COMMIT (rollback on any mismatch, submission stays queued); startup + scripts/check_merge_pipeline.js fail loudly when a pipeline table or personnel column is missing. See docs/ops/staging-parity-checklist.md.
+
+## 2026-10-17 - Deploy scripts rebuilt on one shared module
+- deploy_common.py holds all logic; deploy_esf7_staging.py / deploy_esf7_prod.py are thin Target configs. Gate restored (prod strict, staging light, explicit --skip-gate), same-environment config check, BUILD_INFO.json verified on the server and via /api/health/readiness (now reports build.sha), PM2/health/pipeline/schema/smoke checks all required, automatic rollback from .prev with non-zero exit, backup-then-parity-migration on both, no local .env shipped (root cause of a possible prod->staging DB repoint), stale-file cleanup that keeps uploads/logs/.env/node_modules, no ignored command failures, reload-if-exists on both. See docs/ops/deploy.md.

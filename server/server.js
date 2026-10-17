@@ -169,6 +169,25 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 //    mode and the app works. This is the ONLY endpoint the frontend server-health lock uses.
 //  - DEEP       GET /api/health, /health, /api/health/deep, /health/deep: also pings Redis. 503 only when PostgreSQL is
 //    unreachable; with Redis down it answers 200 with "degraded": true and per-dependency status in the body.
+// Which build is running. The deploy writes BUILD_INFO.json (git SHA, branch, UTC time, environment) next to the
+// release and compares this value with the commit it just shipped, so a deploy cannot report success while an older
+// build is still being served. Absent file (local dev, old release) = null.
+const BUILD_INFO = (() => {
+  try {
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(__dirname, "..", "BUILD_INFO.json"), "utf8"),
+    );
+    return {
+      sha: raw.sha || null,
+      branch: raw.branch || null,
+      builtAtUtc: raw.builtAtUtc || null,
+      environment: raw.environment || null,
+    };
+  } catch (e) {
+    return null;
+  }
+})();
+
 const publicQueueStatus = () => {
   const { mode, redisReachable, since } = redisQueue.getQueueStatus();
   return { mode, redisReachable, since };
@@ -222,6 +241,7 @@ const checkReadiness = async (req, res) => {
     queue,
     pool,
     error: pg.up ? undefined : pg.error,
+    build: BUILD_INFO,
     time: new Date().toISOString(),
   });
 };
@@ -257,6 +277,7 @@ const checkDeep = async (req, res) => {
     redis: redisUp ? "up" : "down",
     queue: publicQueueStatus(),
     errors: healthy ? undefined : { db: pg.error, redis: redisError },
+    build: BUILD_INFO,
     time: new Date().toISOString(),
   });
 };
@@ -561,6 +582,45 @@ const initDB = async () => {
     );
     console.error(
       "========================================================================\n",
+    );
+  }
+
+  // Schema parity: schema.sql only runs on a brand-new database and never adds columns to existing tables, so a
+  // database created earlier can be BEHIND the code. Say so loudly at startup (read-only; changes nothing).
+  try {
+    const { findParityGaps } = require("./db/personnelParity");
+    const gaps = await findParityGaps((sql, params) => db.query(sql, params));
+    const {
+      findMergePipelineProblems,
+    } = require("./controllers/room_profiling/upsertRegistry");
+    const pipelineProblems = await findMergePipelineProblems((sql, params) =>
+      db.query(sql, params),
+    );
+    pipelineProblems.forEach((problem) =>
+      gaps.push({ table: "Approve & Merge", column: "-", problem }),
+    );
+    if (gaps.length > 0) {
+      const lines = [
+        "",
+        "========================================================================",
+        "SCHEMA BEHIND THE CODE: first day of service, L&D, PhilSys and roster saves can fail.",
+        ...gaps.map(
+          (g) =>
+            `  - ${g.problem}: ${g.table}.${g.column}${g.found ? ` (is ${g.found})` : ""}`,
+        ),
+        "Fix (additive, idempotent): node server/migrations/add_personnel_parity_columns.js --dry-run",
+        "then again without --dry-run. Verify with: ... --check",
+        "========================================================================",
+        "",
+      ];
+      console.error(lines.join("\n"));
+    } else {
+      console.log("✅ Personnel schema parity check passed.");
+    }
+  } catch (parityErr) {
+    console.warn(
+      "⚠️ Personnel schema parity check could not run:",
+      parityErr.message,
     );
   }
 

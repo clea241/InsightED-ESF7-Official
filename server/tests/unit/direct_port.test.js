@@ -115,3 +115,44 @@ test("every database-touching root script loads db/directPort, except the runtim
     });
   expect(missing).toEqual([]);
 });
+
+// DB_DIRECT_HOST: PgBouncer runs ON the VM and forwards to a remote server, so "port 5432 on the same host" is a
+// different database. Ops scripts get the real host through DB_DIRECT_HOST; nothing else changes.
+test("DB_DIRECT_HOST replaces a loopback host (and only a loopback host)", () => {
+  const env = {
+    DB_DIRECT_HOST: "db.azure.example",
+    DB_HOST: "127.0.0.1",
+    DB_PORT: "6432",
+    DATABASE_URL: "postgresql://u:p@127.0.0.1:6432/insighted_esf7_staging",
+    USERS_DATABASE_URL: "postgresql://u:p@other.remote:6432/users",
+  };
+  const changed = applyDirectPort(env);
+  expect(env.DB_HOST).toBe("db.azure.example");
+  expect(env.DB_PORT).toBe("5432");
+  const u = new URL(env.DATABASE_URL);
+  expect([u.hostname, u.port, u.pathname]).toEqual([
+    "db.azure.example",
+    "5432",
+    "/insighted_esf7_staging",
+  ]);
+  // a host that is already remote keeps its host (its port is still moved off the pooler port)
+  expect(new URL(env.USERS_DATABASE_URL).hostname).toBe("other.remote");
+  expect(changed).toEqual(
+    expect.arrayContaining(["DB_PORT", "DB_HOST", "DATABASE_URL"]),
+  );
+});
+
+test("without DB_DIRECT_HOST the host is never touched (behaviour unchanged)", () => {
+  const env = { DB_HOST: "127.0.0.1", DB_PORT: "6432" };
+  applyDirectPort(env);
+  expect(env.DB_HOST).toBe("127.0.0.1");
+});
+
+test("a DB_DIRECT_HOST that equals the current host changes nothing", () => {
+  const env = {
+    DB_DIRECT_HOST: "10.0.0.5",
+    DB_HOST: "10.0.0.5",
+    DB_PORT: "5432",
+  };
+  expect(applyDirectPort(env)).toEqual([]);
+});

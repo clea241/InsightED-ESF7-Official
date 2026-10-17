@@ -13,9 +13,13 @@ function safeCoerceDate(val, fieldName = "date") {
   try {
     return coerceDateField(str, fieldName);
   } catch (e) {
+    // Free text such as "May 31, 2018": read it as a CALENDAR day (local components). toISOString() would convert
+    // through UTC and move the day by one on any server that is not on UTC, so the same input could be stored as
+    // different days on localhost and on staging.
     const d = new Date(str);
     if (!isNaN(d.getTime())) {
-      return d.toISOString().slice(0, 10);
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     }
     return null;
   }
@@ -1489,18 +1493,18 @@ function formatPersonnelRecord(
   const rawEduc = row.educ_raw_payload || {};
   const rawLA = row.la_raw_payload || {};
 
-  const neapRows = [];
-  const certRows = [];
-  const otherRows = [];
+  const {
+    serializeLdTrainings,
+    serializeLearningAreas,
+  } = require("../../services/personnelSharedReader");
 
-  for (const tr of trainingsList) {
-    const formatted = formatTrainingRecord(tr);
-    const type = String(tr.training_type).toUpperCase();
-    if (type === "NEAP") neapRows.push(formatted);
-    else if (type === "TESDA" || type === "CERTIFICATION")
-      certRows.push(formatted);
-    else otherRows.push(formatted);
-  }
+  const {
+    neapTrainingRows: neapRows,
+    certificationRows: certRows,
+    otherTrainingRows: otherRows,
+  } = serializeLdTrainings(trainingsList);
+  const { learningAreaMap: cleanLaMap, matrix_data: cleanMatrixData } =
+    serializeLearningAreas(row.matrix_data || row.learningAreaMap || rawLA);
   const formattedDesignations = designationsList.map(formatDesignationRecord);
   const primaryDesignation =
     formattedDesignations.length > 0
@@ -1743,8 +1747,8 @@ function formatPersonnelRecord(
 
     // Learning Area Matrix Tab
     learningAreaId: row.la_id || null,
-    learningAreaMap: row.matrix_data || {},
-    matrix_data: row.matrix_data || {},
+    learningAreaMap: cleanLaMap,
+    matrix_data: cleanMatrixData,
 
     // Designations Tab (Relational table esf7_personnel_designations with sds_confirmed)
     designation: primaryDesignation,
@@ -1795,4 +1799,14 @@ module.exports = {
     CANONICAL_POSITIONS_BY_CATEGORY["teaching-related"],
   CANONICAL_NON_TEACHING_POSITIONS:
     CANONICAL_POSITIONS_BY_CATEGORY["non-teaching"],
+  resolvePersonnelAliasIds: require("../../services/personnelSharedReader")
+    .resolvePersonnelAliasIds,
+  serializeLdTrainings: require("../../services/personnelSharedReader")
+    .serializeLdTrainings,
+  serializeLearningAreas: require("../../services/personnelSharedReader")
+    .serializeLearningAreas,
+  loadPersonnelNormalizedData: require("../../services/personnelSharedReader")
+    .loadPersonnelNormalizedData,
+  loadSchoolNormalizedData: require("../../services/personnelSharedReader")
+    .loadSchoolNormalizedData,
 };

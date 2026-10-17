@@ -2624,6 +2624,8 @@ export default function PersonnelProfile() {
   // Feature A: Learning Area Matrix State
   const [learningAreaMap, setLearningAreaMap] = useState({}); // key: `${eraKey}||${subjectKey}` -> { checked: boolean, years: number }
   const [learningAreaLoading, setLearningAreaLoading] = useState(false);
+  const [learningAreaError, setLearningAreaError] = useState(null);
+  const [profileLoadError, setProfileLoadError] = useState(null);
 
   // Sidebar search & filter states
   const [personnelSearch, setPersonnelSearch] = useState("");
@@ -2654,15 +2656,50 @@ export default function PersonnelProfile() {
     personnelId: id,
   });
 
+  const reloadProfile = useCallback(
+    (targetId) => {
+      const id = targetId || dbPerson?.id;
+      if (!id) return;
+      setFreshLoadedId(null);
+      setProfileLoadError(null);
+      api
+        .getPersonnelById(id)
+        .then((fresh) => {
+          if (!fresh || String(fresh.id) !== String(id)) return;
+          setProfileLoadError(null);
+          setServerVersion(recordVersion(fresh, canonicalValue));
+          setPersonnel((prev) =>
+            (prev || []).map((x) =>
+              String(x.id) === String(id)
+                ? { ...x, ...fresh, isDraft: x.isDraft }
+                : x,
+            ),
+          );
+          setFreshLoadedId(id);
+        })
+        .catch((err) => {
+          console.warn("Could not load the saved record from the server:", err);
+          setProfileLoadError(
+            err?.message || "Failed to load personnel record from database",
+          );
+          setServerVersion(recordVersion(dbPerson, canonicalValue));
+          setFreshLoadedId(id);
+        });
+    },
+    [dbPerson],
+  );
+
   useEffect(() => {
     const id = dbPerson?.id;
     if (!id) return undefined;
     let cancelled = false;
     setFreshLoadedId(null);
+    setProfileLoadError(null);
     api
       .getPersonnelById(id)
       .then((fresh) => {
         if (cancelled || !fresh || String(fresh.id) !== String(id)) return;
+        setProfileLoadError(null);
         setServerVersion(recordVersion(fresh, canonicalValue));
         setPersonnel((prev) =>
           (prev || []).map((x) =>
@@ -2676,6 +2713,9 @@ export default function PersonnelProfile() {
       .catch((err) => {
         if (cancelled) return;
         console.warn("Could not load the saved record from the server:", err);
+        setProfileLoadError(
+          err?.message || "Failed to load personnel record from database",
+        );
         setServerVersion(recordVersion(dbPerson, canonicalValue));
         setFreshLoadedId(id);
       });
@@ -3395,73 +3435,90 @@ export default function PersonnelProfile() {
   const [showBorrowedPromptModal, setShowBorrowedPromptModal] = useState(false);
 
   // Fetch Learning Areas for active personnel
+  const fetchLearningAreas = useCallback(
+    (personId) => {
+      const targetId = personId || currentPerson?.id;
+      if (!targetId) {
+        setLearningAreaMap({});
+        setLearningAreaError(null);
+        return;
+      }
+      setLearningAreaLoading(true);
+      setLearningAreaError(null);
+
+      let initialMap = {};
+      if (currentPerson?.learningAreaMap || currentPerson?.matrix_data) {
+        initialMap =
+          currentPerson.learningAreaMap || currentPerson.matrix_data || {};
+      }
+      setLearningAreaMap(initialMap);
+
+      api
+        .getLearningAreas(targetId)
+        .then((res) => {
+          setLearningAreaError(null);
+          let incomingMap = res?.learningAreaMap || res?.matrix_data || {};
+          if (Array.isArray(res?.rows)) {
+            const mapped = {};
+            res.rows.forEach((r) => {
+              let areaName = r.learning_area;
+              if (
+                areaName === "Kinder Blocks of Time" ||
+                areaName === "KINDER BLOCKS OF TIME"
+              ) {
+                areaName = "Kinder";
+              }
+              mapped[`${r.school_year}||${areaName}`] = {
+                checked: true,
+                years: Number(r.years_taught || 1),
+              };
+            });
+            incomingMap = { ...incomingMap, ...mapped };
+          }
+
+          // If DB returned 0 learning areas, but we have local draft / verified QR learning areas, PRESERVE THEM!
+          if (
+            Object.keys(incomingMap).length === 0 &&
+            (Object.keys(initialMap).length > 0 ||
+              currentPerson?.learningAreaMap ||
+              currentPerson?.matrix_data)
+          ) {
+            incomingMap =
+              Object.keys(initialMap).length > 0
+                ? initialMap
+                : currentPerson?.learningAreaMap ||
+                  currentPerson?.matrix_data ||
+                  {};
+          }
+
+          const finalMap =
+            incomingMap && typeof incomingMap === "object" ? incomingMap : {};
+          setLearningAreaMap(finalMap);
+        })
+        .catch((err) => {
+          console.error("Failed to fetch learning areas:", err);
+          setLearningAreaError(
+            err?.message || "Failed to load learning areas from database",
+          );
+        })
+        .finally(() => {
+          setLearningAreaLoading(false);
+        });
+    },
+    [
+      currentPerson?.id,
+      currentPerson?.learningAreaMap,
+      currentPerson?.matrix_data,
+    ],
+  );
+
   useEffect(() => {
     if (!currentPerson?.id) {
       setLearningAreaMap({});
+      setLearningAreaError(null);
       return;
     }
-    let isMounted = true;
-    setLearningAreaLoading(true);
-
-    // CRITICAL: Reset learningAreaMap to local/current draft immediately on personnel change before fetching!
-    let initialMap = {};
-    if (currentPerson.learningAreaMap || currentPerson.matrix_data) {
-      initialMap =
-        currentPerson.learningAreaMap || currentPerson.matrix_data || {};
-    }
-    setLearningAreaMap(initialMap);
-
-    api
-      .getLearningAreas(currentPerson.id)
-      .then((res) => {
-        if (!isMounted) return;
-        let incomingMap = res?.learningAreaMap || res?.matrix_data || {};
-        if (Array.isArray(res?.rows)) {
-          const mapped = {};
-          res.rows.forEach((r) => {
-            let areaName = r.learning_area;
-            if (
-              areaName === "Kinder Blocks of Time" ||
-              areaName === "KINDER BLOCKS OF TIME"
-            ) {
-              areaName = "Kinder";
-            }
-            mapped[`${r.school_year}||${areaName}`] = {
-              checked: true,
-              years: Number(r.years_taught || 1),
-            };
-          });
-          incomingMap = { ...incomingMap, ...mapped };
-        }
-
-        // If DB returned 0 learning areas, but we have local draft / verified QR learning areas, PRESERVE THEM!
-        if (
-          Object.keys(incomingMap).length === 0 &&
-          (Object.keys(initialMap).length > 0 ||
-            currentPerson.learningAreaMap ||
-            currentPerson.matrix_data)
-        ) {
-          incomingMap =
-            Object.keys(initialMap).length > 0
-              ? initialMap
-              : currentPerson.learningAreaMap ||
-                currentPerson.matrix_data ||
-                {};
-        }
-
-        const finalMap =
-          incomingMap && typeof incomingMap === "object" ? incomingMap : {};
-        setLearningAreaMap(finalMap);
-      })
-      .catch((err) => {
-        console.error("Failed to fetch learning areas:", err);
-      })
-      .finally(() => {
-        if (isMounted) setLearningAreaLoading(false);
-      });
-    return () => {
-      isMounted = false;
-    };
+    fetchLearningAreas(currentPerson.id);
   }, [currentPerson?.id]);
 
   // Years counted from the first day of service, before any disabled years are taken off.
@@ -10223,6 +10280,66 @@ export default function PersonnelProfile() {
                               Standard Training Credentials
                             </div>
 
+                            {profileLoadError && (
+                              <div
+                                style={{
+                                  gridColumn: "1 / -1",
+                                  padding: "14px 18px",
+                                  background: "#FEF2F2",
+                                  color: "#991B1B",
+                                  border: "1.5px solid #F87171",
+                                  borderRadius: "12px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  gap: "12px",
+                                  marginBottom: "20px",
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "10px",
+                                  }}
+                                >
+                                  <FiAlertCircle size={20} color="#DC2626" />
+                                  <div>
+                                    <div
+                                      style={{
+                                        fontSize: "13px",
+                                        fontWeight: 800,
+                                      }}
+                                    >
+                                      Training Credentials Failed to Load
+                                    </div>
+                                    <div
+                                      style={{
+                                        fontSize: "12px",
+                                        marginTop: "2px",
+                                      }}
+                                    >
+                                      {profileLoadError}
+                                    </div>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="btn secondary"
+                                  onClick={() =>
+                                    reloadProfile(currentPerson?.id)
+                                  }
+                                  style={{
+                                    fontSize: "12px",
+                                    padding: "6px 14px",
+                                    minHeight: "auto",
+                                  }}
+                                >
+                                  Retry
+                                </button>
+                              </div>
+                            )}
+
                             {/* NEAP SECTION */}
                             <div
                               className="credential-group"
@@ -10429,23 +10546,25 @@ export default function PersonnelProfile() {
                                   ),
                                 )}
                                 {(currentPerson.neapTrainingRows || [])
-                                  .length === 0 && (
-                                  <div
-                                    style={{
-                                      padding: "15px",
-                                      background: "#F0F9FF",
-                                      color: "var(--blue)",
-                                      border: "1.5px solid var(--line)",
-                                      borderRadius: "12px",
-                                      fontSize: "13px",
-                                      textAlign: "center",
-                                    }}
-                                  >
-                                    No NEAP trainings added yet. Click “Add NEAP
-                                    Training” to encode credentials, inclusive
-                                    dates (2020 – present), and hours.
-                                  </div>
-                                )}
+                                  .length === 0 &&
+                                  !profileLoadError && (
+                                    <div
+                                      style={{
+                                        padding: "15px",
+                                        background: "#F0F9FF",
+                                        color: "var(--blue)",
+                                        border: "1.5px solid var(--line)",
+                                        borderRadius: "12px",
+                                        fontSize: "13px",
+                                        textAlign: "center",
+                                      }}
+                                    >
+                                      No NEAP trainings added yet. Click “Add
+                                      NEAP Training” to encode credentials,
+                                      inclusive dates (2020 – present), and
+                                      hours.
+                                    </div>
+                                  )}
                               </div>
                             </div>
 
@@ -10619,24 +10738,25 @@ export default function PersonnelProfile() {
                                   ),
                                 )}
                                 {(currentPerson.certificationRows || [])
-                                  .length === 0 && (
-                                  <div
-                                    style={{
-                                      padding: "15px",
-                                      background: "#F0F9FF",
-                                      color: "var(--blue)",
-                                      border: "1.5px solid var(--line)",
-                                      borderRadius: "12px",
-                                      fontSize: "13px",
-                                      textAlign: "center",
-                                    }}
-                                  >
-                                    No TESDA NC / certification records added
-                                    yet. Click “Add TESDA / Certification” to
-                                    encode credentials, inclusive dates (2020 –
-                                    present), and hours.
-                                  </div>
-                                )}
+                                  .length === 0 &&
+                                  !profileLoadError && (
+                                    <div
+                                      style={{
+                                        padding: "15px",
+                                        background: "#F0F9FF",
+                                        color: "var(--blue)",
+                                        border: "1.5px solid var(--line)",
+                                        borderRadius: "12px",
+                                        fontSize: "13px",
+                                        textAlign: "center",
+                                      }}
+                                    >
+                                      No TESDA NC / certification records added
+                                      yet. Click “Add TESDA / Certification” to
+                                      encode credentials, inclusive dates (2020
+                                      – present), and hours.
+                                    </div>
+                                  )}
                               </div>
                             </div>
 
@@ -10857,23 +10977,24 @@ export default function PersonnelProfile() {
                                   ),
                                 )}
                                 {(currentPerson.otherTrainingRows || [])
-                                  .length === 0 && (
-                                  <div
-                                    style={{
-                                      padding: "15px",
-                                      background: "#F0F9FF",
-                                      color: "var(--blue)",
-                                      border: "1.5px solid var(--line)",
-                                      borderRadius: "12px",
-                                      fontSize: "13px",
-                                      textAlign: "center",
-                                    }}
-                                  >
-                                    No other trainings added yet. Click “Add
-                                    training” to encode inclusive dates and
-                                    hours.
-                                  </div>
-                                )}
+                                  .length === 0 &&
+                                  !profileLoadError && (
+                                    <div
+                                      style={{
+                                        padding: "15px",
+                                        background: "#F0F9FF",
+                                        color: "var(--blue)",
+                                        border: "1.5px solid var(--line)",
+                                        borderRadius: "12px",
+                                        fontSize: "13px",
+                                        textAlign: "center",
+                                      }}
+                                    >
+                                      No other trainings added yet. Click “Add
+                                      training” to encode inclusive dates and
+                                      hours.
+                                    </div>
+                                  )}
                               </div>
                             </div>
                           </>
@@ -11635,6 +11756,87 @@ export default function PersonnelProfile() {
                                 gap: "16px",
                               }}
                             >
+                              {learningAreaError && (
+                                <div
+                                  style={{
+                                    padding: "14px 18px",
+                                    background: "#FEF2F2",
+                                    color: "#991B1B",
+                                    border: "1.5px solid #F87171",
+                                    borderRadius: "12px",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    gap: "12px",
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: "10px",
+                                    }}
+                                  >
+                                    <FiAlertCircle size={20} color="#DC2626" />
+                                    <div>
+                                      <div
+                                        style={{
+                                          fontSize: "13px",
+                                          fontWeight: 800,
+                                        }}
+                                      >
+                                        Learning Area Matrix Failed to Load
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: "12px",
+                                          marginTop: "2px",
+                                        }}
+                                      >
+                                        {learningAreaError}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="btn secondary"
+                                    onClick={() =>
+                                      fetchLearningAreas(currentPerson?.id)
+                                    }
+                                    style={{
+                                      fontSize: "12px",
+                                      padding: "6px 14px",
+                                      minHeight: "auto",
+                                    }}
+                                  >
+                                    Retry
+                                  </button>
+                                </div>
+                              )}
+
+                              {learningAreaLoading && (
+                                <div
+                                  style={{
+                                    padding: "20px",
+                                    textAlign: "center",
+                                    color: "var(--muted)",
+                                    fontSize: "13px",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    gap: "8px",
+                                    background: "#F8FAFC",
+                                    border: "1px dashed var(--line)",
+                                    borderRadius: "12px",
+                                  }}
+                                >
+                                  <FiRefreshCw className="spin" size={16} />
+                                  <span>
+                                    Loading learning areas from database...
+                                  </span>
+                                </div>
+                              )}
+
                               <div
                                 style={{
                                   display: "flex",

@@ -141,21 +141,41 @@ router.get("/:id", async (req, res) => {
     }
 
     const row = result.rows[0];
-    const trRes = await db.query(
-      `SELECT * FROM esf7_personnel_ld_trainings WHERE personnel_id = $1 ORDER BY created_at ASC`,
-      [row.id],
-    );
-    const dsgRes = await db.query(
-      `SELECT * FROM esf7_personnel_designations WHERE personnel_id = $1 ORDER BY created_at ASC`,
-      [row.id],
-    );
+    const {
+      resolvePersonnelAliasIds,
+    } = require("../../services/personnelSharedReader");
+    const aliasIds = await resolvePersonnelAliasIds(db, row);
+    const targetIds = aliasIds.length > 0 ? aliasIds : [row.id];
+
+    const [trRes, laRes, dsgRes] = await Promise.all([
+      db.query(
+        `SELECT * FROM esf7_personnel_ld_trainings WHERE personnel_id = ANY($1::text[]) ORDER BY created_at ASC`,
+        [targetIds],
+      ),
+      db
+        .query(
+          `SELECT * FROM esf7_personnel_learning_areas WHERE personnel_id = ANY($1::text[]) ORDER BY updated_at DESC LIMIT 1`,
+          [targetIds],
+        )
+        .catch(() => ({ rows: [] })),
+      db.query(
+        `SELECT * FROM esf7_personnel_designations WHERE personnel_id = ANY($1::text[]) ORDER BY created_at ASC`,
+        [targetIds],
+      ),
+    ]);
+
+    if (laRes.rows.length > 0 && laRes.rows[0].matrix_data) {
+      row.matrix_data = laRes.rows[0].matrix_data;
+      row.la_id = laRes.rows[0].id;
+    }
+
     // Version of the saved record = the newest write across profile, employment, education,
     // learning areas, trainings and designations (the unsaved-changes draft is tied to it).
     {
       let newest = row.record_updated_at
         ? new Date(row.record_updated_at)
         : null;
-      for (const r of [...trRes.rows, ...dsgRes.rows]) {
+      for (const r of [...trRes.rows, ...dsgRes.rows, ...laRes.rows]) {
         const t = new Date(r.updated_at || r.created_at || 0);
         if (!isNaN(t) && (!newest || t > newest)) newest = t;
       }
@@ -164,14 +184,14 @@ router.get("/:id", async (req, res) => {
     const [wklRes, shsWklRes] = await Promise.all([
       db
         .query(
-          `SELECT * FROM esf7_workload_rows WHERE personnel_id = $1 ORDER BY created_at ASC`,
-          [row.id],
+          `SELECT * FROM esf7_workload_rows WHERE personnel_id = ANY($1::text[]) ORDER BY created_at ASC`,
+          [targetIds],
         )
         .catch(() => ({ rows: [] })),
       db
         .query(
-          `SELECT * FROM esf7_shs_workload_rows WHERE personnel_id = $1 ORDER BY created_at ASC`,
-          [row.id],
+          `SELECT * FROM esf7_shs_workload_rows WHERE personnel_id = ANY($1::text[]) ORDER BY created_at ASC`,
+          [targetIds],
         )
         .catch(() => ({ rows: [] })),
     ]);
@@ -185,8 +205,8 @@ router.get("/:id", async (req, res) => {
     }
 
     const admRes = await db.query(
-      `SELECT * FROM esf7_admin_task WHERE personnel_id = $1 ORDER BY created_at ASC`,
-      [row.id],
+      `SELECT * FROM esf7_admin_task WHERE personnel_id = ANY($1::text[]) ORDER BY created_at ASC`,
+      [targetIds],
     );
 
     res.json(
@@ -1951,20 +1971,29 @@ router.put("/:id", async (req, res) => {
 
     await client.query("COMMIT");
 
-    const trRes = await db.query(
-      `SELECT * FROM esf7_personnel_ld_trainings WHERE personnel_id = $1 ORDER BY created_at ASC`,
-      [updatedProfile.id],
-    );
+    const {
+      resolvePersonnelAliasIds: resolveAliases,
+    } = require("../../services/personnelSharedReader");
+    const saveAliases = await resolveAliases(db, updatedProfile);
+    const saveTargetIds =
+      saveAliases.length > 0 ? saveAliases : [updatedProfile.id];
 
-    const laRes = await db.query(
-      `SELECT * FROM esf7_personnel_learning_areas WHERE personnel_id = $1 LIMIT 1`,
-      [updatedProfile.id],
-    );
-
-    const dsgRes = await db.query(
-      `SELECT * FROM esf7_personnel_designations WHERE personnel_id = $1 ORDER BY created_at ASC`,
-      [updatedProfile.id],
-    );
+    const [trRes, laRes, dsgRes] = await Promise.all([
+      db.query(
+        `SELECT * FROM esf7_personnel_ld_trainings WHERE personnel_id = ANY($1::text[]) ORDER BY created_at ASC`,
+        [saveTargetIds],
+      ),
+      db
+        .query(
+          `SELECT * FROM esf7_personnel_learning_areas WHERE personnel_id = ANY($1::text[]) ORDER BY updated_at DESC LIMIT 1`,
+          [saveTargetIds],
+        )
+        .catch(() => ({ rows: [] })),
+      db.query(
+        `SELECT * FROM esf7_personnel_designations WHERE personnel_id = ANY($1::text[]) ORDER BY created_at ASC`,
+        [saveTargetIds],
+      ),
+    ]);
 
     const laRow = laRes.rows.length > 0 ? laRes.rows[0] : {};
 

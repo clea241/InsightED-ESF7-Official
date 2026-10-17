@@ -114,6 +114,7 @@ export default function RoomQR({ isModal = false, onClose } = {}) {
   // High-performance atomic accept & error states
   const [isAccepting, setIsAccepting] = useState(false);
   const [acceptError, setAcceptError] = useState(null);
+  const [queueError, setQueueError] = useState(null);
   // Historical approved submissions from server
   const [approvedSubmissions, setApprovedSubmissions] = useState([]);
 
@@ -951,6 +952,7 @@ export default function RoomQR({ isModal = false, onClose } = {}) {
 
     // 2. Server Ephemeral RAM submissions from mobile teachers
     try {
+      setQueueError(null);
       const remoteList = await api.getPendingRoomSubmissions(activeSchoolId);
       if (Array.isArray(remoteList)) {
         for (const rem of remoteList) {
@@ -979,6 +981,9 @@ export default function RoomQR({ isModal = false, onClose } = {}) {
       }
     } catch (e) {
       console.warn("[RoomQR] Pending submissions fetch notice:", e.message);
+      setQueueError(
+        e.message || "Failed to load pending submissions from server",
+      );
     }
 
     setPendingSubmissions(Array.from(itemsMap.values()));
@@ -3050,6 +3055,54 @@ export default function RoomQR({ isModal = false, onClose } = {}) {
       )}
 
       {/* Global Error Banner */}
+      {queueError && (
+        <div
+          style={{
+            padding: "14px 18px",
+            background: "#FEE2E2",
+            color: "#991B1B",
+            border: "1.5px solid #F87171",
+            borderRadius: "12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "12px",
+            boxShadow: "0 4px 12px rgba(239, 68, 68, 0.1)",
+            marginBottom: "12px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <FiAlertCircle size={20} color="#DC2626" />
+            <div>
+              <div style={{ fontSize: "13px", fontWeight: 800 }}>
+                Submission Queue Failed to Load
+              </div>
+              <div
+                style={{
+                  fontSize: "12px",
+                  fontWeight: "normal",
+                  marginTop: "2px",
+                }}
+              >
+                {queueError}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn secondary"
+            onClick={() => loadPendingSubmissions()}
+            style={{
+              fontSize: "12px",
+              padding: "6px 14px",
+              minHeight: "auto",
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {acceptError && (
         <div
           style={{

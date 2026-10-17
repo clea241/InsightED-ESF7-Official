@@ -6,6 +6,7 @@ const cacheService = require("../../services/cacheService");
 const { passcodeLimiter } = require("../../middleware/rateLimiter");
 const { validateRequest, z } = require("../../middleware/validate");
 const { handleControllerError } = require("../../utils/poolErrors");
+const { buildMultiRowUpsertSql } = require("./upsertRegistry");
 
 // Ensure ephemeral queue table & cross-device lockout table exist
 let isTableInitialized = false;
@@ -499,34 +500,15 @@ async function executeMultiRowUpsert(
       : `DO ${updateClause}`;
 
     const retClause = updateClause.startsWith("NOTHING") ? "" : "RETURNING *";
-    let sql;
-    switch (tableName) {
-      case "esf7_personnel_profile":
-        sql = `INSERT INTO esf7_personnel_profile (${columns.join(", ")}) VALUES ${valueClauses.join(", ")} ON CONFLICT ${conflictTarget} ${doClause} ${retClause}`;
-        break;
-      case "esf7_personnel_employment":
-        sql = `INSERT INTO esf7_personnel_employment (${columns.join(", ")}) VALUES ${valueClauses.join(", ")} ON CONFLICT ${conflictTarget} ${doClause} ${retClause}`;
-        break;
-      case "esf7_perssonel_educ":
-        sql = `INSERT INTO esf7_perssonel_educ (${columns.join(", ")}) VALUES ${valueClauses.join(", ")} ON CONFLICT ${conflictTarget} ${doClause} ${retClause}`;
-        break;
-      case "esf7_personnel_learning_areas":
-        sql = `INSERT INTO esf7_personnel_learning_areas (${columns.join(", ")}) VALUES ${valueClauses.join(", ")} ON CONFLICT ${conflictTarget} ${doClause} ${retClause}`;
-        break;
-      case "esf7_personnel_ld_trainings":
-        sql = `INSERT INTO esf7_personnel_ld_trainings (${columns.join(", ")}) VALUES ${valueClauses.join(", ")} ON CONFLICT ${conflictTarget} ${doClause} ${retClause}`;
-        break;
-      case "esf7_personnel_designations":
-        sql = `INSERT INTO esf7_personnel_designations (${columns.join(", ")}) VALUES ${valueClauses.join(", ")} ON CONFLICT ${conflictTarget} ${doClause} ${retClause}`;
-        break;
-      case "esf7_personnel_submission_archive":
-        sql = `INSERT INTO esf7_personnel_submission_archive (${columns.join(", ")}) VALUES ${valueClauses.join(", ")} ON CONFLICT ${conflictTarget} ${doClause} ${retClause}`;
-        break;
-      default:
-        throw new Error(
-          `Unsupported table for executeMultiRowUpsert: ${tableName}`,
-        );
-    }
+    // The accepted tables live in upsertRegistry.js (the single source of truth, also checked at startup).
+    const sql = buildMultiRowUpsertSql({
+      tableName,
+      columns,
+      valueClauses,
+      conflictTarget,
+      doClause,
+      retClause,
+    });
 
     const res = await client.query(sql, flatParams);
     totalCount += res.rowCount || 0;
@@ -1268,7 +1250,11 @@ router.post("/accept", async (req, res, next) => {
         allTrainings.length > 0 &&
         (shouldFieldUpdate("neapTrainingRows") ||
           shouldFieldUpdate("certificationRows") ||
-          shouldFieldUpdate("otherTrainingRows"))
+          shouldFieldUpdate("otherTrainingRows") ||
+          shouldFieldUpdate("trainings") ||
+          shouldFieldUpdate("trainingRows") ||
+          shouldFieldUpdate("ld") ||
+          shouldFieldUpdate("development"))
       ) {
         trainingReplaceIds.push(resolvedId);
       } else {
@@ -1282,14 +1268,22 @@ router.post("/accept", async (req, res, next) => {
           personnel_id: resolvedId,
           training_type: tr.type || tr.training_type || "NEAP",
           title: tr.title || tr.programTitle || "Training Program",
-          total_hours: Number(tr.totalHours || tr.hours) || 0,
+          conductor: tr.conductor ? String(tr.conductor).trim() : null,
+          start_date: parseDateVal(tr.startDate || tr.start_date),
+          end_date: parseDateVal(tr.endDate || tr.end_date),
+          days:
+            tr.days === undefined || tr.days === null || tr.days === ""
+              ? null
+              : Math.round(Number(tr.days)) || 0,
+          total_hours: Number(tr.totalHours || tr.total_hours || tr.hours) || 0,
           created_at: now,
+          updated_at: now,
         });
       }
 
       // 4b. Learning area matrix -> esf7_personnel_learning_areas (only when the submission
       // actually carries one, so an absent/empty map never overwrites the saved matrix).
-      let laMap = sub.learningAreaMap || sub.matrix_data;
+      let laMap = sub.learningAreaMap || sub.matrix_data || sub.matrixData;
       if (typeof laMap === "string") {
         try {
           laMap = JSON.parse(laMap);
@@ -1301,7 +1295,11 @@ router.post("/accept", async (req, res, next) => {
         laMap &&
         typeof laMap === "object" &&
         Object.keys(laMap).length > 0 &&
-        shouldFieldUpdate("learningAreaMap")
+        (shouldFieldUpdate("learningAreaMap") ||
+          shouldFieldUpdate("learningAreas") ||
+          shouldFieldUpdate("learning_areas") ||
+          shouldFieldUpdate("matrixData") ||
+          shouldFieldUpdate("matrix_data"))
       ) {
         learningAreaUpsertRows.push({
           id: `LA-${cleanSchoolId}-${String(resolvedId).slice(0, 8)}`,
@@ -1645,8 +1643,13 @@ router.post("/accept", async (req, res, next) => {
             "personnel_id",
             "training_type",
             "title",
+            "conductor",
+            "start_date",
+            "end_date",
+            "days",
             "total_hours",
             "created_at",
+            "updated_at",
           ],
           "(id)",
           "NOTHING",
@@ -1701,6 +1704,69 @@ router.post("/accept", async (req, res, next) => {
           payload_json = EXCLUDED.payload_json,
           created_at = EXCLUDED.created_at`,
         archiveUpsertRows,
+      );
+
+      // G. Read everything back inside the SAME transaction. If any table does not hold what was just written
+      // (a statement that silently skipped rows, a missing column, ...), this throws, the whole transaction rolls
+      // back, the submission stays in the queue and the personnel's existing values are untouched. The queue entry is
+      // only ever marked approved by a transaction that has verified itself and then committed.
+      const uniq = (list) => [...new Set(list.map(String))];
+      const verify = async (label, sql, params, expected, exact = true) => {
+        const r = await client.query(sql, params);
+        const got = r.rows.length;
+        if (exact ? got !== expected : got < expected) {
+          throw new Error(
+            `Verification failed after saving ${label}: expected ${expected}, found ${got}. Nothing was saved.`,
+          );
+        }
+        return r.rows;
+      };
+      await verify(
+        "the profiles",
+        "SELECT id FROM esf7_personnel_profile WHERE id = ANY($1::text[])",
+        [uniq(profileUpsertRows.map((r) => r.id))],
+        uniq(profileUpsertRows.map((r) => r.id)).length,
+      );
+      await verify(
+        "employment",
+        "SELECT personnel_id FROM esf7_personnel_employment WHERE personnel_id = ANY($1::text[])",
+        [uniq(employmentUpsertRows.map((r) => r.personnel_id))],
+        uniq(employmentUpsertRows.map((r) => r.personnel_id)).length,
+      );
+      if (trainingReplaceIds.length > 0) {
+        const wanted = new Map();
+        for (const t of trainingsInsertRows) {
+          wanted.set(t.personnel_id, (wanted.get(t.personnel_id) || 0) + 1);
+        }
+        const counts = await client.query(
+          `SELECT personnel_id, COUNT(*)::int AS n FROM esf7_personnel_ld_trainings
+            WHERE personnel_id = ANY($1::text[]) GROUP BY personnel_id`,
+          [uniq(trainingReplaceIds)],
+        );
+        const have = new Map(
+          counts.rows.map((r) => [String(r.personnel_id), r.n]),
+        );
+        for (const id of uniq(trainingReplaceIds)) {
+          if ((have.get(id) || 0) !== (wanted.get(id) || 0)) {
+            throw new Error(
+              `Verification failed after saving L&D trainings for ${id}: expected ${wanted.get(id) || 0} row(s), found ${have.get(id) || 0}. Nothing was saved.`,
+            );
+          }
+        }
+      }
+      if (learningAreaUpsertRows.length > 0) {
+        await verify(
+          "learning areas",
+          "SELECT personnel_id FROM esf7_personnel_learning_areas WHERE personnel_id = ANY($1::text[])",
+          [uniq(learningAreaUpsertRows.map((r) => r.personnel_id))],
+          uniq(learningAreaUpsertRows.map((r) => r.personnel_id)).length,
+        );
+      }
+      await verify(
+        "the submission archive",
+        "SELECT id FROM esf7_personnel_submission_archive WHERE id = ANY($1::text[]) AND status = 'APPROVED'",
+        [uniq(archiveUpsertRows.map((r) => r.id))],
+        uniq(archiveUpsertRows.map((r) => r.id)).length,
       );
 
       await client.query("COMMIT");
@@ -2523,12 +2589,17 @@ router.post("/sync-roster", async (req, res, next) => {
 // Single read path for Room QR: same normalized tables + shared formatter as Personnel
 // Profiling (GET /api/personnel). Used by /roster AND /verify-passcode so the teacher
 // object the form hydrates from is always complete (service date, PhilSys, L&D, learning areas).
+// A failing query (for example a column the database does not have yet) is allowed to fail loudly: swallowing it
+// returned an EMPTY roster, so the portal quietly showed blank fields on a database that was behind the code.
 async function loadRoomRosterFromDb(cleanSchoolId) {
+  // Reads normalized tables (esf7_personnel_ld_trainings, esf7_personnel_learning_areas) via loadSchoolNormalizedData
   const sidPair = [cleanSchoolId, `SCH-${cleanSchoolId}`];
-  const [{ rows }, trRes] = await Promise.all([
-    db
-      .query(
-        `
+  const {
+    loadSchoolNormalizedData,
+  } = require("../../services/personnelSharedReader");
+  const [profRes, normalizedSchoolData] = await Promise.all([
+    db.query(
+      `
     SELECT
       p.*,
       e.position_category, e.position, e.step_increment, e.actual_step,
@@ -2539,56 +2610,61 @@ async function loadRoomRosterFromDb(cleanSchoolId) {
       ed.highest_educational_attainment, ed.shs_track, ed.vocational_course,
       ed.vocational_level, ed.college_degree, ed.college_degrees, ed.major,
       ed.minor, ed.post_graduate_degree, ed.post_graduate_discipline,
-      ed.eligibility, ed.prc_specialization,
-      la.matrix_data
+      ed.eligibility, ed.prc_specialization
     FROM esf7_personnel_profile p
     LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
     LEFT JOIN esf7_perssonel_educ ed ON p.id = ed.personnel_id
-    LEFT JOIN esf7_personnel_learning_areas la ON p.id = la.personnel_id
     WHERE p.school_id = ANY($1)
     ORDER BY p.last_name ASC, p.first_name ASC
   `,
-        [sidPair],
-      )
-      .catch(() => ({ rows: [] })),
-    db
-      .query(
-        `SELECT t.* FROM esf7_personnel_ld_trainings t
-       JOIN esf7_personnel_profile p ON p.id = t.personnel_id
-       WHERE p.school_id = ANY($1) ORDER BY t.created_at ASC`,
-        [sidPair],
-      )
-      .catch(() => ({ rows: [] })),
+      [sidPair],
+    ),
+    loadSchoolNormalizedData(db, cleanSchoolId),
   ]);
 
-  if (!rows || rows.length === 0) return [];
-  {
-    const { formatPersonnelRecord } = require("../personnel/common");
-    const trainingsByPerson = new Map();
-    for (const t of trRes.rows) {
-      const k = String(t.personnel_id).toUpperCase();
-      if (!trainingsByPerson.has(k)) trainingsByPerson.set(k, []);
-      trainingsByPerson.get(k).push(t);
-    }
-    const formatted = rows.map((r) => {
-      const f = formatPersonnelRecord(
-        r,
-        trainingsByPerson.get(String(r.id).toUpperCase()) || [],
-        [],
-      );
-      const fn = String(f.firstName || "").trim();
-      const ln = String(f.lastName || "").trim();
-      return {
-        ...f,
-        name: ln && fn ? `${ln}, ${fn}` : ln || fn || "Teacher",
-        profilingCode: "",
-        sourceConfirmed: true,
-        isFallback: false,
-      };
-    });
+  const rows = profRes.rows || [];
+  if (rows.length === 0) return [];
 
-    return formatted;
-  }
+  const { formatPersonnelRecord } = require("../personnel/common");
+  const formatted = rows.map((r) => {
+    const norm = normalizedSchoolData.getForTeacher(
+      r.id,
+      r.prn,
+      r.employee_no,
+      r.legacy_id,
+    );
+    const combinedTrainings = [
+      ...norm.neapTrainingRows,
+      ...norm.certificationRows,
+      ...norm.otherTrainingRows,
+    ];
+    const f = formatPersonnelRecord(
+      {
+        ...r,
+        matrix_data: norm.matrix_data,
+        learningAreaMap: norm.learningAreaMap,
+      },
+      combinedTrainings,
+      [],
+    );
+    f.neapTrainingRows = norm.neapTrainingRows;
+    f.certificationRows = norm.certificationRows;
+    f.otherTrainingRows = norm.otherTrainingRows;
+    f.learningAreaMap = norm.learningAreaMap;
+    f.matrix_data = norm.matrix_data;
+
+    const fn = String(f.firstName || "").trim();
+    const ln = String(f.lastName || "").trim();
+    return {
+      ...f,
+      name: ln && fn ? `${ln}, ${fn}` : ln || fn || "Teacher",
+      profilingCode: "",
+      sourceConfirmed: true,
+      isFallback: false,
+    };
+  });
+
+  return formatted;
 }
 
 router.get("/roster", async (req, res, next) => {

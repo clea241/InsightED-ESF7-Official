@@ -875,8 +875,29 @@ router.get("/", async (req, res) => {
       if (pId && seenFinalIds.has(pId)) continue;
       if (nKey && seenFinalNames.has(nKey)) continue;
       if (pId) seenFinalIds.add(pId);
-      if (nKey) seenFinalNames.add(nKey);
       dedupedMergedList.push(p);
+    }
+
+    const {
+      loadSchoolNormalizedData,
+    } = require("../../services/personnelSharedReader");
+    const normalizedSchoolData = await loadSchoolNormalizedData(
+      db,
+      cleanSchoolId,
+    );
+
+    for (const p of dedupedMergedList) {
+      const norm = normalizedSchoolData.getForTeacher(
+        p.id,
+        p.prn,
+        p.employeeNo || p.employee_no,
+        p.legacyId || p.legacy_id,
+      );
+      p.neapTrainingRows = norm.neapTrainingRows;
+      p.certificationRows = norm.certificationRows;
+      p.otherTrainingRows = norm.otherTrainingRows;
+      p.learningAreaMap = norm.learningAreaMap;
+      p.matrix_data = norm.matrix_data;
     }
 
     const total = dedupedMergedList.length;
