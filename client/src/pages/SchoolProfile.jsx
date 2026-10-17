@@ -79,6 +79,7 @@ export default function SchoolProfile() {
     completeNode,
     setActiveView,
     activeTerm,
+    runSaveFlow,
   } = useApp();
   const { user } = useAuth();
   const currentOfferings = Array.isArray(schoolInfo.curricularOffering)
@@ -963,9 +964,6 @@ export default function SchoolProfile() {
       if (completeNode) {
         completeNode("school", null);
       }
-      if (showToast) {
-        showToast("School Profile configuration saved to database.", "success");
-      }
       return { ok: true };
     } catch (err) {
       console.error("Failed to save configuration:", err);
@@ -986,12 +984,6 @@ export default function SchoolProfile() {
         console.warn("[Outbox Failed Save Error]:", outboxErr);
       }
 
-      reportError(err, {
-        action: "Saving School Profile",
-        handler: "runSchoolProfileSave",
-        schoolId: schoolInfo.schoolId,
-      });
-
       return {
         ok: false,
         title: "School Profile Not Saved",
@@ -1007,10 +999,16 @@ export default function SchoolProfile() {
   // Header Save opens the typed-CONFIRM step; confirming it runs the same save the unsaved-changes dialog uses.
   const handleConfirmAndProceed = async () => {
     if (confirmInput.trim().toUpperCase() !== "CONFIRM") return;
-    const result = await runSchoolProfileSave();
-    if (result.ok === false && showAlert) {
-      await showAlert(result.title, result.message);
-    }
+    await runSaveFlow(
+      {
+        title: "Saving School Profile",
+        message: "Saving school profile to database...",
+        successTitle: "School profile saved",
+        successMessage: "School Profile configuration saved to database.",
+        errorTitle: "School profile not saved",
+      },
+      () => runSchoolProfileSave(),
+    );
   };
 
   return (

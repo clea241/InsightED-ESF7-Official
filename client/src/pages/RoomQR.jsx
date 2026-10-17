@@ -50,6 +50,8 @@ export default function RoomQR({ isModal = false, onClose } = {}) {
     savePersonnelChanges,
     schoolInfo,
     setActiveView,
+    beginSaveFlow,
+    runSaveFlow,
   } = useApp() || {};
   const effectivePersonnel = useMemo(() => {
     return (Array.isArray(appPersonnel) ? appPersonnel : []).map((p) => {
@@ -1211,71 +1213,134 @@ export default function RoomQR({ isModal = false, onClose } = {}) {
     return merged;
   };
 
+  // Blocks a second Approve & Merge while one is in flight (state alone can lag a fast double-click).
+  const acceptLockRef = useRef(false);
+
+  const submissionLabel = (sub) =>
+    String(
+      sub?.personnelName ||
+        `${sub?.firstName || sub?.rawProfile?.firstName || ""} ${sub?.lastName || sub?.rawProfile?.lastName || ""}`.trim() ||
+        sub?.personnelId ||
+        sub?.id ||
+        "Teacher",
+    ).trim();
+
+  // Applies a SUCCESSFUL server response to local state. The server's saved records are the
+  // only source used, so the screen cannot drift from the database. Throws if the server
+  // confirmed nothing, so the caller keeps the item pending.
+  const applyAcceptResult = (res, acceptedSubs) => {
+    const saved = (res && res.updatedPersonnel) || [];
+    if (!res || !res.success || saved.length === 0) {
+      throw new Error(
+        res?.error || "The server did not confirm the save of this record.",
+      );
+    }
+
+    if (setPersonnel) {
+      setPersonnel((prev) => {
+        const list = Array.isArray(prev) ? [...prev] : [];
+        for (const updated of saved) {
+          const uId = String(updated.id).trim();
+          const idx = list.findIndex((p) => String(p.id).trim() === uId);
+          if (idx !== -1) {
+            list[idx] = { ...list[idx], ...updated };
+          } else {
+            list.push(updated);
+          }
+        }
+        return list;
+      });
+    }
+
+    const savedIds = new Set(saved.map((u) => String(u.id).trim()));
+    for (const updated of saved) {
+      const uId = String(updated.id).trim();
+      try {
+        localStorage.setItem(`draft_personnel_${uId}`, JSON.stringify(updated));
+        if (updated.learningAreaMap) {
+          localStorage.setItem(
+            `draft_learning_areas_${uId}`,
+            JSON.stringify(updated.learningAreaMap),
+          );
+        }
+      } catch (e) {}
+      localStorage.removeItem(`pending_submission_${uId}`);
+    }
+
+    setPendingSubmissions((prev) =>
+      prev.filter((s) => {
+        const sId = String(
+          s.personnelId || s.id || s.rawProfile?.id || "",
+        ).trim();
+        const sameSub = (acceptedSubs || []).some(
+          (a) =>
+            a === s || (a.submissionId && a.submissionId === s.submissionId),
+        );
+        return !sameSub && !savedIds.has(sId);
+      }),
+    );
+    if (res.approvedSubmissions && res.approvedSubmissions.length > 0) {
+      setApprovedSubmissions((prev) => [...res.approvedSubmissions, ...prev]);
+    }
+    return saved;
+  };
+
+  // "Approve and Merge All": one request (= one DB transaction) per record, so a failure on one
+  // teacher never leaves half-written data and never blocks the others. Failures stay pending.
   const handleCommitAllSubmissions = async () => {
-    if (pendingSubmissions.length === 0 || isAccepting) return;
+    if (pendingSubmissions.length === 0 || isAccepting || acceptLockRef.current)
+      return;
+    acceptLockRef.current = true;
     setIsAccepting(true);
     setAcceptError(null);
+    const queue = [...pendingSubmissions];
+    const failures = [];
+    let savedCount = 0;
+    let alert = null;
     try {
-      const res = await api.acceptRoomSubmissions({
-        schoolId: activeSchoolId,
-        submissions: pendingSubmissions,
-      });
-
-      if (!res || !res.success) {
-        throw new Error(res?.error || "Failed to accept all submissions");
-      }
-
-      const updatedList = res.updatedPersonnel || [];
-
-      // Update in-memory state directly without redundant network refetching
-      if (setPersonnel && updatedList.length > 0) {
-        setPersonnel((prev) => {
-          const list = Array.isArray(prev) ? [...prev] : [];
-          for (const updated of updatedList) {
-            const uId = String(updated.id).trim();
-            const idx = list.findIndex((p) => String(p.id).trim() === uId);
-            if (idx !== -1) {
-              list[idx] = { ...list[idx], ...updated };
-            } else {
-              list.push(updated);
-            }
-          }
-          return list;
-        });
-      }
-
-      // Update local storage drafts
-      for (const updated of updatedList) {
-        const uId = String(updated.id).trim();
+      alert = beginSaveFlow({ title: "Approve & Merge All" });
+      if (!alert) return;
+      for (let i = 0; i < queue.length; i++) {
+        alert.progress(i + 1, queue.length);
         try {
-          localStorage.setItem(
-            `draft_personnel_${uId}`,
-            JSON.stringify(updated),
-          );
-          if (updated.learningAreaMap) {
-            localStorage.setItem(
-              `draft_learning_areas_${uId}`,
-              JSON.stringify(updated.learningAreaMap),
-            );
-          }
-        } catch (e) {}
-        localStorage.removeItem(`pending_submission_${uId}`);
+          const res = await api.acceptRoomSubmissions({
+            schoolId: activeSchoolId,
+            submissions: [queue[i]],
+          });
+          applyAcceptResult(res, [queue[i]]);
+          savedCount++;
+        } catch (err) {
+          console.error("Accept submission error:", err);
+          failures.push({
+            name: submissionLabel(queue[i]),
+            message: err?.message || "Unknown error",
+          });
+        }
       }
 
-      // Clear pending submissions and add to approved state
-      setPendingSubmissions([]);
-      if (res.approvedSubmissions && res.approvedSubmissions.length > 0) {
-        setApprovedSubmissions((prev) => [...res.approvedSubmissions, ...prev]);
+      if (failures.length === 0) {
+        alert.success(
+          `Merged and saved ${savedCount} teacher profiling record(s) to the database.`,
+          "Saved to database",
+        );
+      } else {
+        const list = failures
+          .map((f) => `• ${f.name}: ${f.message}`)
+          .join("\n");
+        setAcceptError(
+          `${failures.length} of ${queue.length} record(s) were not saved and remain pending.`,
+        );
+        alert.error(
+          `Saved ${savedCount} of ${queue.length}. These ${failures.length} stay pending so nothing is lost:\n${list}`,
+          { heading: "Some records were not saved" },
+        );
       }
-
-      setIngestionSuccess(
-        `✓ Approved & Merged ${res.count || updatedList.length} Teacher Profiling Record(s) directly into your Local Draft Roster!`,
-      );
-      setTimeout(() => setIngestionSuccess(""), 6000);
     } catch (err) {
       console.error("Accept all submissions error:", err);
       setAcceptError(err.message || "Failed to approve submissions");
+      if (alert) alert.error(err.message || "Failed");
     } finally {
+      acceptLockRef.current = false;
       setIsAccepting(false);
     }
   };
@@ -1825,10 +1890,14 @@ export default function RoomQR({ isModal = false, onClose } = {}) {
 
   // Commit reviewed data to central context with selective field-level merging
   const handleCommitReview = async () => {
-    if (!pendingReviewData || isAccepting) return;
+    if (!pendingReviewData || isAccepting || acceptLockRef.current) return;
+    acceptLockRef.current = true;
     setIsAccepting(true);
     setAcceptError(null);
+    let alert = null;
     try {
+      alert = beginSaveFlow({ title: "Approve & Merge" });
+      if (!alert) return;
       // Find current existing record in effectivePersonnel
       const current =
         effectivePersonnel.find(
@@ -2223,61 +2292,24 @@ export default function RoomQR({ isModal = false, onClose } = {}) {
         selectedFields: Array.from(selectedFieldsToMerge),
       });
 
-      if (!res || !res.success) {
-        throw new Error(res?.error || "Failed to accept reviewed submission");
-      }
+      // Local state is updated only from what the server confirmed it saved.
+      const [savedPerson] = applyAcceptResult(res, [pendingReviewData]);
 
-      const savedPerson =
-        (res.updatedPersonnel && res.updatedPersonnel[0]) || mergedProfile;
-
-      // Update in-memory state directly without redundant network refetching
-      if (setPersonnel) {
-        setPersonnel((prev) => {
-          const list = Array.isArray(prev) ? [...prev] : [];
-          const idx = list.findIndex(
-            (p) => String(p.id).trim() === String(savedPerson.id).trim(),
-          );
-          if (idx !== -1) {
-            list[idx] = { ...list[idx], ...savedPerson };
-          } else {
-            list.push(savedPerson);
-          }
-          return list;
-        });
-      }
-
-      try {
-        localStorage.setItem(
-          `draft_personnel_${savedPerson.id}`,
-          JSON.stringify(savedPerson),
-        );
-      } catch (e) {}
-      localStorage.removeItem(`pending_submission_${savedPerson.id}`);
-
-      // Update pending submissions and approved lists locally
-      setPendingSubmissions((prev) =>
-        prev.filter((s) => {
-          const sId = String(
-            s.personnelId || s.id || s.rawProfile?.id || "",
-          ).trim();
-          return sId !== String(savedPerson.id).trim();
-        }),
-      );
-
-      if (res.approvedSubmissions && res.approvedSubmissions.length > 0) {
-        setApprovedSubmissions((prev) => [...res.approvedSubmissions, ...prev]);
-      }
-
-      setIngestionSuccess(
-        `✓ Approved & Merged: Updated ${selectedFieldsToMerge.size} selected field(s) for ${pendingReviewData.firstName || ""} ${pendingReviewData.lastName || ""}!`,
-      );
+      const who =
+        `${savedPerson.firstName || ""} ${savedPerson.lastName || ""}`.trim();
+      const msg = `Merged and saved ${selectedFieldsToMerge.size} selected field(s) for ${who} to the database.`;
       setShowReviewModal(false);
       setPendingReviewData(null);
-      setTimeout(() => setIngestionSuccess(""), 6000);
+      alert.success(msg, "Saved to database");
     } catch (err) {
       console.error("Accept review submission error:", err);
       setAcceptError(err.message || "Failed to approve reviewed submission");
+      if (alert)
+        alert.error(
+          `${err.message || "Failed to approve reviewed submission"}\nThe submission stays pending.`,
+        );
     } finally {
+      acceptLockRef.current = false;
       setIsAccepting(false);
     }
   };
@@ -2515,10 +2547,14 @@ export default function RoomQR({ isModal = false, onClose } = {}) {
   }, [approvedSubmissions, verifiedTeachers]);
 
   const handleCommitSingle = async (pSub) => {
-    if (!pSub || isAccepting) return;
+    if (!pSub || isAccepting || acceptLockRef.current) return;
+    acceptLockRef.current = true;
     setIsAccepting(true);
     setAcceptError(null);
+    let alert = null;
     try {
+      alert = beginSaveFlow({ title: "Approve & Merge" });
+      if (!alert) return;
       const fullProfile =
         pSub.rawProfile || (pSub.fn ? decompressProfile(pSub) : pSub);
       const targetId = String(
@@ -2538,67 +2574,22 @@ export default function RoomQR({ isModal = false, onClose } = {}) {
         },
       });
 
-      if (!res || !res.success) {
-        throw new Error(res?.error || "Failed to accept submission");
-      }
+      // Local state is updated only from what the server confirmed it saved.
+      const [savedPerson] = applyAcceptResult(res, [pSub]);
 
-      const savedPerson = (res.updatedPersonnel && res.updatedPersonnel[0]) || {
-        ...fullProfile,
-        id: targetId,
-        personalVerified: true,
-        isVerified: true,
-        verified: true,
-      };
-
-      // Direct in-memory state update to avoid redundant refetches
-      if (setPersonnel) {
-        setPersonnel((prev) => {
-          const list = Array.isArray(prev) ? [...prev] : [];
-          const idx = list.findIndex((p) => String(p.id).trim() === targetId);
-          if (idx !== -1) {
-            list[idx] = { ...list[idx], ...savedPerson };
-          } else {
-            list.push(savedPerson);
-          }
-          return list;
-        });
-      }
-
-      try {
-        localStorage.setItem(
-          `draft_personnel_${targetId}`,
-          JSON.stringify(savedPerson),
-        );
-        if (savedPerson.learningAreaMap) {
-          localStorage.setItem(
-            `draft_learning_areas_${targetId}`,
-            JSON.stringify(savedPerson.learningAreaMap),
-          );
-        }
-      } catch (e) {}
-      localStorage.removeItem(`pending_submission_${targetId}`);
-
-      setPendingSubmissions((prev) =>
-        prev.filter((s) => {
-          const sId = String(
-            s.personnelId || s.id || s.rawProfile?.id || "",
-          ).trim();
-          return sId !== targetId && s.submissionId !== pSub.submissionId;
-        }),
-      );
-
-      if (res.approvedSubmissions && res.approvedSubmissions.length > 0) {
-        setApprovedSubmissions((prev) => [...res.approvedSubmissions, ...prev]);
-      }
-
-      setIngestionSuccess(
-        `✓ Approved & Merged profiling details for ${savedPerson.firstName || ""} ${savedPerson.lastName || ""} into local draft!`,
-      );
-      setTimeout(() => setIngestionSuccess(""), 6000);
+      const who =
+        `${savedPerson.firstName || ""} ${savedPerson.lastName || ""}`.trim();
+      const msg = `Merged and saved profiling details for ${who} to the database.`;
+      alert.success(msg, "Saved to database");
     } catch (err) {
       console.error("Accept single submission error:", err);
       setAcceptError(err.message || "Failed to approve submission");
+      if (alert)
+        alert.error(
+          `${err.message || "Failed to approve submission"}\nThe submission stays pending.`,
+        );
     } finally {
+      acceptLockRef.current = false;
       setIsAccepting(false);
     }
   };
@@ -4685,10 +4676,24 @@ export default function RoomQR({ isModal = false, onClose } = {}) {
                                               decomp,
                                             );
                                           if (savePersonnelChanges) {
-                                            await savePersonnelChanges(
-                                              targetId,
-                                              merged,
+                                            const flow = await runSaveFlow(
+                                              {
+                                                title: "Re-applying Submission",
+                                                message:
+                                                  "Saving previous submission to database...",
+                                                successTitle:
+                                                  "Submission re-applied",
+                                                successMessage: `Re-applied previous submission for ${displayName} and saved it to the database.`,
+                                                errorTitle: "Not re-applied",
+                                              },
+                                              () =>
+                                                savePersonnelChanges(
+                                                  targetId,
+                                                  merged,
+                                                  { silentToast: true },
+                                                ),
                                             );
+                                            if (!flow.ok) return;
                                           }
                                           try {
                                             localStorage.setItem(
@@ -4705,14 +4710,6 @@ export default function RoomQR({ isModal = false, onClose } = {}) {
                                             }
                                           } catch (e) {}
                                         }
-                                        setRestoreFeedback({
-                                          type: "success",
-                                          text: `✓ Successfully re-applied previous submission for ${displayName}!`,
-                                        });
-                                        setTimeout(
-                                          () => setRestoreFeedback(null),
-                                          5000,
-                                        );
                                       }}
                                       style={{
                                         background: "#059669",

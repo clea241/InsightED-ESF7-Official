@@ -715,6 +715,8 @@ router.post("/accept", async (req, res, next) => {
     const updatedPersonnelList = [];
     const approvedSubmissionsList = [];
     const personnelIdsInBatch = [];
+    const trainingReplaceIds = [];
+    const learningAreaUpsertRows = [];
 
     const now = new Date();
     const timestampNow = now.getTime();
@@ -1260,6 +1262,19 @@ router.post("/accept", async (req, res, next) => {
           : []),
       ];
 
+      // Only replace a person's saved L&D when the submission actually carries training
+      // rows (and the field was selected). An empty/missing list must never wipe saved rows.
+      if (
+        allTrainings.length > 0 &&
+        (shouldFieldUpdate("neapTrainingRows") ||
+          shouldFieldUpdate("certificationRows") ||
+          shouldFieldUpdate("otherTrainingRows"))
+      ) {
+        trainingReplaceIds.push(resolvedId);
+      } else {
+        allTrainings.length = 0;
+      }
+
       for (let tIdx = 0; tIdx < allTrainings.length; tIdx++) {
         const tr = allTrainings[tIdx];
         trainingsInsertRows.push({
@@ -1269,6 +1284,30 @@ router.post("/accept", async (req, res, next) => {
           title: tr.title || tr.programTitle || "Training Program",
           total_hours: Number(tr.totalHours || tr.hours) || 0,
           created_at: now,
+        });
+      }
+
+      // 4b. Learning area matrix -> esf7_personnel_learning_areas (only when the submission
+      // actually carries one, so an absent/empty map never overwrites the saved matrix).
+      let laMap = sub.learningAreaMap || sub.matrix_data;
+      if (typeof laMap === "string") {
+        try {
+          laMap = JSON.parse(laMap);
+        } catch (e) {
+          laMap = null;
+        }
+      }
+      if (
+        laMap &&
+        typeof laMap === "object" &&
+        Object.keys(laMap).length > 0 &&
+        shouldFieldUpdate("learningAreaMap")
+      ) {
+        learningAreaUpsertRows.push({
+          id: `LA-${cleanSchoolId}-${String(resolvedId).slice(0, 8)}`,
+          personnel_id: resolvedId,
+          matrix_data: JSON.stringify(laMap),
+          updated_at: now,
         });
       }
 
@@ -1587,13 +1626,13 @@ router.post("/accept", async (req, res, next) => {
       );
 
       // D. Batched Delete & Multi-Row Insert for Trainings
-      if (personnelIdsInBatch.length > 0) {
+      if (trainingReplaceIds.length > 0) {
         await client.query(
           `
           DELETE FROM esf7_personnel_ld_trainings 
           WHERE personnel_id = ANY($1::varchar[])
         `,
-          [personnelIdsInBatch],
+          [trainingReplaceIds],
         );
       }
 
@@ -1614,6 +1653,18 @@ router.post("/accept", async (req, res, next) => {
           trainingsInsertRows,
         );
       }
+
+      // D2. Learning area matrix (same transaction)
+      await executeMultiRowUpsert(
+        client,
+        "esf7_personnel_learning_areas",
+        ["id", "personnel_id", "matrix_data", "updated_at"],
+        "(personnel_id)",
+        `UPDATE SET
+          matrix_data = EXCLUDED.matrix_data,
+          updated_at = NOW()`,
+        learningAreaUpsertRows,
+      );
 
       // E. Update ephemeral queue status to APPROVED
       await client.query(
@@ -1654,7 +1705,7 @@ router.post("/accept", async (req, res, next) => {
 
       await client.query("COMMIT");
     } catch (txErr) {
-      await client.query("ROLLBACK");
+      await client.query("ROLLBACK").catch(() => {});
       throw txErr;
     } finally {
       client.release();
@@ -2469,100 +2520,87 @@ router.post("/sync-roster", async (req, res, next) => {
 });
 
 // GET /api/room-profiling/roster — Mobile device retrieves active School Head roster (Database-First)
+// Single read path for Room QR: same normalized tables + shared formatter as Personnel
+// Profiling (GET /api/personnel). Used by /roster AND /verify-passcode so the teacher
+// object the form hydrates from is always complete (service date, PhilSys, L&D, learning areas).
+async function loadRoomRosterFromDb(cleanSchoolId) {
+  const sidPair = [cleanSchoolId, `SCH-${cleanSchoolId}`];
+  const [{ rows }, trRes] = await Promise.all([
+    db
+      .query(
+        `
+    SELECT
+      p.*,
+      e.position_category, e.position, e.step_increment, e.actual_step,
+      e.school_reported_step, e.fund_source, e.nature_of_appointment,
+      e.hiring_arrangement, e.deployment_status, e.assigned_schools,
+      e.grade_levels_taught, e.first_service_date, e.last_promotion_date,
+      e.new_station_date, e.last_lateral_movement_date,
+      ed.highest_educational_attainment, ed.shs_track, ed.vocational_course,
+      ed.vocational_level, ed.college_degree, ed.college_degrees, ed.major,
+      ed.minor, ed.post_graduate_degree, ed.post_graduate_discipline,
+      ed.eligibility, ed.prc_specialization,
+      la.matrix_data
+    FROM esf7_personnel_profile p
+    LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
+    LEFT JOIN esf7_perssonel_educ ed ON p.id = ed.personnel_id
+    LEFT JOIN esf7_personnel_learning_areas la ON p.id = la.personnel_id
+    WHERE p.school_id = ANY($1)
+    ORDER BY p.last_name ASC, p.first_name ASC
+  `,
+        [sidPair],
+      )
+      .catch(() => ({ rows: [] })),
+    db
+      .query(
+        `SELECT t.* FROM esf7_personnel_ld_trainings t
+       JOIN esf7_personnel_profile p ON p.id = t.personnel_id
+       WHERE p.school_id = ANY($1) ORDER BY t.created_at ASC`,
+        [sidPair],
+      )
+      .catch(() => ({ rows: [] })),
+  ]);
+
+  if (!rows || rows.length === 0) return [];
+  {
+    const { formatPersonnelRecord } = require("../personnel/common");
+    const trainingsByPerson = new Map();
+    for (const t of trRes.rows) {
+      const k = String(t.personnel_id).toUpperCase();
+      if (!trainingsByPerson.has(k)) trainingsByPerson.set(k, []);
+      trainingsByPerson.get(k).push(t);
+    }
+    const formatted = rows.map((r) => {
+      const f = formatPersonnelRecord(
+        r,
+        trainingsByPerson.get(String(r.id).toUpperCase()) || [],
+        [],
+      );
+      const fn = String(f.firstName || "").trim();
+      const ln = String(f.lastName || "").trim();
+      return {
+        ...f,
+        name: ln && fn ? `${ln}, ${fn}` : ln || fn || "Teacher",
+        profilingCode: "",
+        sourceConfirmed: true,
+        isFallback: false,
+      };
+    });
+
+    return formatted;
+  }
+}
+
 router.get("/roster", async (req, res, next) => {
   try {
     if (!isTableInitialized) await initQueueTable();
     const schoolId = req.query.schoolId || req.query.school_id || "502624";
     const cleanSchoolId = String(schoolId).replace(/^SCH-/i, "").trim();
 
-    // 1. Database-First: Load registered personnel from normalized tables
-    const { rows } = await db
-      .query(
-        `
-      SELECT 
-        p.id, p.prn, p.status, p.legacy_id AS "legacyId", p.first_name AS "firstName", p.last_name AS "lastName", p.middle_name AS "middleName",
-        p.name_extension AS "nameExtension", p.salutation, p.tin, p.no_tin AS "noTin",
-        p.sex_at_birth AS "sexAtBirth", p.civil_status AS "civilStatus", p.solo_parent AS "soloParent",
-        p.religion, p.ethnic_group AS "ethnicGroup", p.birthdate, p.age, p.employee_no AS "employeeNo",
-        p.deped_email AS "depedEmail", p.no_deped_email AS "noDepedEmail", p.is_school_head AS "isSchoolHead",
-        p.type,
-        e.position, e.position_category AS "positionCategory", e.step_increment AS "stepIncrement",
-        e.fund_source AS "fundSource", e.nature_of_appointment AS "natureOfAppointment",
-        e.hiring_arrangement AS "hiringArrangement", e.deployment_status AS "deploymentStatus",
-        ed.highest_educational_attainment AS "highestEducationalAttainment",
-        ed.college_degree AS "collegeDegree", ed.college_degrees AS "degreeRows",
-        ed.major, ed.minor, ed.post_graduate_degree AS "postGraduateDegree",
-        ed.post_graduate_discipline AS "postGraduateDiscipline",
-        ed.eligibility, ed.prc_specialization AS "prcSpecialization"
-      FROM esf7_personnel_profile p
-      LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
-      LEFT JOIN esf7_perssonel_educ ed ON p.id = ed.personnel_id
-      WHERE p.school_id = $1 OR p.school_id = $2
-      ORDER BY p.last_name ASC, p.first_name ASC
-    `,
-        [cleanSchoolId, `SCH-${cleanSchoolId}`],
-      )
-      .catch(() => ({ rows: [] }));
-
-    if (rows && rows.length > 0) {
-      const formatted = rows.map((r) => {
-        const fn = String(r.firstName || "").trim();
-        const ln = String(r.lastName || "").trim();
-        const pName = ln && fn ? `${ln}, ${fn}` : ln || fn || "Teacher";
-        const bDateStr = r.birthdate
-          ? r.birthdate instanceof Date
-            ? r.birthdate.toISOString().split("T")[0]
-            : String(r.birthdate).substring(0, 10)
-          : "";
-        const bYear = bDateStr ? bDateStr.substring(0, 4) : "";
-        return {
-          id: r.id,
-          prn: r.prn || "",
-          status: r.status || "canonical",
-          legacyId: r.legacyId || null,
-          name: pName,
-          firstName: fn,
-          lastName: ln,
-          middleName: r.middleName || "",
-          nameExtension: r.nameExtension || "",
-          salutation: r.salutation || "MR.",
-          tin: r.tin || "",
-          noTin: Boolean(r.noTin),
-          sexAtBirth: r.sexAtBirth || "FEMALE",
-          civilStatus: r.civilStatus || "SINGLE",
-          soloParent: Boolean(r.soloParent),
-          religion: r.religion || "CHRISTIANITY",
-          ethnicGroup: r.ethnicGroup || "",
-          birthdate: bDateStr,
-          birthYear: bYear,
-          age: r.age,
-          employeeNo: r.employeeNo || "",
-          depedEmail: r.depedEmail || "",
-          noDepedEmail: Boolean(r.noDepedEmail),
-          isSchoolHead: Boolean(r.isSchoolHead),
-          position: r.position || "TEACHER I",
-          positionCategory: r.positionCategory || "TEACHING",
-          stepIncrement: r.stepIncrement || 1,
-          fundSource: r.fundSource || "DEPED",
-          natureOfAppointment: r.natureOfAppointment || "REGULAR PERMANENT",
-          highestEducationalAttainment:
-            r.highestEducationalAttainment ||
-            "COLLEGE GRADUATE / BACCALAUREATE",
-          collegeDegree: r.collegeDegree || "BACHELOR OF SECONDARY EDUCATION",
-          degreeRows: r.degreeRows || [],
-          major: r.major || "GENERAL EDUCATION",
-          minor: r.minor || "N/A",
-          postGraduateDegree: r.postGraduateDegree || "N/A",
-          postGraduateDiscipline: r.postGraduateDiscipline,
-          eligibility: r.eligibility || ["Licensure Examination for Teachers"],
-          prcSpecialization: r.prcSpecialization || r.major || "",
-          type: r.type || "teaching",
-          profilingCode: "",
-          sourceConfirmed: true,
-          isFallback: false,
-        };
-      });
-
+    // 1. Database-First: same normalized tables + shared formatter as Personnel Profiling
+    // (GET /api/personnel), so service dates, trainings and learning areas are not dropped.
+    const formatted = await loadRoomRosterFromDb(cleanSchoolId);
+    if (formatted.length > 0) {
       activeRosterCache.set(cleanSchoolId, {
         roster: formatted,
         syncedAt: Date.now(),
@@ -2634,51 +2672,9 @@ router.post(
 
       const { QR_VALIDITY_MS } = await loadScheduleRules();
 
-      // 1. Database-First: Load active roster from normalized tables
-      let roster = [];
-      const { rows: profileRows } = await db
-        .query(
-          `
-        SELECT 
-          p.id, p.prn, p.first_name AS "firstName", p.last_name AS "lastName", p.middle_name AS "middleName",
-          p.birthdate, p.age,
-          e.position, e.position_category AS "positionCategory"
-        FROM esf7_personnel_profile p
-        LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
-        WHERE p.school_id = $1 OR school_id = $2
-        ORDER BY p.last_name ASC, p.first_name ASC
-      `,
-          [cleanSchoolId, `SCH-${cleanSchoolId}`],
-        )
-        .catch(() => ({ rows: [] }));
-
-      if (profileRows && profileRows.length > 0) {
-        roster = profileRows.map((r) => {
-          const fn = String(r.firstName || "").trim();
-          const ln = String(r.lastName || "").trim();
-          const pName = ln && fn ? `${ln}, ${fn}` : ln || fn || "Teacher";
-          const bDateStr = r.birthdate
-            ? r.birthdate instanceof Date
-              ? r.birthdate.toISOString().split("T")[0]
-              : String(r.birthdate).substring(0, 10)
-            : "";
-          const bYear = bDateStr ? bDateStr.substring(0, 4) : "";
-          return {
-            id: r.id,
-            prn: r.prn || "",
-            name: pName,
-            firstName: fn,
-            lastName: ln,
-            middleName: r.middleName || "",
-            birthdate: bDateStr,
-            birthYear: bYear,
-            position: r.position || "Teacher",
-            profilingCode: "",
-            sourceConfirmed: true,
-            isFallback: false,
-          };
-        });
-      }
+      // 1. Database-First: full record from the shared Room QR loader, so the teacher
+      // returned on success is not a sparse copy that hides service date / PhilSys / L&D.
+      const roster = await loadRoomRosterFromDb(cleanSchoolId);
 
       let matched = null;
       for (const teacher of roster) {

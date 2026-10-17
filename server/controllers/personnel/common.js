@@ -1599,6 +1599,8 @@ function formatPersonnelRecord(
         : !!row.is_school_head,
     schoolHeadLevel: row.school_head_level || null,
     school_head_level: row.school_head_level || null,
+    updated_at: row.record_updated_at || row.updated_at || null,
+    updatedAt: row.record_updated_at || row.updated_at || null,
     disabledServiceYears: Number(row.disabled_service_years || 0),
     disabled_service_years: Number(row.disabled_service_years || 0),
 

@@ -1,39 +1,13 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../../db");
+const { getSchoolIdFromRequest } = require("../../utils/auth");
+const { syncDesignationsInTransaction } = require("../personnel/profile");
 
-function extractCleanDesignationKey(item) {
-  if (!item) return "";
-  if (typeof item === "string") {
-    const s = item.replace(/::APPROVED_SDS/gi, "").trim();
-    if (
-      !s ||
-      s === "[object Object]" ||
-      s === "object Object" ||
-      s === "{}" ||
-      s.startsWith("[object")
-    ) {
-      return "";
-    }
-    return s;
-  }
-  if (typeof item === "object") {
-    const candidate =
-      (typeof item.serializedKey === "string" && item.serializedKey) ||
-      (typeof item.serialized_key === "string" && item.serialized_key) ||
-      (typeof item.designationName === "string" && item.designationName) ||
-      (typeof item.designation_name === "string" && item.designation_name) ||
-      (typeof item.designation === "string" && item.designation) ||
-      (typeof item.name === "string" && item.name) ||
-      (typeof item.title === "string" && item.title) ||
-      "";
-    if (candidate) return extractCleanDesignationKey(candidate);
-    if (item.designation && typeof item.designation === "object") {
-      return extractCleanDesignationKey(item.designation);
-    }
-  }
-  return "";
-}
+const cleanSid = (v) =>
+  String(v || "")
+    .replace(/^SCH-/i, "")
+    .trim();
 
 function formatDesignationRecord(row) {
   if (!row) return null;
@@ -145,11 +119,14 @@ function extractKeyStage(keyStr) {
   return null;
 }
 
-// PUT Sync all designations for a personnel member
+// PUT Sync all designations for ONE personnel member (Designations page save).
+// Replaces only that person's designation rows (add / change / remove) in one short
+// transaction using the same sync as the profile save; nothing else is rewritten.
 router.put("/personnel/:personnel_id", async (req, res) => {
   const { personnel_id } = req.params;
   const { designations = [], designation = "" } = req.body || {};
-  const client = await db.pool.connect();
+  const sessionSchoolId = cleanSid(getSchoolIdFromRequest(req));
+  const client = await db.getClient();
   try {
     await client.query("BEGIN");
     const personRes = await client.query(
@@ -162,132 +139,126 @@ router.put("/personnel/:personnel_id", async (req, res) => {
         error: `Cannot sync designations: Personnel profile '${personnel_id}' does not exist in esf7_personnel_profile.`,
       });
     }
-    const resolvedPersonnelId = personRes.rows[0].id;
-    const targetSchoolId = String(
-      personRes.rows[0].school_id || "108348",
-    ).replace(/^SCH-/i, "");
-
-    await client.query(
-      "DELETE FROM esf7_personnel_designations WHERE personnel_id = $1",
-      [resolvedPersonnelId],
+    const person = personRes.rows[0];
+    const personSchool = cleanSid(person.school_id);
+    if (sessionSchoolId && personSchool && sessionSchoolId !== personSchool) {
+      await client.query("ROLLBACK");
+      return res
+        .status(403)
+        .json({ error: "Personnel belongs to a different school." });
+    }
+    await syncDesignationsInTransaction(
+      client,
+      person.id,
+      personSchool,
+      typeof designation === "string" ? designation : "",
+      Array.isArray(designations) ? designations : [],
+      req.body,
     );
-
-    const rawDesigList = [];
-    if (designation && typeof designation === "string" && designation.trim()) {
-      rawDesigList.push(designation.trim());
-    }
-    if (Array.isArray(designations)) {
-      designations.forEach((d) => {
-        if (d) rawDesigList.push(d);
-      });
-    }
-
-    const processedKeys = new Set();
-    const inserted = [];
-    let counter = 1;
-
-    for (const item of rawDesigList) {
-      if (!item) continue;
-      const cleanKey = extractCleanDesignationKey(item);
-      if (
-        !cleanKey ||
-        cleanKey === "[object Object]" ||
-        processedKeys.has(cleanKey.toUpperCase())
-      )
-        continue;
-      processedKeys.add(cleanKey.toUpperCase());
-
-      const isSds =
-        (typeof item === "string" &&
-          (item.includes("::APPROVED_SDS") ||
-            item.toUpperCase().includes("APPROVED_SDS"))) ||
-        (item &&
-          (item.isSdsApproved === true || item.is_sds_approved === true));
-      const isConf =
-        (item && (item.sdsConfirmed === true || item.sds_confirmed === true)) ||
-        isSds;
-
-      let dsgName = cleanKey;
-      let keyStage =
-        (item && (item.keyStage || item.key_stage)) ||
-        extractKeyStage(cleanKey);
-      let gradeLevel = (item && (item.gradeLevel || item.grade_level)) || null;
-      let subjectArea =
-        (item && (item.subjectArea || item.subject_area)) || null;
-      let track = (item && item.track) || null;
-
-      if (cleanKey.includes(" - ")) {
-        const parts = cleanKey.split(" - ").map((p) => p.trim());
-        dsgName = parts[0];
-        if (parts.length === 2) {
-          gradeLevel = parts[1];
-        } else if (parts.length >= 3) {
-          gradeLevel = parts[1];
-          subjectArea = parts[2];
-          if (parts.length >= 4) track = parts[3];
-        }
-      }
-
-      const dsgObj = {
-        designationName:
-          typeof item === "object" &&
-          (item.designationName || item.designation_name)
-            ? item.designationName || item.designation_name
-            : dsgName,
-        keyStage,
-        gradeLevel: gradeLevel || "",
-        subjectArea: subjectArea || "",
-        track: track || "",
-        isSdsApproved: isSds,
-        sdsConfirmed: isConf,
-        serializedKey: cleanKey,
-      };
-
-      if (
-        !dsgObj.designationName ||
-        dsgObj.designationName === "[object Object]"
-      )
-        continue;
-
-      const dsgId = `DSG-${targetSchoolId}-${String(resolvedPersonnelId).split("-").pop()}-${String(counter++).padStart(3, "0")}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-
-      const insRes = await client.query(
-        `INSERT INTO esf7_personnel_designations (
-          id, personnel_id, school_id, designation_name, key_stage, grade_level, subject_area, track,
-          is_sds_approved, sds_confirmed, serialized_key, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
-        ON CONFLICT (personnel_id, serialized_key) DO UPDATE SET
-          designation_name = EXCLUDED.designation_name,
-          key_stage = EXCLUDED.key_stage,
-          grade_level = EXCLUDED.grade_level,
-          subject_area = EXCLUDED.subject_area,
-          track = EXCLUDED.track,
-          is_sds_approved = EXCLUDED.is_sds_approved,
-          sds_confirmed = EXCLUDED.sds_confirmed,
-          updated_at = NOW()
-        RETURNING *`,
-        [
-          dsgId,
-          resolvedPersonnelId,
-          targetSchoolId,
-          dsgObj.designationName,
-          dsgObj.keyStage || null,
-          dsgObj.gradeLevel || null,
-          dsgObj.subjectArea || null,
-          dsgObj.track || null,
-          !!dsgObj.isSdsApproved,
-          !!dsgObj.sdsConfirmed,
-          dsgObj.serializedKey || dsgObj.designationName,
-        ],
-      );
-      inserted.push(formatDesignationRecord(insRes.rows[0]));
-    }
-
+    const out = await client.query(
+      `SELECT * FROM esf7_personnel_designations WHERE personnel_id = $1 ORDER BY created_at ASC`,
+      [person.id],
+    );
     await client.query("COMMIT");
-    res.json(inserted);
+    res.json(out.rows.map(formatDesignationRecord));
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     console.error("Error syncing designations:", err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ---- "Mark N/A" status for required school designations (Section 1) ----
+// One row per (school, school year, designation key) that the school marked N/A.
+let naTableReady = false;
+async function ensureNaTable() {
+  if (naTableReady) return;
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS esf7_school_designation_na (
+      school_id TEXT NOT NULL,
+      school_year TEXT NOT NULL,
+      designation_key TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (school_id, school_year, designation_key)
+    )`);
+  naTableReady = true;
+}
+
+const naScope = (req) => ({
+  schoolId: cleanSid(
+    getSchoolIdFromRequest(req) || req.query.schoolId || req.body?.schoolId,
+  ),
+  schoolYear: String(
+    req.query.schoolYear || req.body?.schoolYear || "SY 26-27",
+  ).trim(),
+});
+
+router.get("/na", async (req, res) => {
+  try {
+    const { schoolId, schoolYear } = naScope(req);
+    if (!schoolId) return res.status(400).json({ error: "schoolId required" });
+    await ensureNaTable();
+    const r = await db.query(
+      `SELECT designation_key FROM esf7_school_designation_na WHERE school_id = $1 AND school_year = $2`,
+      [schoolId, schoolYear],
+    );
+    const naMap = {};
+    r.rows.forEach((row) => {
+      naMap[row.designation_key] = true;
+    });
+    res.json({ schoolId, schoolYear, naMap });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Replaces the N/A set for this school + year (so un-marking N/A deletes the row).
+router.put("/na", async (req, res) => {
+  const { schoolId, schoolYear } = naScope(req);
+  if (!schoolId) return res.status(400).json({ error: "schoolId required" });
+  const naMap = req.body?.naMap;
+  if (!naMap || typeof naMap !== "object" || Array.isArray(naMap)) {
+    return res.status(400).json({ error: "naMap object required" });
+  }
+  const keys = Object.keys(naMap)
+    .filter((k) => naMap[k] === true)
+    .map((k) => String(k).trim())
+    .filter(Boolean);
+  const client = await db.getClient();
+  try {
+    await ensureNaTable();
+    await client.query("BEGIN");
+    await client.query(
+      `DELETE FROM esf7_school_designation_na WHERE school_id = $1 AND school_year = $2`,
+      [schoolId, schoolYear],
+    );
+    if (keys.length > 0) {
+      await client.query(
+        `INSERT INTO esf7_school_designation_na (school_id, school_year, designation_key)
+         SELECT $1, $2, k FROM unnest($3::text[]) AS k`,
+        [schoolId, schoolYear, keys],
+      );
+    }
+    await client.query("COMMIT");
+    // Verify: the stored set must equal what was asked for.
+    const stored = await db.query(
+      `SELECT designation_key FROM esf7_school_designation_na WHERE school_id = $1 AND school_year = $2`,
+      [schoolId, schoolYear],
+    );
+    const storedKeys = new Set(stored.rows.map((r) => r.designation_key));
+    if (
+      storedKeys.size !== keys.length ||
+      keys.some((k) => !storedKeys.has(k))
+    ) {
+      throw new Error("The N/A status was not stored as requested.");
+    }
+    res.json({ success: true, count: keys.length });
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    console.error("Error saving designation N/A status:", err);
     res.status(500).json({ error: err.message });
   } finally {
     client.release();

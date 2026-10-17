@@ -1654,6 +1654,7 @@ export default function OrganizedClasses() {
     retrySectionsLoad,
     sectionsOverlayApplied,
     setSectionsOverlayApplied,
+    runSaveFlow,
   } = useApp();
   const { user } = useAuth();
 
@@ -4143,12 +4144,6 @@ export default function OrganizedClasses() {
         );
         if (setSectionsOverlayApplied) setSectionsOverlayApplied(false);
         if (completeNode) completeNode("classes", null);
-        if (showToast) {
-          showToast(
-            "Saved offline. Your class sections will sync to the database when connection is restored.",
-            "info",
-          );
-        }
         return { ok: true, offline: true };
       }
 
@@ -4270,12 +4265,6 @@ export default function OrganizedClasses() {
         completeNode("classes", null);
       }
 
-      if (showToast) {
-        showToast(
-          "Organized classes and section setup saved to database.",
-          "success",
-        );
-      }
       return { ok: true };
     } catch (err) {
       console.warn("Failed to save class sections:", err);
@@ -4307,20 +4296,9 @@ export default function OrganizedClasses() {
         );
         if (setSectionsOverlayApplied) setSectionsOverlayApplied(false);
         if (completeNode) completeNode("classes", null);
-        if (showToast) {
-          showToast(
-            "Saved offline. Your class sections will sync to the database when connection is restored.",
-            "info",
-          );
-        }
         return { ok: true, offline: true };
       }
 
-      reportError(err, {
-        action: "Saving Organized Classes",
-        handler: "runClassesSave",
-        schoolId: schoolInfo?.schoolId,
-      });
       return {
         ok: false,
         title: "Class Sections Not Saved",
@@ -4334,14 +4312,18 @@ export default function OrganizedClasses() {
   runSaveRef.current = runClassesSave;
 
   const handleSave = async () => {
-    const result = await runClassesSave();
-    if (result.ok === false) {
-      if (showAlert && result.title === "Incomplete Class Sections") {
-        await showAlert(result.title, result.message);
-      } else if (showToast) {
-        showToast(result.message, "error");
-      }
-    }
+    await runSaveFlow(
+      {
+        title: "Saving Class Sections",
+        message: "Saving class sections to database...",
+        successTitle: "Class sections saved",
+        successMessage:
+          "Organized classes and section setup saved to database.",
+        errorTitle: "Class sections not saved",
+        retryable: (e) => e?.userTitle !== "Incomplete Class Sections",
+      },
+      () => runClassesSave(),
+    );
   };
 
   return (

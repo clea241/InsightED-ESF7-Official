@@ -16,6 +16,7 @@ export default function RequestCenter({ embedded = false } = {}) {
     showToast,
     showAlert,
     setActiveView,
+    runSaveFlow,
   } = useApp();
 
   const [activeSubTab, setActiveSubTab] = useState("incoming");
@@ -23,22 +24,33 @@ export default function RequestCenter({ embedded = false } = {}) {
   const [isSubmittingMerge, setIsSubmittingMerge] = useState(false);
 
   const handleRespond = async (id, action) => {
-    try {
-      const res = await api.respondToRequest(id, action);
-      if (res.success) {
-        showToast(
-          `Request successfully ${action === "approved" ? "Approved" : "Rejected"}.`,
-        );
-        refreshRequests();
-        if (action === "approved" && refreshPersonnelList) {
-          refreshPersonnelList();
+    const approved = action === "approved";
+    const flow = await runSaveFlow(
+      {
+        title: approved ? "Approving Request" : "Rejecting Request",
+        message: "Saving response to database...",
+        successTitle: approved ? "Request approved" : "Request rejected",
+        successMessage: `Request successfully ${approved ? "Approved" : "Rejected"}.`,
+        errorTitle: "Action failed",
+      },
+      async () => {
+        let res;
+        try {
+          res = await api.respondToRequest(id, action);
+        } catch (e) {
+          console.error(e);
+          throw new Error(errorMessage(e, "A network error occurred."));
         }
-      } else {
-        showAlert("Action Failed", res.error || "Could not process response.");
+        if (!res.success) {
+          throw new Error(res.error || "Could not process response.");
+        }
+      },
+    );
+    if (flow.ok) {
+      refreshRequests();
+      if (approved && refreshPersonnelList) {
+        refreshPersonnelList();
       }
-    } catch (e) {
-      console.error(e);
-      showAlert("Error", errorMessage(e, "A network error occurred."));
     }
   };
 
@@ -52,23 +64,34 @@ export default function RequestCenter({ embedded = false } = {}) {
 
     setIsSubmittingMerge(true);
     try {
-      const res = await api.createRequest({
-        targetSchoolId,
-        requestType: "school_merger",
-      });
-      if (res.success) {
-        showToast("Merger request sent successfully!");
+      const flow = await runSaveFlow(
+        {
+          title: "Sending Request",
+          message: "Sending merger request...",
+          successTitle: "Request sent",
+          successMessage: "Merger request sent successfully!",
+          errorTitle: "Request failed",
+        },
+        async () => {
+          let res;
+          try {
+            res = await api.createRequest({
+              targetSchoolId,
+              requestType: "school_merger",
+            });
+          } catch (err) {
+            console.error(err);
+            throw new Error(errorMessage(err, "Could not send request."));
+          }
+          if (!res.success) {
+            throw new Error(res.error || "Failed to submit merger request.");
+          }
+        },
+      );
+      if (flow.ok) {
         setMergeTargetSchool("");
         refreshRequests();
-      } else {
-        showAlert(
-          "Request Failed",
-          res.error || "Failed to submit merger request.",
-        );
       }
-    } catch (err) {
-      console.error(err);
-      showAlert("Request Failed", errorMessage(err, "Could not send request."));
     } finally {
       setIsSubmittingMerge(false);
     }

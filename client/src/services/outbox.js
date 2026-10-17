@@ -229,6 +229,10 @@ export function generateMutationId() {
  * Upsert an entry in the outbox.
  * Coalesces by stable key (school + user + term + module + personnelId) so newer edits replace older ones.
  */
+// Stable keys whose "unsent changes" prompt is open. The crash-safety writer must not re-create an entry for
+// a key while the user is still choosing, or the choice would immediately be undone.
+const choicePendingKeys = new Set();
+
 export async function upsertOutboxEntry({
   id = null,
   kind = "unsaved", // 'failed' | 'unsaved'
@@ -253,6 +257,7 @@ export async function upsertOutboxEntry({
     module,
     personnelId,
   });
+  if (kind === "unsaved" && choicePendingKeys.has(stableKey)) return null;
   const mutationId = id || generateMutationId();
   const now = new Date().toISOString();
 
@@ -424,12 +429,25 @@ export async function removeOutboxEntryByModule(
     }
     // Also if pid was provided, clean up any lingering entry matching personnelId and module
     if (pid) {
+      const unattributedKey = buildStableKey({
+        schoolId: sId,
+        user: usr,
+        term: t,
+        module: mod,
+      });
       const allEntries = await store.getAll();
       for (const entry of allEntries) {
         if (
           entry.module === mod &&
           String(entry.personnelId || "").toLowerCase() ===
             String(pid).toLowerCase()
+        ) {
+          await store.delete(entry.id);
+        } else if (
+          // An older crash-safety snapshot that was stored without an employee id for this same
+          // screen can never be matched by id, so it would re-prompt forever after a save.
+          entry.kind !== "failed" &&
+          entry.stableKey === unattributedKey
         ) {
           await store.delete(entry.id);
         }
@@ -450,6 +468,14 @@ export async function removeOutboxEntryByModule(
         item.module === mod &&
         String(item.personnelId || "").toLowerCase() ===
           String(pid).toLowerCase()
+      ) {
+        return false;
+      }
+      if (
+        pid &&
+        item.kind !== "failed" &&
+        item.stableKey ===
+          buildStableKey({ schoolId: sId, user: usr, term: t, module: mod })
       ) {
         return false;
       }
@@ -678,7 +704,7 @@ export async function resolveOutboxConflict(id, decision) {
  * On verified success: removes entry from outbox immediately.
  * On error: increments attempts, updates lastError, and displays SweetAlert error modal.
  */
-export async function retryOutboxEntry(entryOrId) {
+export async function retryOutboxEntry(entryOrId, { silent = false } = {}) {
   if (!entryOrId) return { success: false, error: "No entry" };
   let entry = entryOrId;
   if (typeof entryOrId === "string") {
@@ -790,7 +816,9 @@ export async function retryOutboxEntry(entryOrId) {
     return { success: true, data: res };
   } catch (err) {
     await markOutboxAttempt(entry.id, { error: err });
-    const { reportError } = await import("./errorAlert.js");
+    const { reportError } = silent
+      ? { reportError: () => {} }
+      : await import("./errorAlert.js");
     reportError(err, {
       action: `Retrying save for ${entry.module}`,
       handler: "retryOutboxEntry",
@@ -887,63 +915,156 @@ export async function runOneTimeLegacyCleanup({
   }
 }
 
+// Per page load: which (school + user + employee + tab) drafts were already resolved, and which prompts are
+// open right now. Module-level on purpose: a remount, a tab switch, a re-fetch or React Strict Mode's double
+// mount must not be able to ask the same question twice.
+const resolvedPromptKeys = new Set();
+const promptsInFlight = new Map();
+
+/** Forget which prompts were answered (called on logout so the next session starts clean). */
+export function resetOutboxPromptState() {
+  resolvedPromptKeys.clear();
+  promptsInFlight.clear();
+  choicePendingKeys.clear();
+}
+
 /**
- * When opening a section that has a queued outbox entry, prompt the user:
- * "You have unsent changes for this section. Load them?"
- * If declined, DB baseline stays on screen and entry remains queued.
- * If accepted, calls onLoadPayload(entry.payload) and marks dirty.
+ * When opening a section that has a queued outbox entry, ask once whether to load it.
+ * Call it only AFTER the saved record has been fetched, passing:
+ *  - personnelId   the employee (entries are per employee), term / module as for the writer
+ *  - baseVersion   the version (updated_at) of the record just fetched; an entry made against another
+ *                  version is stale and is dropped without asking
+ *  - differsFromBaseline(payload)  true only if the payload really differs from the saved record (same
+ *                  normalized diff as the Unsaved Changes modal); no-op drafts are dropped without asking
+ *  - onLoadPayload(payload)        apply the payload on top of the fresh database data
+ * "Load Unsent Changes" applies it and consumes the entry; "Keep Database Version" deletes the entry.
+ * Either way the question is not asked again for the same key during this page load.
  */
 export async function checkAndPromptOutboxOnSectionOpen({
   schoolId,
   user,
   module,
   term = null,
+  personnelId = null,
+  baseVersion = null,
+  differsFromBaseline = null,
   onLoadPayload,
 }) {
   if (!schoolId || !user || !module || typeof onLoadPayload !== "function")
     return false;
 
-  const entries = await getOutboxEntries({ schoolId, user, module });
-  const entry = entries.find((e) => (term ? e.term === term : true));
-  if (!entry || !entry.payload) return false;
+  const key = buildStableKey({ schoolId, user, term, module, personnelId });
+  if (resolvedPromptKeys.has(key)) return false;
+  if (promptsInFlight.has(key)) return promptsInFlight.get(key);
 
-  try {
-    const [{ default: Swal }] = await Promise.all([
-      import("sweetalert2"),
-      import("sweetalert2/dist/sweetalert2.min.css"),
-    ]);
-
-    const isFailed = entry.kind === "failed";
-    const statusText = isFailed ? "previously failed to save" : "unsaved draft";
-
-    const result = await Swal.fire({
-      title: "Unsent Changes Available",
-      text: `You have an ${statusText} for this section from ${new Date(entry.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. Would you like to load your unsent changes into the form?`,
-      icon: "question",
-      iconColor: "#2563EB",
-      showCancelButton: true,
-      confirmButtonText: "Load Unsent Changes",
-      cancelButtonText: "Keep Database Version",
-      confirmButtonColor: "#2563EB",
-      cancelButtonColor: "#64748B",
-      reverseButtons: true,
-      customClass: {
-        popup: "insighted-swal-modal",
-        title: "insighted-swal-title",
-        htmlContainer: "insighted-swal-text",
-        confirmButton: "insighted-swal-save-btn",
-        cancelButton: "insighted-swal-discard-btn",
-      },
-    });
-
-    if (result.isConfirmed) {
-      onLoadPayload(entry.payload);
-      return true;
+  const run = (async () => {
+    const entries = await getOutboxEntries({ schoolId, user, module });
+    const entry = entries.find(
+      (e) =>
+        (term ? e.term === term : true) &&
+        (personnelId
+          ? String(e.personnelId || "").toLowerCase() ===
+            String(personnelId).toLowerCase()
+          : true),
+    );
+    if (!entry || !entry.payload) {
+      // Nothing for this employee. An older snapshot saved without an employee id cannot be attributed to
+      // anyone, so it is dropped instead of being offered to the wrong person.
+      if (personnelId) {
+        const orphan = entries.find(
+          (e) =>
+            e.kind !== "failed" &&
+            !e.personnelId &&
+            (term ? e.term === term : true),
+        );
+        if (orphan) await removeOutboxEntry(orphan.id);
+      }
+      resolvedPromptKeys.add(key);
+      return false;
     }
-    return false;
-  } catch (err) {
-    console.warn("[Outbox] Error prompting on section open:", err);
-    return false;
+
+    // Stale: made against a different version of the saved record.
+    if (
+      entry.baseVersion &&
+      baseVersion &&
+      String(entry.baseVersion) !== String(baseVersion)
+    ) {
+      await removeOutboxEntry(entry.id);
+      resolvedPromptKeys.add(key);
+      return false;
+    }
+
+    // No-op: nothing in it differs from the saved record.
+    let meaningful = true;
+    try {
+      if (typeof differsFromBaseline === "function") {
+        meaningful = Boolean(differsFromBaseline(entry.payload));
+      }
+    } catch (e) {
+      meaningful = true;
+    }
+    if (!meaningful) {
+      await removeOutboxEntry(entry.id);
+      resolvedPromptKeys.add(key);
+      return false;
+    }
+
+    // From here on the question is asked exactly once for this key, and the crash-safety writer is paused.
+    resolvedPromptKeys.add(key);
+    choicePendingKeys.add(key);
+    try {
+      const [{ default: Swal }] = await Promise.all([
+        import("sweetalert2"),
+        import("sweetalert2/dist/sweetalert2.min.css"),
+      ]);
+
+      const isFailed = entry.kind === "failed";
+      const statusText = isFailed
+        ? "previously failed to save"
+        : "unsaved draft";
+
+      const result = await Swal.fire({
+        title: "Unsent Changes Available",
+        text: `You have an ${statusText} for this section from ${new Date(entry.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. Would you like to load your unsent changes into the form?`,
+        icon: "question",
+        iconColor: "#2563EB",
+        showCancelButton: true,
+        confirmButtonText: "Load Unsent Changes",
+        cancelButtonText: "Keep Database Version",
+        confirmButtonColor: "#2563EB",
+        cancelButtonColor: "#64748B",
+        reverseButtons: true,
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        customClass: {
+          popup: "insighted-swal-modal",
+          title: "insighted-swal-title",
+          htmlContainer: "insighted-swal-text",
+          confirmButton: "insighted-swal-save-btn",
+          cancelButton: "insighted-swal-discard-btn",
+        },
+      });
+
+      // Either answer consumes the stored entry, so it cannot be detected again.
+      await removeOutboxEntry(entry.id);
+      if (result.isConfirmed) {
+        onLoadPayload(entry.payload);
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.warn("[Outbox] Error prompting on section open:", err);
+      return false;
+    } finally {
+      choicePendingKeys.delete(key);
+    }
+  })();
+
+  promptsInFlight.set(key, run);
+  try {
+    return await run;
+  } finally {
+    promptsInFlight.delete(key);
   }
 }
 

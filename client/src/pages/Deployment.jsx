@@ -17,6 +17,7 @@ export default function Deployment() {
     showConfirm,
     completeNode,
     setActiveView,
+    runSaveFlow,
   } = useApp();
 
   const dbPerson =
@@ -134,7 +135,9 @@ export default function Deployment() {
     if (!currentPerson || !isDirty) return { ok: true };
     setIsSaving(true);
     try {
-      await savePersonnelChanges(currentPerson.id, currentPerson);
+      await savePersonnelChanges(currentPerson.id, currentPerson, {
+        silentToast: true,
+      });
       // Success is reported, and the local draft cleared, only after the server confirmed the database write.
       const confirmed = await confirmServerDraftSaved();
       if (!confirmed.ok) return confirmed;
@@ -143,7 +146,6 @@ export default function Deployment() {
       if (completeNode) {
         completeNode("deployment", null);
       }
-      showToast("Deployment changes saved to database successfully.");
       return { ok: true };
     } catch (err) {
       console.warn("Failed to save deployment changes:", err);
@@ -159,14 +161,16 @@ export default function Deployment() {
   runSaveRef.current = runDeploymentSave;
 
   const handleSave = async () => {
-    const result = await runDeploymentSave();
-    if (result.ok === false) {
-      if (showAlert) {
-        await showAlert("Error", result.message);
-      } else if (showToast) {
-        showToast(result.message, "error");
-      }
-    }
+    await runSaveFlow(
+      {
+        title: "Saving Deployment",
+        message: "Saving deployment changes to database...",
+        successTitle: "Deployment saved",
+        successMessage: "Deployment changes saved to database successfully.",
+        errorTitle: "Deployment not saved",
+      },
+      () => runDeploymentSave(),
+    );
   };
 
   return (

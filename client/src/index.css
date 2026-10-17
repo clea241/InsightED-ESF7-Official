@@ -3194,18 +3194,21 @@ th {
 
 /* ── Warning Smooth Christmas Light Glowing Animation (Pure Red Glow, Zero Movement) ── */
 @keyframes christmasLightGlow {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.72;
     filter: drop-shadow(0 0 2px rgba(239, 68, 68, 0.35));
   }
   50% {
     opacity: 1;
-    filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.95)) drop-shadow(0 0 12px rgba(220, 38, 38, 0.55));
+    filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.95))
+      drop-shadow(0 0 12px rgba(220, 38, 38, 0.55));
   }
 }
 
 @keyframes warningBadgeChristmasGlow {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.8;
     box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
   }
@@ -3277,6 +3280,8 @@ th {
   transition: all 0.25s ease !important;
 }
 
-
-
-
+/* Any SweetAlert (error reports, confirmations) opened while the blocking "saving" modal is up must sit ABOVE it,
+   otherwise it would be hidden behind the overlay and the save would wait on a dialog nobody can see. */
+.swal2-container {
+  z-index: 1000010 !important;
+}

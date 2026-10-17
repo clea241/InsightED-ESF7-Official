@@ -99,6 +99,7 @@ export const snapshotDirtyGuardsToOutbox = async (
             kind: "unsaved",
             module: screenId,
             payload,
+            personnelId: meta.personnelId ?? meta.recordId ?? null,
             schoolId: meta.schoolId,
             user: meta.user,
             schoolYear: meta.schoolYear,
@@ -639,7 +640,11 @@ export const jumpToUnsavedTarget = (screenId, targetIdentifier) => {
         el = document.getElementById(rawId);
       } catch (e) {}
 
-      if (!el && typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+      if (
+        !el &&
+        typeof CSS !== "undefined" &&
+        typeof CSS.escape === "function"
+      ) {
         try {
           const escaped = CSS.escape(rawId);
           el =

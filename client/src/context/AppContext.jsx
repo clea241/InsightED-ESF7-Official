@@ -1,4 +1,4 @@
-import React, {
+import {
   createContext,
   useContext,
   useState,
@@ -15,7 +15,6 @@ import {
 } from "../services/draftErrorReporter";
 import { useAuth } from "./AuthContext";
 import {
-  markUnsynced,
   markSynced,
   hasUnsynced,
   onServerLock,
@@ -43,14 +42,7 @@ import {
   readMigratedLocalDraft,
   deleteLocalDraftWithLegacy,
 } from "../services/db";
-import {
-  getSchoolDraftKey,
-  cleanSchoolId,
-  canonicalSchoolYear,
-  canonicalTermSlug,
-  readMigratedLocalStorage,
-  writeWithLegacyCleanup,
-} from "../services/storageKeys";
+import { getSchoolDraftKey, cleanSchoolId } from "../services/storageKeys";
 import { dedupeSections, dedupePersonnel } from "../services/dedupe";
 import { mergeSectionsByKey, inSchoolYear } from "../services/sectionMerge";
 import { cleanPersonnelDates } from "../services/dateFields";
@@ -4079,6 +4071,151 @@ export const AppProvider = ({ children }) => {
     });
   };
 
+  // ---- Blocking "saving" modal (shared) -------------------------------------------------------
+  // Same modal as showConfirm (the Roster delete confirmation): rendered once in App.jsx from customModal.
+  // It opens in a loading state, blocks the whole screen (no Esc / backdrop dismissal), and shows success
+  // only after the awaited write resolved, or the real error with Retry / Close. One flow at a time.
+  const saveFlowLockRef = useRef(false);
+  const saveFlowStatusRef = useRef("idle"); // loading | success | error
+  const saveFlowSuccessResolveRef = useRef(null);
+
+  const beginSaveFlow = ({
+    title = "Saving",
+    message = "Saving to database...",
+  } = {}) => {
+    if (saveFlowLockRef.current) {
+      // A save that is still running (or waiting for Retry / Close) blocks a second one. A save that already
+      // SUCCEEDED only shows its confirmation, so the next step of the same action may take over the modal.
+      if (saveFlowStatusRef.current !== "success") return null;
+      if (saveFlowSuccessResolveRef.current)
+        saveFlowSuccessResolveRef.current();
+      saveFlowSuccessResolveRef.current = null;
+    }
+    saveFlowLockRef.current = true;
+    saveFlowStatusRef.current = "loading";
+    const setModal = (patch) => {
+      if (patch.status) saveFlowStatusRef.current = patch.status;
+      setCustomModal((prev) => ({
+        ...(prev && prev.type === "saving" ? prev : {}),
+        type: "saving",
+        ...patch,
+      }));
+    };
+    const release = () => {
+      saveFlowLockRef.current = false;
+      saveFlowStatusRef.current = "idle";
+      saveFlowSuccessResolveRef.current = null;
+      setCustomModal(null);
+    };
+    setModal({
+      status: "loading",
+      title,
+      message,
+      canRetry: false,
+      onRetry: null,
+      onClose: null,
+    });
+    return {
+      message: (text) => setModal({ status: "loading", message: text }),
+      progress: (current, total, text) =>
+        setModal({
+          status: "loading",
+          message: text || `Saving ${current} of ${total}...`,
+        }),
+      // Resolves when the user presses OK. Callers normally do not await it.
+      success: (text, heading = "Saved") =>
+        new Promise((resolve) => {
+          saveFlowSuccessResolveRef.current = resolve;
+          setModal({
+            status: "success",
+            title: heading,
+            message: text,
+            onClose: () => {
+              release();
+              resolve();
+            },
+          });
+        }),
+      // Resolves "retry" or "close".
+      error: (text, { heading = "Not saved", retry = false } = {}) =>
+        new Promise((resolve) =>
+          setModal({
+            status: "error",
+            title: heading,
+            message: text,
+            canRetry: retry,
+            onRetry: () => {
+              setModal({ status: "loading", message: "Saving to database..." });
+              resolve("retry");
+            },
+            onClose: () => {
+              release();
+              resolve("close");
+            },
+          }),
+        ),
+      close: release,
+    };
+  };
+
+  // Runs one awaited write inside the modal. Resolves { ok, result } as soon as the server answered
+  // (the success modal stays up until OK). A thrown error, or a task result of { ok: false }, shows the
+  // failure with Retry / Close and resolves { ok: false, error } once the user chose Close.
+  const runSaveFlow = async (
+    {
+      title = "Saving",
+      message = "Saving to database...",
+      successTitle = "Saved",
+      successMessage = "Saved to database.",
+      errorTitle = "Not saved",
+      retryable = true,
+    },
+    task,
+  ) => {
+    const flow = beginSaveFlow({ title, message });
+    if (!flow) return { ok: false, busy: true };
+    for (;;) {
+      try {
+        const result = await task({
+          message: flow.message,
+          progress: flow.progress,
+        });
+        if (result && result.ok === false) {
+          const e = new Error(
+            result.message || "The server did not confirm the save.",
+          );
+          e.userTitle = result.title;
+          e.result = result;
+          throw e;
+        }
+        if (result && result.offline) {
+          flow.success(
+            "Saved on this device. It will sync to the database when the connection is restored.",
+            "Saved offline",
+          );
+        } else {
+          flow.success(
+            typeof successMessage === "function"
+              ? successMessage(result)
+              : successMessage,
+            successTitle,
+          );
+        }
+        return { ok: true, result };
+      } catch (err) {
+        const choice = await flow.error(
+          err?.message || "The save could not be completed.",
+          {
+            heading: err?.userTitle || errorTitle,
+            retry: typeof retryable === "function" ? retryable(err) : retryable,
+          },
+        );
+        if (choice === "retry") continue;
+        return { ok: false, error: err, result: err?.result };
+      }
+    }
+  };
+
   const saveSchoolSubjects = async (config) => {
     try {
       setSchoolInfo((prev) => ({ ...prev, subjectsConfig: config }));
@@ -4386,13 +4523,6 @@ export const AppProvider = ({ children }) => {
   // draft differs from what was last loaded/saved (derived values filled in during load are absorbed, not saved).
   const userEditedRef = useRef(false);
   const lastSavedSigRef = useRef(null);
-  const draftSignature = (d) => {
-    try {
-      return JSON.stringify({ ...d, lastUpdated: undefined });
-    } catch (e) {
-      return null;
-    }
-  };
   useEffect(() => {
     const mark = () => {
       userEditedRef.current = true;
@@ -6907,14 +7037,6 @@ export const AppProvider = ({ children }) => {
     } else {
       setHasUnsavedChanges(true);
     }
-    if (!options.silentToast && !options.silent) {
-      showToast(
-        options.skipApiUpdate
-          ? "Changes saved locally."
-          : options.toastMessage ||
-              "Changes saved locally & synced to database.",
-      );
-    }
     return { ok: true };
   };
 
@@ -7074,6 +7196,8 @@ export const AppProvider = ({ children }) => {
     return newId;
   };
 
+  const deletingPersonnelRef = useRef(new Set());
+
   const deletePersonnel = async (id) => {
     if (!id) return;
     const target = personnel.find(
@@ -7099,13 +7223,46 @@ export const AppProvider = ({ children }) => {
       ),
     );
 
+    // Server first. Nothing in local state changes unless the database confirmed the delete;
+    // on failure this throws and the row stays in the table. One request only: the server
+    // resolves id / legacy_id / prn aliases itself.
+    if (deletingPersonnelRef.current.has(String(targetId))) {
+      throw new Error("This personnel record is already being deleted.");
+    }
+    deletingPersonnelRef.current.add(String(targetId));
+    let deleteResult;
+    try {
+      deleteResult = await api.deletePersonnel(targetId, {
+        schoolId: schoolInfo?.schoolId || getSessionSchoolId() || "",
+        prn: targetPrn || targetId,
+        firstName: target?.firstName || "",
+        lastName: target?.lastName || "",
+        employeeNo: targetEmpNo,
+      });
+      if (!deleteResult || deleteResult.success !== true) {
+        throw new Error(
+          deleteResult?.error || "The server did not confirm the delete.",
+        );
+      }
+    } finally {
+      deletingPersonnelRef.current.delete(String(targetId));
+    }
+
     const updatedPersonnel = personnel.filter(
       (p) =>
         !allTargetKeys.includes(String(p.id)) &&
         !allTargetKeys.includes(String(p.prn)) &&
         !allTargetKeys.includes(String(p.legacy_id || p.legacyId)),
     );
-    setPersonnel(updatedPersonnel);
+    // Functional update: the request took seconds, so do not overwrite newer state with a stale copy.
+    setPersonnel((prev) =>
+      (prev || []).filter(
+        (p) =>
+          !allTargetKeys.includes(String(p.id)) &&
+          !allTargetKeys.includes(String(p.prn)) &&
+          !allTargetKeys.includes(String(p.legacy_id || p.legacyId)),
+      ),
+    );
 
     if (allTargetKeys.includes(String(activePersonnelId))) {
       setActivePersonnelId(
@@ -7188,34 +7345,9 @@ export const AppProvider = ({ children }) => {
       console.warn("Error saving draft after delete:", err);
     }
 
-    // Permanently delete in backend DB and record tombstone
-    try {
-      const deleteMeta = {
-        schoolId: schoolInfo?.schoolId || getSessionSchoolId() || "",
-        prn: targetPrn || targetId,
-        firstName: target?.firstName || "",
-        lastName: target?.lastName || "",
-        employeeNo: targetEmpNo,
-      };
-      await api.deletePersonnel(targetId, deleteMeta);
-      if (targetPrn && targetPrn !== targetId) {
-        await api.deletePersonnel(targetPrn, deleteMeta).catch((e) =>
-          reportError(e, {
-            action: `Deleting personnel record ${targetPrn}`,
-            handler: "deletePersonnel",
-            ids: { prn: String(targetPrn) },
-            expectedStatuses: [404],
-          }),
-        );
-      }
-    } catch (err) {
-      console.warn("Backend deletePersonnel notice:", err.message);
-    }
-
     setHasUnsavedChanges(false);
-    showToast("Personnel deleted successfully.");
+    return { ok: true, ...deleteResult };
   };
-
   const resolveBorrowedPersonnel = async (personId, action) => {
     if (!personId) return;
     const target = personnel.find((p) => String(p.id) === String(personId));
@@ -7224,24 +7356,38 @@ export const AppProvider = ({ children }) => {
       `${target.firstName || ""} ${target.lastName || ""}`.trim() || "Teacher";
 
     if (action === "remove_and_await") {
-      await deletePersonnel(personId);
+      const flow = await runSaveFlow(
+        {
+          title: "Removing Personnel",
+          message: "Removing personnel from the database...",
+          successTitle: "Personnel removed",
+          successMessage: `Removed ${teacherName}. When Mother School tags them as Reassigned, accept them via Request Center.`,
+          errorTitle: "Personnel not removed",
+        },
+        () => deletePersonnel(personId),
+      );
+      if (!flow.ok) return;
       try {
         localStorage.removeItem(`draft_personnel_${personId}`);
       } catch (e) {}
       setHasUnsavedChanges(true);
-      showToast(
-        `Removed ${teacherName}. When Mother School tags them as Reassigned, accept them via Request Center.`,
-      );
     } else if (action === "convert_to_permanent") {
-      savePersonnelChanges(personId, {
-        deploymentStatus: "OWN STATION",
-        deployment_status: "OWN STATION",
-        fundSource: "NATIONAL",
-        fund_source: "NATIONAL",
-        isShared: false,
-      }).catch((e) => showToast(e.message, "error"));
-      showToast(
-        `Converted ${teacherName} to Permanent (Own Station) in this school.`,
+      await runSaveFlow(
+        {
+          title: "Saving Changes",
+          message: "Saving changes to database...",
+          successTitle: "Changes saved",
+          successMessage: `Converted ${teacherName} to Permanent (Own Station) in this school.`,
+          errorTitle: "Not saved",
+        },
+        () =>
+          savePersonnelChanges(personId, {
+            deploymentStatus: "OWN STATION",
+            deployment_status: "OWN STATION",
+            fundSource: "NATIONAL",
+            fund_source: "NATIONAL",
+            isShared: false,
+          }),
       );
     }
   };
@@ -7265,61 +7411,59 @@ export const AppProvider = ({ children }) => {
         return;
       }
     }
-    setPersonnel((prev) =>
-      prev.map((item) => {
-        const isTarget = String(item.id) === String(id);
-        if (isTarget) {
-          return {
-            ...item,
-            isSchoolHead: Boolean(isSchoolHead),
-            is_school_head: Boolean(isSchoolHead),
-            isMainSchoolHead: Boolean(isMainSh),
-            is_main_school_head: Boolean(isMainSh),
-            is_main_sh: Boolean(isMainSh),
-          };
-        }
-        if (isSchoolHead) {
-          return {
-            ...item,
-            isSchoolHead: false,
-            is_school_head: false,
-            isMainSchoolHead: false,
-            is_main_school_head: false,
-            is_main_sh: false,
-          };
-        }
-        return item;
-      }),
-    );
+    const applyLocal = () =>
+      setPersonnel((prev) =>
+        prev.map((item) => {
+          const isTarget = String(item.id) === String(id);
+          if (isTarget) {
+            return {
+              ...item,
+              isSchoolHead: Boolean(isSchoolHead),
+              is_school_head: Boolean(isSchoolHead),
+              isMainSchoolHead: Boolean(isMainSh),
+              is_main_school_head: Boolean(isMainSh),
+              is_main_sh: Boolean(isMainSh),
+            };
+          }
+          if (isSchoolHead) {
+            return {
+              ...item,
+              isSchoolHead: false,
+              is_school_head: false,
+              isMainSchoolHead: false,
+              is_main_school_head: false,
+              is_main_sh: false,
+            };
+          }
+          return item;
+        }),
+      );
     if (targetPerson && typeof api !== "undefined" && api.toggleSchoolHead) {
-      try {
-        await api.toggleSchoolHead(
-          id,
-          Boolean(isSchoolHead),
-          Boolean(isMainSh),
-          {
+      const flow = await runSaveFlow(
+        {
+          title: "Saving School Head",
+          message: "Saving School Head designation to database...",
+          successTitle: "School Head saved",
+          successMessage: isSchoolHead
+            ? "School Head designated."
+            : "School Head designation removed.",
+          errorTitle: "School Head not saved",
+        },
+        () =>
+          api.toggleSchoolHead(id, Boolean(isSchoolHead), Boolean(isMainSh), {
             schoolId: schoolInfo?.schoolId || schoolInfo?.school_id,
-          },
-        );
-        setHasUnsavedChanges(false);
-      } catch (e) {
+          }),
+      );
+      if (!flow.ok) {
         setHasUnsavedChanges(true);
-        reportError(e, {
-          action: `Updating the School Head flag for ${id}`,
-          handler: "toggleSchoolHead",
-          ids: { personnel_id: String(id) },
-        });
-        showToast(e.message, "error");
+        return;
       }
+      applyLocal();
+      setHasUnsavedChanges(false);
     } else {
+      applyLocal();
       setHasUnsavedChanges(false);
     }
-
-    showToast(
-      isSchoolHead
-        ? "School Head designated."
-        : "School Head designation removed.",
-    );
   };
 
   const designateSchoolHeadsConfig = async ({
@@ -7356,101 +7500,76 @@ export const AppProvider = ({ children }) => {
       if (pId) idToLevelMap[String(pId)] = lvl;
     }
 
+    const targetSchoolId = schoolInfo?.schoolId || schoolInfo?.school_id;
+
+    // Database first. Nothing on screen changes until the server has stored the change AND read it back
+    // (one transaction: the previous head is unset and the new one set together). If anything fails the
+    // previous School Head stays displayed.
+    const flow = await runSaveFlow(
+      {
+        title: "Saving School Head",
+        message: "Saving School Head to database...",
+        successTitle: "School Head saved",
+        successMessage: "School Head configuration updated successfully.",
+        errorTitle: "School Head not saved",
+      },
+      async () => {
+        const res = await api.saveSchoolHeadConfig({
+          hasMultipleHeads,
+          mainHeadId,
+          assignments,
+          schoolId: targetSchoolId,
+        });
+        if (!res || res.success !== true || !Array.isArray(res.heads)) {
+          throw new Error(
+            res?.error || "The server did not confirm the School Head change.",
+          );
+        }
+        return res;
+      },
+    );
+    if (!flow.ok) return false;
+
+    // From here on the screen is rendered from what the database now holds.
+    const stored = new Map(flow.result.heads.map((h) => [String(h.id), h]));
     setPersonnel((prev) =>
       prev.map((item) => {
-        const itemId = String(item.id);
-        const isAssigned = assignedIds.has(itemId);
-        if (isAssigned) {
-          const isMain = String(mainHeadId) === itemId;
-          const assignedLevel = idToLevelMap[itemId] || null;
-          return {
-            ...item,
-            isSchoolHead: true,
-            is_school_head: true,
-            isMainSchoolHead: isMain,
-            is_main_school_head: isMain,
-            is_main_sh: isMain,
-            schoolHeadLevel: assignedLevel,
-            school_head_level: assignedLevel,
-          };
-        } else {
-          return {
-            ...item,
-            isSchoolHead: false,
-            is_school_head: false,
-            isMainSchoolHead: false,
-            is_main_school_head: false,
-            is_main_sh: false,
-            schoolHeadLevel: null,
-            school_head_level: null,
-          };
-        }
+        const h = stored.get(String(item.id));
+        return h
+          ? {
+              ...item,
+              isSchoolHead: true,
+              is_school_head: true,
+              isMainSchoolHead: h.isMain,
+              is_main_school_head: h.isMain,
+              is_main_sh: h.isMain,
+              schoolHeadLevel: h.level,
+              school_head_level: h.level,
+            }
+          : {
+              ...item,
+              isSchoolHead: false,
+              is_school_head: false,
+              isMainSchoolHead: false,
+              is_main_school_head: false,
+              is_main_sh: false,
+              schoolHeadLevel: null,
+              school_head_level: null,
+            };
       }),
     );
-
     setSchoolInfo((prev) => ({
       ...prev,
       schoolHeadConfig: {
         hasMultipleHeads: Boolean(hasMultipleHeads),
-        mainHeadId: mainHeadId ? String(mainHeadId) : null,
+        mainHeadId:
+          flow.result.heads.find((h) => h.isMain)?.id ??
+          (mainHeadId ? String(mainHeadId) : null),
         assignments: assignments || {},
       },
     }));
-
-    const targetSchoolId = schoolInfo?.schoolId || schoolInfo?.school_id;
-
-    const previouslyAssigned = (personnel || []).filter(
-      (p) => p.isSchoolHead || p.is_school_head,
-    );
-    const removedHeads = previouslyAssigned.filter(
-      (p) =>
-        !assignedIds.has(String(p.id)) &&
-        !assignedIds.has(String(p.prn)) &&
-        !assignedIds.has(String(p.legacy_id || p.legacyId)),
-    );
-
-    // 1. Toggle off all removed heads across backend
-    for (const p of removedHeads) {
-      if (typeof api !== "undefined" && api.toggleSchoolHead) {
-        await api
-          .toggleSchoolHead(p.id, false, false, {
-            hasMultipleHeads: Boolean(hasMultipleHeads),
-            schoolId: targetSchoolId,
-          })
-          .catch((err) =>
-            console.error(
-              "[designateSchoolHeadsConfig] Remove error for",
-              p.id,
-              err,
-            ),
-          );
-      }
-    }
-
-    // 2. Toggle on all newly assigned heads across backend
-    for (const pId of assignedIds) {
-      if (typeof api !== "undefined" && api.toggleSchoolHead) {
-        const isMain = String(mainHeadId) === String(pId);
-        await api
-          .toggleSchoolHead(pId, true, isMain, {
-            hasMultipleHeads: Boolean(hasMultipleHeads),
-            schoolId: targetSchoolId,
-            schoolHeadLevel: idToLevelMap[String(pId)] || null,
-            school_head_level: idToLevelMap[String(pId)] || null,
-          })
-          .catch((err) =>
-            console.error(
-              "[designateSchoolHeadsConfig] Assign error for",
-              pId,
-              err,
-            ),
-          );
-      }
-    }
-
     setHasUnsavedChanges(false);
-    showToast("School Head configuration updated successfully.", "success");
-    return true;
+    return { ok: true, heads: flow.result.heads };
   };
 
   const addClassSection = async (
@@ -8743,41 +8862,64 @@ export const AppProvider = ({ children }) => {
       isExcused: Boolean(absenceData.isExcused),
     };
 
-    setAbsences((prev) => [
-      ...prev.filter(
-        (a) =>
-          !(
-            a.personnelId === absenceData.personnelId &&
-            (a.startDate === startStr || a.logDate === startStr)
-          ),
-      ),
-      newLeaveRecord,
-    ]);
+    const applyLocal = () =>
+      setAbsences((prev) => [
+        ...prev.filter(
+          (a) =>
+            !(
+              a.personnelId === absenceData.personnelId &&
+              (a.startDate === startStr || a.logDate === startStr)
+            ),
+        ),
+        newLeaveRecord,
+      ]);
 
-    // Persist to backend overload_late_undertime table if tardy
+    // Tardiness / undertime logs live in overload_late_undertime: written first, shown after.
     if (isTardy) {
-      try {
-        api
-          .saveOverloadLateUndertime({
+      const flow = await runSaveFlow(
+        {
+          title: "Saving DTR Log",
+          message: "Saving DTR log to database...",
+          successTitle: "DTR log saved",
+          successMessage: "DTR Tardiness / Absence log saved.",
+          errorTitle: "DTR log not saved",
+        },
+        () =>
+          api.saveOverloadLateUndertime({
             ...newLeaveRecord,
             school_id: schoolInfo?.schoolId || "108348",
             school_year: schoolInfo?.schoolYear || "2026-2027",
-          })
-          .catch((err) =>
-            reportError(err, {
-              action: "Saving late/undertime for the overload record",
-              handler: "saveOverloadLateUndertime",
-            }),
-          );
-      } catch (e) {}
+          }),
+      );
+      if (!flow.ok) {
+        return { success: false, error: flow.error?.message || "Not saved" };
+      }
     }
-
-    showToast("DTR Tardiness / Absence log saved.");
+    applyLocal();
     return { success: true, id: newId, record: newLeaveRecord };
   };
 
   const removePersonnelAbsence = async (id, targetBatchId = null) => {
     const target = absences.find((a) => a.id === id);
+    if (target && target.id) {
+      const flow = await runSaveFlow(
+        {
+          title: "Removing DTR Log",
+          message: "Removing DTR log from the database...",
+          successTitle: "DTR log removed",
+          successMessage: "Absence / DTR log removed.",
+          errorTitle: "DTR log not removed",
+        },
+        async () => {
+          try {
+            await api.deleteOverloadLateUndertime(target.id);
+          } catch (e) {
+            if (e?.status !== 404) throw e; // already gone = removed
+          }
+        },
+      );
+      if (!flow.ok) return;
+    }
     setAbsences((prev) =>
       prev.filter((a) => {
         if (
@@ -8789,21 +8931,6 @@ export const AppProvider = ({ children }) => {
         return a.id !== id;
       }),
     );
-
-    if (target && target.id) {
-      try {
-        api.deleteOverloadLateUndertime(target.id).catch((e) =>
-          reportError(e, {
-            action: "Deleting a late/undertime record",
-            handler: "deleteOverloadLateUndertime",
-            ids: { id: String(target.id) },
-            expectedStatuses: [404],
-          }),
-        );
-      } catch (e) {}
-    }
-
-    showToast("Absence / DTR log removed.");
   };
 
   const resetToDatabase = async () => {
@@ -10948,6 +11075,8 @@ export const AppProvider = ({ children }) => {
         showToast,
         showAlert,
         showConfirm,
+        beginSaveFlow,
+        runSaveFlow,
         hasUnsavedChanges,
         setHasUnsavedChanges,
         checkBeforeLeave,
@@ -11018,6 +11147,17 @@ export const useApp = () => {
       showToast: () => {},
       showAlert: () => {},
       showConfirm: () => {},
+      beginSaveFlow: () => null,
+      runSaveFlow: async (_o, task) => {
+        try {
+          return {
+            ok: true,
+            result: await task({ message() {}, progress() {} }),
+          };
+        } catch (error) {
+          return { ok: false, error };
+        }
+      },
       schoolInfo: {},
       selectedTeachers: [],
       personnel: [],

@@ -30,6 +30,7 @@ export default function ESF7UploadModal({
     setSchoolInfo,
     setHasUnsavedChanges,
     showToast,
+    runSaveFlow,
   } = useApp();
   const [isParsing, setIsParsing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -756,30 +757,40 @@ export default function ESF7UploadModal({
                 onClick={async () => {
                   setIsCloning(true);
                   try {
-                    const data = await api.importConvertedHarvest({
-                      school_id: schoolInfo?.schoolId,
-                      old_school_id: pendingSchool.oldSchoolId,
-                    });
-                    if (data && data.success) {
-                      if (showToast)
-                        showToast(
-                          `Imported ${data.importedCount} faculty from previous Station ${pendingSchool.oldSchoolId}!`,
-                          "success",
-                        );
+                    const flow = await runSaveFlow(
+                      {
+                        title: "Importing Faculty",
+                        message:
+                          "Importing faculty from the previous station...",
+                        successTitle: "Faculty imported",
+                        successMessage: (data) =>
+                          `Imported ${data?.importedCount ?? 0} faculty from previous Station ${pendingSchool.oldSchoolId}.`,
+                        errorTitle: "Import failed",
+                      },
+                      async () => {
+                        const data = await api.importConvertedHarvest({
+                          school_id: schoolInfo?.schoolId,
+                          old_school_id: pendingSchool.oldSchoolId,
+                        });
+                        if (!(data && data.success)) {
+                          throw new Error(
+                            data?.error ||
+                              "Failed to import from converted station.",
+                          );
+                        }
+                        return data;
+                      },
+                    );
+                    if (flow.ok) {
                       if (onImportSuccess)
                         onImportSuccess({
                           success: true,
-                          count: data.importedCount,
+                          count: flow.result.importedCount,
                         });
                       onClose();
                     } else {
-                      setErrorMsg(
-                        data.error ||
-                          "Failed to import from converted station.",
-                      );
+                      setErrorMsg(flow.error?.message || "Import failed.");
                     }
-                  } catch (err) {
-                    setErrorMsg(err.message);
                   } finally {
                     setIsCloning(false);
                   }

@@ -48,3 +48,5 @@ Personnel Profile > Learning Area > "Disable Years" -> person.disabledServiceYea
 - Certify / resubmit (`POST /api/submissions`, `POST /api/validation/resubmit`) -> one INSERT into `esf7_submission_queue` (idempotent on `school_id` + `submission_id` once the column exists) -> Redis stream pointer (soft failure). `resubmit` also upserts `esf7_validation` to RESUBMITTED.
 - Worker (`server/run_redis_worker.js`, only when `QUEUE_CONSUMER_ENABLED=true`): claims the row (`processing`), runs one transaction over the normalized tables, then sets `completed` (or records the failure: `attempts`, `next_attempt_at`, `failed`) and acknowledges the stream entry.
 - Scripts and migrations connect through `DB_DIRECT_PORT`; the app and the worker connect through `DB_PORT`.
+
+| Designations page Save | PUT /api/designations/personnel/:id (per changed person) -> esf7_personnel_designations; PUT /api/designations/na -> esf7_school_designation_na |

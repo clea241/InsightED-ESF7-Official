@@ -124,7 +124,8 @@ router.get("/:id", async (req, res) => {
         '{}'::jsonb AS educ_raw_payload,
         la.id AS la_id,
         la.matrix_data,
-        '{}'::jsonb AS la_raw_payload
+        '{}'::jsonb AS la_raw_payload,
+        GREATEST(p.updated_at, e.updated_at, ed.updated_at, la.updated_at) AS record_updated_at
       FROM esf7_personnel_profile p
       LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
       LEFT JOIN esf7_perssonel_educ ed ON p.id = ed.personnel_id
@@ -148,6 +149,18 @@ router.get("/:id", async (req, res) => {
       `SELECT * FROM esf7_personnel_designations WHERE personnel_id = $1 ORDER BY created_at ASC`,
       [row.id],
     );
+    // Version of the saved record = the newest write across profile, employment, education,
+    // learning areas, trainings and designations (the unsaved-changes draft is tied to it).
+    {
+      let newest = row.record_updated_at
+        ? new Date(row.record_updated_at)
+        : null;
+      for (const r of [...trRes.rows, ...dsgRes.rows]) {
+        const t = new Date(r.updated_at || r.created_at || 0);
+        if (!isNaN(t) && (!newest || t > newest)) newest = t;
+      }
+      row.record_updated_at = newest ? newest.toISOString() : null;
+    }
     const [wklRes, shsWklRes] = await Promise.all([
       db
         .query(
@@ -2017,4 +2030,5 @@ router.put("/:id", async (req, res) => {
 
 // DELETE personnel profile (and cleanly cascade remove linked records + record deletion tombstone)
 
+router.syncDesignationsInTransaction = syncDesignationsInTransaction;
 module.exports = router;

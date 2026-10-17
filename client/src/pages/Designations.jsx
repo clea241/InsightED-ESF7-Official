@@ -1,18 +1,12 @@
-import React, {
-  useState,
-  useMemo,
-  useRef,
-  useEffect,
-  useCallback,
-} from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import useDirtyGuard from "../hooks/useDirtyGuard";
 import { confirmServerDraftSaved } from "../services/screenSave";
+import { api } from "../services/api";
 import {
   useApp,
   OFFICIAL_DESIGNATIONS,
   DESIGNATION_GRADE_LEVELS,
   SHS_TRACKS,
-  SUBJECT_OPTIONS,
   PRIMARY_LEARNING_AREAS,
   getRegularSectionsEnrollment,
 } from "../context/AppContext";
@@ -33,13 +27,11 @@ import {
   FiBook,
   FiGrid,
   FiList,
-  FiTrash2,
   FiX,
   FiPlus,
   FiBookmark,
   FiAward,
   FiLayers,
-  FiChevronRight,
   FiCheckSquare,
   FiSquare,
   FiGlobe,
@@ -237,14 +229,13 @@ export default function Designations() {
   const {
     personnel,
     setPersonnel,
-    savePersonnelChanges,
-    schoolEdited,
     schoolInfo,
     setSchoolInfo,
     classSections,
     showToast,
     completeNode,
     setActiveView,
+    runSaveFlow,
   } = useApp();
   const [searchTerm, setSearchTerm] = useState("");
   const [viewMode, setViewMode] = useState("card"); // 'card' or 'matrix'
@@ -267,6 +258,29 @@ export default function Designations() {
     } catch (e) {}
     return {};
   });
+
+  // Database is the source of truth for N/A status: load it for this school + year.
+  // The saved baseline is cleared so it is re-taken from the loaded state (loading is not an edit).
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getDesignationsNa(schoolInfo?.schoolYear || "SY 26-27")
+      .then((res) => {
+        if (cancelled || !res || typeof res.naMap !== "object") return;
+        setDesignationsNaMap(res.naMap);
+        try {
+          localStorage.setItem(
+            `esf7_designations_na_${schoolInfo?.schoolId || "default"}`,
+            JSON.stringify(res.naMap),
+          );
+        } catch (e) {}
+        savedDesignationsSnapshotRef.current = null;
+      })
+      .catch((e) => console.warn("Could not load designation N/A status:", e));
+    return () => {
+      cancelled = true;
+    };
+  }, [schoolInfo?.schoolId, schoolInfo?.schoolYear]);
 
   const getDesignationsSnapshot = useCallback(
     () => ({
@@ -1229,7 +1243,6 @@ export default function Designations() {
   const [modalRoleId, setModalRoleId] = useState("");
   const [modalGrade, setModalGrade] = useState("Grade 1");
   const [modalLearningArea, setModalLearningArea] = useState("Filipino");
-  const [modalTrack, setModalTrack] = useState("ACADEMIC");
   const [modalTeacherId, setModalTeacherId] = useState("");
   const [modalError, setModalError] = useState("");
 
@@ -1241,7 +1254,6 @@ export default function Designations() {
     setModalRoleId(targetRole);
     setModalGrade(offeredGradeLevels[0] || "Grade 1");
     setModalLearningArea(PRIMARY_LEARNING_AREAS[0] || "Filipino");
-    setModalTrack(SHS_TRACKS[0] || "ACADEMIC");
     setModalTeacherId("");
     setModalError("");
     setIsAddModalOpen(true);
@@ -1391,12 +1403,26 @@ export default function Designations() {
         return false;
       });
 
+      // Only the designation rows of each changed person are written (add / change /
+      // remove); the rest of the profile, trainings and learning areas are not resent.
       for (const p of changedPersonnel) {
-        if (savePersonnelChanges) {
-          await savePersonnelChanges(p.id, p);
-        }
+        const primary =
+          typeof p.designation === "string"
+            ? p.designation
+            : p.designation?.name || p.designation?.designation || "";
+        await api.saveDesignationsForPersonnel(
+          p.id,
+          primary,
+          Array.isArray(p.designations) ? p.designations : [],
+        );
         localStorage.removeItem(`draft_personnel_${p.id}`);
       }
+
+      // N/A status: stored in esf7_school_designation_na (school + school year).
+      await api.saveDesignationsNa(
+        designationsNaMap,
+        schoolInfo?.schoolYear || "SY 26-27",
+      );
 
       if (schoolInfo?.schoolId) {
         try {
@@ -1419,9 +1445,6 @@ export default function Designations() {
         completeNode("designation", null);
       }
 
-      if (showToast) {
-        showToast("Designations saved to database successfully.", "success");
-      }
       return { ok: true };
     } catch (err) {
       console.warn("Failed to save designations:", err);
@@ -1437,17 +1460,22 @@ export default function Designations() {
   runSaveRef.current = runDesignationsSave;
 
   const handleSave = async () => {
-    const result = await runDesignationsSave();
-    if (result.ok === false) {
-      if (result.missing) {
-        setMissingDesignationsModal({
-          isOpen: true,
-          missingList: result.missing,
-        });
-      } else if (showToast) {
-        showToast(result.message, "error");
-      }
+    // Required designations are checked first, with the page's own "missing" modal, before any write starts.
+    const missing = getMissingRequiredDesignations();
+    if (missing.length > 0) {
+      setMissingDesignationsModal({ isOpen: true, missingList: missing });
+      return;
     }
+    await runSaveFlow(
+      {
+        title: "Saving Designations",
+        message: "Saving designations to database...",
+        successTitle: "Designations saved",
+        successMessage: "Designations saved to database successfully.",
+        errorTitle: "Designations not saved",
+      },
+      () => runDesignationsSave(),
+    );
   };
 
   // Search filtering

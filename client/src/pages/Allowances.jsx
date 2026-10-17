@@ -33,6 +33,7 @@ export default function Allowances() {
     schoolInfo,
     setActiveView,
     bypassNodeLocks,
+    runSaveFlow,
   } = useApp();
 
   const isLocked = false; // Node 09 (Allowances & Incentives) is fixed as UNLOCKED
@@ -179,21 +180,28 @@ export default function Allowances() {
     const currentlyGranted = Boolean(personAllowances[conf.key]);
     const nextGranted = !currentlyGranted;
 
-    const res = await toggleAllowance(
-      personId,
-      conf.key,
-      nextGranted,
-      currentSchoolYear,
+    await runSaveFlow(
+      {
+        title: "Saving Allowance",
+        message: "Saving allowance to database...",
+        successTitle: "Allowance saved",
+        successMessage: nextGranted
+          ? `Granted ${conf.label} for ${name}.`
+          : `Removed ${conf.label} for ${name}.`,
+        errorTitle: "Allowance not saved",
+      },
+      async () => {
+        const res = await toggleAllowance(
+          personId,
+          conf.key,
+          nextGranted,
+          currentSchoolYear,
+        );
+        if (!(res && res.success !== false)) {
+          throw new Error(`Failed to update ${conf.label} for ${name}.`);
+        }
+      },
     );
-    if (res && res.success !== false) {
-      if (nextGranted) {
-        showToast(`Granted ${conf.label} for ${name}`);
-      } else {
-        showToast(`Removed ${conf.label} for ${name}`);
-      }
-    } else {
-      showToast(`Failed to update ${conf.label} for ${name}`, "error");
-    }
   };
 
   // Bulk toggle for a specific column across all currently filtered personnel
@@ -232,42 +240,61 @@ export default function Allowances() {
             ? "Teaching-Related Staff"
             : "Non-Teaching Staff";
 
-    if (bulkToggleAllowances) {
-      await bulkToggleAllowances(
-        targetIds,
-        [confKey],
-        targetState,
-        currentSchoolYear,
-      );
-    } else {
-      for (const id of targetIds) {
-        await toggleAllowance(id, confKey, targetState, currentSchoolYear);
-      }
-    }
-
-    showToast(
-      targetState
-        ? `Granted ${confLabel} to ${targetIds.length} ${categoryLabel}.`
-        : `Removed ${confLabel} from ${targetIds.length} ${categoryLabel}.`,
+    await runSaveFlow(
+      {
+        title: "Saving Allowances",
+        message: "Saving allowances to database...",
+        successTitle: "Allowances saved",
+        successMessage: targetState
+          ? `Granted ${confLabel} to ${targetIds.length} ${categoryLabel}.`
+          : `Removed ${confLabel} from ${targetIds.length} ${categoryLabel}.`,
+        errorTitle: "Allowances not saved",
+      },
+      async () => {
+        if (bulkToggleAllowances) {
+          const res = await bulkToggleAllowances(
+            targetIds,
+            [confKey],
+            targetState,
+            currentSchoolYear,
+          );
+          if (res && res.success === false) {
+            throw new Error(
+              res.error || "The server did not confirm the save.",
+            );
+          }
+        } else {
+          for (const id of targetIds) {
+            await toggleAllowance(id, confKey, targetState, currentSchoolYear);
+          }
+        }
+      },
     );
   };
 
   // Disable / re-enable one allowance for one person (e.g. Special Hardship). Disabled = ignored by compliance.
   const handleDisableToggle = async (personId, name, conf, nextDisabled) => {
     if (isLocked) return;
-    const res = await setAllowanceDisabled(
-      personId,
-      conf.key,
-      nextDisabled,
-      currentSchoolYear,
+    await runSaveFlow(
+      {
+        title: "Saving Allowance",
+        message: "Saving allowance setting to database...",
+        successTitle: "Allowance saved",
+        successMessage: `${nextDisabled ? "Disabled" : "Enabled"} ${conf.label} for ${name}.`,
+        errorTitle: "Allowance not saved",
+      },
+      async () => {
+        const res = await setAllowanceDisabled(
+          personId,
+          conf.key,
+          nextDisabled,
+          currentSchoolYear,
+        );
+        if (!(res && res.success !== false)) {
+          throw new Error(`Failed to update ${conf.label} for ${name}.`);
+        }
+      },
     );
-    if (res && res.success !== false) {
-      showToast(
-        `${nextDisabled ? "Disabled" : "Enabled"} ${conf.label} for ${name}`,
-      );
-    } else {
-      showToast(`Failed to update ${conf.label} for ${name}`, "error");
-    }
   };
 
   // Bulk toggle for ALL allowance columns across all currently filtered personnel
@@ -281,29 +308,6 @@ export default function Allowances() {
 
     if (filteredPersonnel.length === 0) return;
 
-    for (const p of filteredPersonnel) {
-      const cat = getPersonnelCategory(p);
-      const keys =
-        cat === "non-teaching"
-          ? allowanceConfig
-              .filter((c) => c.key !== "supplies")
-              .map((c) => c.key)
-          : allowanceConfig.map((c) => c.key);
-
-      if (bulkToggleAllowances) {
-        await bulkToggleAllowances(
-          [p.id],
-          keys,
-          targetState,
-          currentSchoolYear,
-        );
-      } else {
-        for (const k of keys) {
-          await toggleAllowance(p.id, k, targetState, currentSchoolYear);
-        }
-      }
-    }
-
     const categoryLabel =
       activeCategory === "all"
         ? "All Personnel"
@@ -313,10 +317,47 @@ export default function Allowances() {
             ? "Teaching-Related Staff"
             : "Non-Teaching Staff";
 
-    showToast(
-      targetState
-        ? `Granted all eligible allowances to ${filteredPersonnel.length} ${categoryLabel}.`
-        : `Cleared all allowances for ${filteredPersonnel.length} ${categoryLabel}.`,
+    await runSaveFlow(
+      {
+        title: "Saving Allowances",
+        message: "Saving allowances to database...",
+        successTitle: "Allowances saved",
+        successMessage: targetState
+          ? `Granted all eligible allowances to ${filteredPersonnel.length} ${categoryLabel}.`
+          : `Cleared all allowances for ${filteredPersonnel.length} ${categoryLabel}.`,
+        errorTitle: "Allowances not saved",
+      },
+      async ({ progress }) => {
+        let done = 0;
+        for (const p of filteredPersonnel) {
+          progress(++done, filteredPersonnel.length);
+          const cat = getPersonnelCategory(p);
+          const keys =
+            cat === "non-teaching"
+              ? allowanceConfig
+                  .filter((c) => c.key !== "supplies")
+                  .map((c) => c.key)
+              : allowanceConfig.map((c) => c.key);
+
+          if (bulkToggleAllowances) {
+            const res = await bulkToggleAllowances(
+              [p.id],
+              keys,
+              targetState,
+              currentSchoolYear,
+            );
+            if (res && res.success === false) {
+              throw new Error(
+                res.error || "The server did not confirm the save.",
+              );
+            }
+          } else {
+            for (const k of keys) {
+              await toggleAllowance(p.id, k, targetState, currentSchoolYear);
+            }
+          }
+        }
+      },
     );
   };
 

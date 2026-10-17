@@ -9,7 +9,8 @@ import React, {
 import { pauseForAuth, resumeAfterLogin } from "../services/draftSaver";
 import { onSessionExpired, clearSessionExpired } from "../services/session";
 import { checkBeforeLeave, isAnyScreenDirty } from "../services/dirtyGuard";
-import { hasFailedEntries } from "../services/outbox";
+import { hasFailedEntries, resetOutboxPromptState } from "../services/outbox";
+import { clearAllProfileDrafts } from "../services/profileDraft";
 
 const AuthContext = createContext(null);
 
@@ -122,6 +123,8 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem("school_id");
     localStorage.removeItem("activeSchoolId");
     localStorage.removeItem("insighted_personnel_cache");
+    clearAllProfileDrafts(); // unsaved-edit drafts never outlive the session
+    resetOutboxPromptState();
     setUser(null);
     setToken(null);
     return true;

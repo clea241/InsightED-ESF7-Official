@@ -8,6 +8,11 @@ import React, {
 import { isOrganizedClassWorkloadExempt } from "@shared/personnelClass.js";
 import { isSectionSlotClash } from "@shared/schoolLevel.js";
 import useDirtyGuard from "../hooks/useDirtyGuard";
+import {
+  saveProfileDraft,
+  readProfileDraft,
+  clearProfileDraft,
+} from "../services/profileDraft";
 import { useAuth } from "../context/AuthContext";
 import {
   upsertOutboxEntry,
@@ -284,6 +289,68 @@ export const normalizeRowsForComparison = (rows, termFilter = null) => {
     return kA.localeCompare(kB);
   });
   return normalized;
+};
+
+// ---- Unsaved timetable edits as a delta against the saved rows ------------------------------------------
+// A draft holds ONLY what the user changed for one teacher + term: rows added/changed, and the saved rows that
+// were removed. It is never a copy of the record and never the baseline; the saved rows (from the API) are.
+const workloadRowKey = (r) =>
+  JSON.stringify(normalizeWorkloadRowForComparison(r));
+
+export const buildWorkloadDraftDelta = (person, term) => {
+  const inTerm = (r) => (r.term || "1st") === term;
+  const base = (person?.workloadBaseRows || []).filter(inTerm);
+  const cur = (person?.workloadRows || []).filter(inTerm);
+  const hasId = (r) =>
+    r.id !== undefined && r.id !== null && String(r.id) !== "";
+  const baseById = new Map(base.filter(hasId).map((r) => [String(r.id), r]));
+  const baseKeys = new Set(base.map(workloadRowKey));
+  const curIds = new Set(cur.filter(hasId).map((r) => String(r.id)));
+  const curKeys = new Set(cur.map(workloadRowKey));
+
+  const upserts = cur.filter((r) => {
+    const b = hasId(r) ? baseById.get(String(r.id)) : null;
+    return b
+      ? workloadRowKey(b) !== workloadRowKey(r)
+      : !baseKeys.has(workloadRowKey(r));
+  });
+  const removed = base
+    .filter(
+      (r) =>
+        !(hasId(r) && curIds.has(String(r.id))) &&
+        !curKeys.has(workloadRowKey(r)),
+    )
+    .map((r) => ({
+      id: hasId(r) ? String(r.id) : null,
+      key: workloadRowKey(r),
+    }));
+
+  if (upserts.length === 0 && removed.length === 0) return null;
+  return { workloadRows: upserts, removed };
+};
+
+// Rebuilds the draft's rows for the term by applying the delta to the saved rows it was made against.
+export const applyWorkloadDraftDelta = (dbRows, delta, term) => {
+  const inTerm = (r) => (r.term || "1st") === term;
+  const upserts = Array.isArray(delta?.workloadRows) ? delta.workloadRows : [];
+  const removedIds = new Set(
+    (delta?.removed || [])
+      .map((x) => x.id)
+      .filter(Boolean)
+      .map(String),
+  );
+  const removedKeys = new Set((delta?.removed || []).map((x) => x.key));
+  const upsertIds = new Set(
+    upserts
+      .filter((r) => r.id !== undefined && r.id !== null)
+      .map((r) => String(r.id)),
+  );
+  const kept = (dbRows || []).filter(inTerm).filter((r) => {
+    const id = r.id !== undefined && r.id !== null ? String(r.id) : null;
+    if (id && (removedIds.has(id) || upsertIds.has(id))) return false;
+    return !removedKeys.has(workloadRowKey(r));
+  });
+  return [...kept, ...upserts];
 };
 
 export const ADMIN_TASK_OPTIONS = [
@@ -11269,6 +11336,8 @@ function WorkloadInner() {
     toggleAllowance,
     setAllowanceDisabled,
     currentSchoolYear,
+    runSaveFlow,
+    beginSaveFlow,
   } = useApp();
   const { user } = useAuth();
 
@@ -11511,10 +11580,7 @@ function WorkloadInner() {
     });
 
     // 3. Clean up legacy localStorage draft if present
-    const draftKey = `draft_workload_${personId}`;
-    try {
-      localStorage.removeItem(draftKey);
-    } catch (e) {}
+    removeTeacherWorkloadDraft(personId);
 
     verifiedModalDismissedMap.current[personId] = true;
     setShowAttentionModal(false);
@@ -11522,14 +11588,30 @@ function WorkloadInner() {
   };
 
   const handleConfirmAllAndSave = async () => {
+    const flow = beginSaveFlow({
+      title: "Confirming Timetables",
+      message: "Saving timetables to database...",
+    });
+    if (!flow) return;
+    try {
+      await confirmAllAndSaveInner(flow);
+    } catch (err) {
+      console.warn("Confirm all timetables failed:", err);
+      flow.error(err?.message || "The timetables could not be saved.");
+    }
+  };
+
+  const confirmAllAndSaveInner = async (flow) => {
     let confirmedCount = 0;
+    let step = 0;
+    const stepTotal = (personnel || []).length;
     const errorTeachers = [];
     const failedSaveTeachers = [];
     const updatedPersonnelList = [];
 
     for (const p of personnel || []) {
-      const draftKey = `draft_workload_${p.id}`;
-      const savedDraft = localStorage.getItem(draftKey);
+      flow.progress(++step, stepTotal);
+      const savedDraft = null; // unsaved edits live in React state; no browser copy is read back
       let tRows = p.workloadRows || [];
       if (savedDraft) {
         try {
@@ -11614,15 +11696,13 @@ function WorkloadInner() {
       if (failMsgs) combined += `Database save failed for:\n${failMsgs}\n\n`;
       if (errMsgs) combined += `Validation errors for:\n${errMsgs}\n\n`;
       combined += `Their drafts were kept locally in this browser. Successfully saved ${confirmedCount} teacher schedule(s).`;
-      await showAlert("Batch Timetable Verification Notice", combined);
+      flow.error(combined, {
+        heading: "Batch Timetable Verification Notice",
+      });
     } else {
-      if (showToast)
-        showToast(
-          `Successfully confirmed & saved timetables for ALL ${confirmedCount} personnel!`,
-        );
-      await showAlert(
-        "Batch Timetable Verification",
+      flow.success(
         `All ${confirmedCount} personnel schedules have been confirmed and saved to the database!`,
+        "Timetables saved",
       );
     }
   };
@@ -11647,6 +11727,11 @@ function WorkloadInner() {
     );
     if (!confirmed) return;
 
+    const flow = beginSaveFlow({
+      title: "Clearing Workload",
+      message: "Clearing workload from database...",
+    });
+    if (!flow) return;
     try {
       const activePersonId = currentPerson.id;
 
@@ -11664,13 +11749,12 @@ function WorkloadInner() {
           err?.status === 404 && err?.body?.error === "Personnel not found"
         )) {
           // that 404 = never saved to the database, so there is nothing to delete there
-          if (showAlert)
-            await showAlert(
-              "Error",
-              "Could not clear the saved workload from the database: " +
-                (err?.message || "Unknown error") +
-                " Nothing was cleared.",
-            );
+          flow.error(
+            "Could not clear the saved workload from the database: " +
+              (err?.message || "Unknown error") +
+              " Nothing was cleared.",
+            { heading: "Workload not cleared" },
+          );
           return;
         }
       }
@@ -11709,10 +11793,7 @@ function WorkloadInner() {
         });
 
       // 3. Clean up legacy localStorage draft if present
-      const draftKey = `draft_workload_${activePersonId}`;
-      try {
-        localStorage.removeItem(draftKey);
-      } catch (e) {}
+      removeTeacherWorkloadDraft(activePersonId);
 
       // 4. Clear SHS map for this teacher and term
       setShsWorkloadMap((prev) => ({
@@ -11722,11 +11803,14 @@ function WorkloadInner() {
 
       if (typeof setHasUnsavedChanges === "function")
         setHasUnsavedChanges(true);
-      if (showToast)
-        showToast(`✓ ${activeTerm} Term workload for ${teacherName} cleared.`);
+      flow.success(
+        `${activeTerm} Term workload for ${teacherName} was cleared from the database.`,
+        "Workload cleared",
+      );
     } catch (err) {
-      if (showAlert)
-        await showAlert("Error", "Failed to clear workload: " + err.message);
+      flow.error("Failed to clear workload: " + err.message, {
+        heading: "Workload not cleared",
+      });
     }
   };
 
@@ -11740,6 +11824,11 @@ function WorkloadInner() {
     );
     if (!confirmed) return;
 
+    const flow = beginSaveFlow({
+      title: "Clearing Workloads",
+      message: "Clearing workloads from database...",
+    });
+    if (!flow) return;
     try {
       // 0. Delete the saved rows for this term first; if that fails nothing is cleared locally either.
       let clearedVersion = null;
@@ -11750,13 +11839,12 @@ function WorkloadInner() {
         );
         clearedVersion = versionOf(cleared?.workloadSavedAt);
       } catch (err) {
-        if (showAlert)
-          await showAlert(
-            "Error",
-            "Could not clear the saved workloads from the database: " +
-              (err?.message || "Unknown error") +
-              " Nothing was cleared.",
-          );
+        flow.error(
+          "Could not clear the saved workloads from the database: " +
+            (err?.message || "Unknown error") +
+            " Nothing was cleared.",
+          { heading: "Workloads not cleared" },
+        );
         return;
       }
 
@@ -11766,10 +11854,7 @@ function WorkloadInner() {
         const preservedRows = pRows.filter(
           (r) => (r.term || "1st") !== activeTerm,
         );
-        const draftKey = `draft_workload_${p.id}`;
-        try {
-          localStorage.removeItem(draftKey);
-        } catch (e) {}
+        removeTeacherWorkloadDraft(p.id);
         return {
           ...p,
           workloadBaseVersion: clearedVersion,
@@ -11798,16 +11883,14 @@ function WorkloadInner() {
 
       if (typeof setHasUnsavedChanges === "function")
         setHasUnsavedChanges(true);
-      if (showToast)
-        showToast(
-          `✓ All teachers' ${activeTerm} Term workloads have been cleared.`,
-        );
+      flow.success(
+        `All teachers' ${activeTerm} Term workloads were cleared from the database.`,
+        "Workloads cleared",
+      );
     } catch (err) {
-      if (showAlert)
-        await showAlert(
-          "Error",
-          "Failed to clear all workloads: " + err.message,
-        );
+      flow.error("Failed to clear all workloads: " + err.message, {
+        heading: "Workloads not cleared",
+      });
     }
   };
 
@@ -11864,8 +11947,7 @@ function WorkloadInner() {
     }
 
     const selectedTeachers = rawSelected.map((p) => {
-      const draftKey = `draft_workload_${p.id}`;
-      const savedDraft = localStorage.getItem(draftKey);
+      const savedDraft = null; // unsaved edits live in React state; no browser copy is read back
       let personData = { ...p };
       if (savedDraft) {
         try {
@@ -12119,55 +12201,39 @@ function WorkloadInner() {
     return map;
   }, [personnel, workloadTransfers]);
 
-  const getTeacherWorkloadDraftKey = useCallback(
-    (personId, term = activeTerm) => {
-      return getWorkloadDraftKey(
-        schoolInfo?.schoolId,
-        schoolInfo?.schoolYear || currentSchoolYear,
-        personId,
-        term,
-      );
-    },
-    [
-      schoolInfo?.schoolId,
-      schoolInfo?.schoolYear,
-      currentSchoolYear,
-      activeTerm,
-    ],
+  // Unsaved timetable edits use the SAME shared draft store as the Identity & Personal tab
+  // (services/profileDraft.js): sessionStorage only, a delta, keyed by user + school + employee + tab
+  // (workload:<term>) and tied to the saved version it was made from. Nothing here feeds the form or the baseline.
+  const workloadDraftParts = useCallback(
+    (personId, term = activeTerm) => ({
+      user: user?.username || user?.email || "anonymous",
+      schoolId: schoolInfo?.schoolId,
+      personnelId: personId,
+      tab: `workload:${term || "1st"}`,
+    }),
+    [user?.username, user?.email, schoolInfo?.schoolId, activeTerm],
   );
 
   const readTeacherWorkloadDraft = useCallback(
-    (personId, term = activeTerm) => {
-      const canonicalKey = getTeacherWorkloadDraftKey(personId, term);
-      return readMigratedLocalStorage(canonicalKey, [
-        `draft_workload_${personId}`,
-        `draft_workload_${schoolInfo?.schoolId}_${personId}`,
-      ]);
-    },
-    [getTeacherWorkloadDraftKey, schoolInfo?.schoolId],
+    (personId, term = activeTerm) =>
+      readProfileDraft(workloadDraftParts(personId, term)),
+    [workloadDraftParts, activeTerm],
   );
 
   const writeTeacherWorkloadDraft = useCallback(
     (personId, data, term = activeTerm) => {
-      const canonicalKey = getTeacherWorkloadDraftKey(personId, term);
-      return writeWithLegacyCleanup(canonicalKey, data, [
-        `draft_workload_${personId}`,
-        `draft_workload_${schoolInfo?.schoolId}_${personId}`,
-      ]);
+      const delta = buildWorkloadDraftDelta(data, term);
+      const baseVersion = String(data?.workloadBaseVersion ?? "") || "none";
+      saveProfileDraft(workloadDraftParts(personId, term), baseVersion, delta);
     },
-    [getTeacherWorkloadDraftKey, schoolInfo?.schoolId],
+    [workloadDraftParts, activeTerm],
   );
 
   const removeTeacherWorkloadDraft = useCallback(
     (personId, term = activeTerm) => {
-      const canonicalKey = getTeacherWorkloadDraftKey(personId, term);
       const sId = schoolInfo?.school_id || schoolInfo?.id || resolveSchoolId();
       try {
-        localStorage.removeItem(canonicalKey);
-        localStorage.removeItem(`draft_workload_${personId}`);
-        localStorage.removeItem(
-          `draft_workload_${schoolInfo?.schoolId}_${personId}`,
-        );
+        clearProfileDraft(workloadDraftParts(personId, term));
         removeOutboxEntryByModule({
           schoolId: sId,
           user: user?.username || user?.email || "anonymous",
@@ -12178,8 +12244,9 @@ function WorkloadInner() {
       } catch (e) {}
     },
     [
-      getTeacherWorkloadDraftKey,
-      schoolInfo?.schoolId,
+      workloadDraftParts,
+      schoolInfo?.school_id,
+      schoolInfo?.id,
       user?.username,
       user?.email,
       activeTerm,
@@ -12188,57 +12255,9 @@ function WorkloadInner() {
 
   useEffect(() => {
     if (dbPerson) {
-      const savedDraft = readTeacherWorkloadDraft(dbPerson.id);
-      let person = dbPerson;
-      const draftOverlaid = draftRowsMayOverlay(
-        dbPerson.id,
-        activeTerm,
-        schoolInfo?.schoolId,
-      );
-      if (savedDraft) {
-        try {
-          const parsed = JSON.parse(savedDraft);
-          if (parsed && !draftOverlaid && Array.isArray(parsed.workloadRows)) {
-            // Not confirmed yet: this term shows the saved baseline; the draft's rows for it wait for the restore prompt.
-            parsed.workloadRows = [
-              ...(dbPerson.workloadRows || []).filter(
-                (r) => (r.term || "1st") === activeTerm,
-              ),
-              ...parsed.workloadRows.filter(
-                (r) => (r.term || "1st") !== activeTerm,
-              ),
-            ];
-          }
-          if (parsed) {
-            person = {
-              ...dbPerson,
-              ...parsed,
-              assignedGradeLevels:
-                Array.isArray(dbPerson.assignedGradeLevels) &&
-                dbPerson.assignedGradeLevels.length > 0
-                  ? dbPerson.assignedGradeLevels
-                  : parsed.assignedGradeLevels || [],
-              assigned_grade_levels:
-                Array.isArray(dbPerson.assigned_grade_levels) &&
-                dbPerson.assigned_grade_levels.length > 0
-                  ? dbPerson.assigned_grade_levels
-                  : parsed.assigned_grade_levels || [],
-              gradeLevelsTaught:
-                Array.isArray(dbPerson.gradeLevelsTaught) &&
-                dbPerson.gradeLevelsTaught.length > 0
-                  ? dbPerson.gradeLevelsTaught
-                  : parsed.gradeLevelsTaught || [],
-              grade_levels_taught:
-                Array.isArray(dbPerson.grade_levels_taught) &&
-                dbPerson.grade_levels_taught.length > 0
-                  ? dbPerson.grade_levels_taught
-                  : parsed.grade_levels_taught || [],
-            };
-          }
-        } catch (e) {
-          console.error("Failed to parse draft", e);
-        }
-      }
+      // The editor starts from the saved record. A draft is offered after the saved rows are fetched (see
+      // hydrateWorkloadFromServer) and is never applied silently.
+      const person = dbPerson;
 
       const isNT = isNonTeachingPerson(person);
 
@@ -13250,19 +13269,6 @@ function WorkloadInner() {
 
       const updatedPerson = { ...person, workloadRows: updatedRows };
       setEditPerson(updatedPerson);
-
-      if (rowsChanged && savedDraft && draftOverlaid) {
-        const schoolId = resolveSchoolId(schoolInfo?.schoolId);
-        const snapKey = `${schoolId}__${dbPerson.id}__${activeTerm}`;
-        const savedNorm = savedTeacherTermSnapshotRef.current?.get(snapKey);
-        const currentNorm = normalizeRowsForComparison(updatedRows, activeTerm);
-        if (
-          savedNorm &&
-          JSON.stringify(currentNorm) === JSON.stringify(savedNorm)
-        ) {
-          removeTeacherWorkloadDraft(dbPerson.id, activeTerm);
-        }
-      }
     } else {
       setEditPerson(null);
     }
@@ -13317,31 +13323,30 @@ function WorkloadInner() {
 
       setUpdatingAllowanceKey(key);
       try {
-        const res = await setAllowanceDisabled(
-          currentPerson.id,
-          key,
-          nextDisabled,
-          activeSchoolYear,
+        const flow = await runSaveFlow(
+          {
+            title: "Saving Allowance",
+            message: "Saving allowance setting to database...",
+            successTitle: "Allowance saved",
+            successMessage: `${nextDisabled ? "Disabled" : "Re-enabled"} ${conf.label} for ${teacherName}.`,
+            errorTitle: "Allowance not saved",
+          },
+          async () => {
+            const res = await setAllowanceDisabled(
+              currentPerson.id,
+              key,
+              nextDisabled,
+              activeSchoolYear,
+            );
+            if (!(res && res.success !== false)) {
+              throw new Error(
+                `Failed to update ${conf.label}: ${res?.error || "Server error"}`,
+              );
+            }
+          },
         );
-        if (res && res.success !== false) {
-          if (typeof setHasUnsavedChanges === "function")
-            setHasUnsavedChanges(true);
-          if (showToast) {
-            showToast(
-              `${nextDisabled ? "🚫 Disabled" : "✅ Re-enabled"} ${conf.label} for ${teacherName}`,
-              "info",
-            );
-          }
-        } else {
-          if (showToast) {
-            showToast(
-              `Failed to update ${conf.label}: ${res?.error || "Server error"}`,
-              "error",
-            );
-          }
-        }
-      } catch (err) {
-        if (showToast) showToast(`Error updating ${conf.label}`, "error");
+        if (flow.ok && typeof setHasUnsavedChanges === "function")
+          setHasUnsavedChanges(true);
       } finally {
         setUpdatingAllowanceKey(null);
       }
@@ -13386,31 +13391,30 @@ function WorkloadInner() {
 
       setUpdatingAllowanceKey(key);
       try {
-        const res = await toggleAllowance(
-          currentPerson.id,
-          key,
-          nextGranted,
-          activeSchoolYear,
+        const flow = await runSaveFlow(
+          {
+            title: "Saving Allowance",
+            message: "Saving allowance to database...",
+            successTitle: "Allowance saved",
+            successMessage: `${nextGranted ? "Granted" : "Revoked"} ${conf.label} for ${teacherName}.`,
+            errorTitle: "Allowance not saved",
+          },
+          async () => {
+            const res = await toggleAllowance(
+              currentPerson.id,
+              key,
+              nextGranted,
+              activeSchoolYear,
+            );
+            if (!(res && res.success !== false)) {
+              throw new Error(
+                `Failed to update ${conf.label}: ${res?.error || "Server error"}`,
+              );
+            }
+          },
         );
-        if (res && res.success !== false) {
-          if (typeof setHasUnsavedChanges === "function")
-            setHasUnsavedChanges(true);
-          if (showToast) {
-            showToast(
-              `${nextGranted ? "Granted" : "Revoked"} ${conf.label} for ${teacherName}`,
-              "success",
-            );
-          }
-        } else {
-          if (showToast) {
-            showToast(
-              `Failed to grant ${conf.label}: ${res?.error || "Server error"}`,
-              "error",
-            );
-          }
-        }
-      } catch (err) {
-        if (showToast) showToast(`Error updating ${conf.label}`, "error");
+        if (flow.ok && typeof setHasUnsavedChanges === "function")
+          setHasUnsavedChanges(true);
       } finally {
         setUpdatingAllowanceKey(null);
       }
@@ -13539,10 +13543,7 @@ function WorkloadInner() {
 
   // baseRows = { term, rows } (or { all: true, rows }) are the saved rows the local copy was built on; the per-block merge diffs against them.
   const applyWorkloadToPerson = useCallback(
-    (
-      personId,
-      { termRows = null, baseVersion, baseRows = null, skipDraft = false },
-    ) => {
+    (personId, { termRows = null, baseVersion, baseRows = null }) => {
       const remap = (rows) =>
         (Array.isArray(rows) ? rows : []).map((r) => {
           const matched = matchSectionForWorkloadRow(r, classSections);
@@ -13592,20 +13593,8 @@ function WorkloadInner() {
       setEditPerson((prev) =>
         prev && String(prev.id) === String(personId) ? patch(prev) : prev,
       );
-      if (skipDraft) return; // a declined draft stays exactly as it was
-      try {
-        const raw = readTeacherWorkloadDraft(personId);
-        if (raw) writeTeacherWorkloadDraft(personId, patch(JSON.parse(raw)));
-      } catch (e) {
-        /* the draft is left as it was */
-      }
     },
-    [
-      setPersonnel,
-      classSections,
-      readTeacherWorkloadDraft,
-      writeTeacherWorkloadDraft,
-    ],
+    [setPersonnel, classSections],
   );
 
   const hydrateWorkloadFromServer = useCallback(
@@ -13630,23 +13619,6 @@ function WorkloadInner() {
           // The database could not be read: do not compare or restore. Fall back to the browser draft (flagged below as not
           // yet confirmed saved) and run the comparison again once the database is reachable.
           restoreResolutions.set(resolutionKey(personId, term), "unreachable");
-          try {
-            const rawDraft = localStorage.getItem(`draft_workload_${personId}`);
-            const fallback = rawDraft ? JSON.parse(rawDraft) : null;
-            if (fallback && Array.isArray(fallback.workloadRows)) {
-              applyWorkloadToPerson(personId, {
-                termRows: {
-                  term,
-                  rows: fallback.workloadRows.filter(
-                    (r) => (r.term || "1st") === term,
-                  ),
-                },
-                skipDraft: true,
-              });
-            }
-          } catch (draftError) {
-            /* keep what the editor holds */
-          }
           setWorkloadSync((prev) => ({
             ...prev,
             [personId]: {
@@ -13695,13 +13667,6 @@ function WorkloadInner() {
       const sid = cleanSchoolId(
         schoolInfo?.schoolId || schoolInfo?.id || resolveSchoolId(),
       );
-      const sy = canonicalSchoolYear(schoolInfo?.schoolYear || "SY 26-27");
-      const canonicalDraftKey = getWorkloadDraftKey(sid, sy, personId, term);
-      const legacyDraftKeys = [
-        `draft_workload_${personId}`,
-        `draft_workload_${sid}_${personId}`,
-        getWorkloadDraftKey(sid, sy, personId),
-      ];
       const key = resolutionKey(personId, term);
       const prior = restoreResolutions.get(key);
       const teacherName =
@@ -13714,10 +13679,7 @@ function WorkloadInner() {
 
       const clearAllDrafts = () => {
         try {
-          localStorage.removeItem(canonicalDraftKey);
-          for (const lk of legacyDraftKeys) {
-            localStorage.removeItem(lk);
-          }
+          clearProfileDraft(workloadDraftParts(personId, term));
           removeOutboxEntryByModule({
             schoolId: sid,
             user: user?.username || user?.email || "anonymous",
@@ -13728,22 +13690,21 @@ function WorkloadInner() {
         } catch (e) {}
       };
 
+      // Only a draft made against THIS saved version may be offered; a draft for any other version is stale
+      // and is dropped. (A matching draft is rebuilt by applying its delta to the rows just fetched.)
+      const draft = readTeacherWorkloadDraft(personId, term);
       let draftObj = null;
-      try {
-        const rawDraft = readMigratedLocalStorage(
-          canonicalDraftKey,
-          legacyDraftKeys,
-        );
-        if (rawDraft) draftObj = JSON.parse(rawDraft);
-      } catch (e) {
-        clearAllDrafts();
+      if (draft) {
+        if (String(draft.baseVersion) !== (String(version ?? "") || "none")) {
+          clearAllDrafts();
+        } else {
+          draftObj = {
+            workloadRows: applyWorkloadDraftDelta(dbRows, draft.delta, term),
+            workloadDraftSavedAt: draft.savedAt,
+          };
+        }
       }
-      const draftRowsAll =
-        draftObj &&
-        Array.isArray(draftObj.workloadRows) &&
-        draftObj.workloadRows.length > 0
-          ? draftObj.workloadRows
-          : null;
+      const draftRowsAll = draftObj ? draftObj.workloadRows : null;
 
       const adoptSaved = () =>
         applyWorkloadToPerson(personId, {
@@ -13786,12 +13747,8 @@ function WorkloadInner() {
               dbRows,
               dbVersion: state.version,
               localRows: draftRowsAll,
-              baseRows: Array.isArray(person.workloadBaseRows)
-                ? person.workloadBaseRows
-                : undefined,
-              draftSavedAt:
-                (draftObj && draftObj.workloadDraftSavedAt) ||
-                person.workloadDraftSavedAt,
+              baseRows: dbRows, // the delta was made against exactly these saved rows
+              draftSavedAt: draftObj.workloadDraftSavedAt,
             });
 
         if (comparison.action === "clean") {
@@ -13923,45 +13880,32 @@ function WorkloadInner() {
     );
   }, [currentPerson, activeTerm, isTeacherDirty, workloadSync]);
 
-  const hasLocalDrafts = useMemo(() => {
-    const cleanSchool = resolveSchoolId(schoolInfo?.schoolId);
-    return (personnel || []).some((p) => {
-      if (
-        !p?.id ||
-        (currentPerson && String(p.id) === String(currentPerson.id))
-      )
-        return false;
-      const snapKey = `${cleanSchool}__${p.id}__${activeTerm}`;
-      if (!savedTeacherTermSnapshotRef.current.has(snapKey)) return false;
-      const raw = readTeacherWorkloadDraft(p.id);
-      if (!raw) return false;
-      try {
-        const parsed = JSON.parse(raw);
-        const draftNorm = normalizeRowsForComparison(
-          parsed.workloadRows || [],
-          activeTerm,
-        );
-        const savedNorm =
-          savedTeacherTermSnapshotRef.current.get(snapKey) || [];
-        return JSON.stringify(draftNorm) !== JSON.stringify(savedNorm);
-      } catch (e) {
-        return false;
-      }
-    });
-  }, [
-    personnel,
-    currentPerson,
-    activeTerm,
-    schoolInfo?.schoolId,
-    workloadSync,
-    readTeacherWorkloadDraft,
-  ]);
+  // Other teachers whose timetable was edited on this page and not saved (compared with their saved rows).
+  const hasLocalDrafts = useMemo(
+    () =>
+      (personnel || []).some((p) => {
+        if (
+          !p?.id ||
+          (currentPerson && String(p.id) === String(currentPerson.id))
+        )
+          return false;
+        return isTeacherDirty(p.id, activeTerm, p.workloadRows);
+      }),
+    [personnel, currentPerson, activeTerm, workloadSync, isTeacherDirty],
+  );
 
   const isDirty = Boolean(isCurrentTeacherDirty || hasLocalDrafts);
 
   const handleDiscard = useCallback(() => {
     (personnel || []).forEach((p) => {
       removeTeacherWorkloadDraft(p.id);
+      // Teachers edited in this session go back to their saved rows too.
+      if (
+        String(p.id) !== String(dbPerson?.id) &&
+        isTeacherDirty(p.id, activeTerm, p.workloadRows)
+      ) {
+        hydrateWorkloadFromServer(p.id, activeTerm, { afterSave: true });
+      }
     });
     if (dbPerson?.id) {
       hydrateWorkloadFromServer(dbPerson.id, activeTerm, { afterSave: true });
@@ -13972,6 +13916,7 @@ function WorkloadInner() {
     activeTerm,
     hydrateWorkloadFromServer,
     removeTeacherWorkloadDraft,
+    isTeacherDirty,
   ]);
 
   const isSavingRef = useRef(false);
@@ -14007,6 +13952,10 @@ function WorkloadInner() {
       term: activeTerm || "1st",
       module: "workload",
       recordId: currentPerson?.id || currentPersonRef.current?.id,
+      personnelId: currentPerson?.id || currentPersonRef.current?.id,
+      baseVersion:
+        (currentPerson || currentPersonRef.current)?.workloadBaseVersion ??
+        null,
     }),
     getDirtyReasons: () => {
       const reasons = [];
@@ -14028,9 +13977,9 @@ function WorkloadInner() {
       if (hasLocalDrafts) {
         reasons.push({
           field: "workload-draft-banner",
-          title: "Browser Drafts Pending",
+          title: "Other Teachers Have Unsaved Changes",
           subtitle:
-            "Other teacher timetable edits saved locally in this browser",
+            "Other teacher timetable edits that have not been saved yet",
           targetId: "workload-draft-banner",
         });
       }
@@ -14129,14 +14078,6 @@ function WorkloadInner() {
     let targetPerson = baseP;
     if (editPerson && String(editPerson.id) === String(personId)) {
       targetPerson = editPerson;
-    } else {
-      const savedDraft = readTeacherWorkloadDraft(personId);
-      if (savedDraft) {
-        try {
-          const parsed = JSON.parse(savedDraft);
-          if (parsed) targetPerson = parsed;
-        } catch (e) {}
-      }
     }
 
     const updated = {
@@ -16279,8 +16220,7 @@ function WorkloadInner() {
     const slots = [];
 
     (personnel || []).forEach((p) => {
-      const draftKey = `draft_workload_${p.id}`;
-      const savedDraft = localStorage.getItem(draftKey);
+      const savedDraft = null; // unsaved edits live in React state; no browser copy is read back
       let activeP = p;
       if (savedDraft) {
         try {
@@ -16392,8 +16332,7 @@ function WorkloadInner() {
     if (teacherId) {
       const teacher = personnel.find((p) => p.id === teacherId);
       if (teacher) {
-        const draftKey = `draft_workload_${teacherId}`;
-        const savedDraft = localStorage.getItem(draftKey);
+        const savedDraft = null; // unsaved edits live in React state; no browser copy is read back
         let activeTeacher = teacher;
         if (savedDraft) {
           try {
@@ -16553,8 +16492,7 @@ function WorkloadInner() {
     const targetTeacher = personnel.find((p) => p.id === newSlot.teacherId);
     if (!targetTeacher) return;
 
-    const draftKey = `draft_workload_${targetTeacher.id}`;
-    const savedDraft = localStorage.getItem(draftKey);
+    const savedDraft = null; // unsaved edits live in React state; no browser copy is read back
     let activeRows = targetTeacher.workloadRows || [];
     if (savedDraft) {
       try {
@@ -16607,8 +16545,7 @@ function WorkloadInner() {
     const targetTeacher = personnel.find((p) => p.id === personnelId);
     if (!targetTeacher) return;
 
-    const draftKey = `draft_workload_${targetTeacher.id}`;
-    const savedDraft = localStorage.getItem(draftKey);
+    const savedDraft = null; // unsaved edits live in React state; no browser copy is read back
     let activeRows = targetTeacher.workloadRows || [];
     if (savedDraft) {
       try {
@@ -16820,37 +16757,39 @@ function WorkloadInner() {
     }
 
     setIsSaving(true);
-    try {
-      const personToPersist = {
-        ...currentPerson,
-        workloadRows: enrichedRows,
-      };
+    await runSaveFlow(
+      {
+        title: "Saving Workload",
+        message: "Saving workload to database...",
+        successTitle: "Workload saved",
+        successMessage: "Workload changes saved to database.",
+        errorTitle: "Workload not saved",
+      },
+      async () => {
+        const personToPersist = {
+          ...currentPerson,
+          workloadRows: enrichedRows,
+        };
 
-      const res = await persistWorkloadToServer(personToPersist);
-      const { person: updatedPerson, edited } = commitConfirmedSave(
-        personToPersist,
-        res,
-      );
+        const res = await persistWorkloadToServer(personToPersist);
+        const { person: updatedPerson, edited } = commitConfirmedSave(
+          personToPersist,
+          res,
+        );
 
-      if (savePersonnelChanges) {
-        await savePersonnelChanges(currentPerson.id, updatedPerson, {
-          skipWorkloadSync: true,
-          skipApiUpdate: true,
-        });
-      }
+        if (savePersonnelChanges) {
+          await savePersonnelChanges(currentPerson.id, updatedPerson, {
+            skipWorkloadSync: true,
+            skipApiUpdate: true,
+          });
+        }
 
-      broadcastClusteredSlots(updatedPerson.workloadRows);
-      setHasUnsavedChanges(edited);
-      removeTeacherWorkloadDraft(currentPerson.id);
-
-      showToast("Workload changes saved to database.", "success");
-    } catch (err) {
-      console.warn("Save workload error:", err);
-      const errMsg = err?.message || "Failed to save workload changes";
-      await showAlert("Error", errMsg);
-    } finally {
-      setIsSaving(false);
-    }
+        broadcastClusteredSlots(updatedPerson.workloadRows);
+        setHasUnsavedChanges(edited);
+        removeTeacherWorkloadDraft(currentPerson.id);
+      },
+    );
+    setIsSaving(false);
   };
 
   const handleSaveValidate = async () => {
@@ -16913,43 +16852,44 @@ function WorkloadInner() {
     }
 
     setIsSaving(true);
-    try {
-      const updated = {
-        ...currentPerson,
-        workloadRows: enrichedRows,
-        workloadVerified: true,
-        workloadValidated: true,
-      };
+    await runSaveFlow(
+      {
+        title: "Saving Workload",
+        message: "Saving and verifying workload...",
+        successTitle: "Workload saved",
+        successMessage: (res) =>
+          res?.edited
+            ? "Saved. Your newer edits are kept and still need saving."
+            : "Workload verified and saved to database!",
+        errorTitle: "Workload not saved",
+      },
+      async () => {
+        const updated = {
+          ...currentPerson,
+          workloadRows: enrichedRows,
+          workloadVerified: true,
+          workloadValidated: true,
+        };
 
-      const res = await persistWorkloadToServer(updated);
-      const { person: fullyUpdated, edited } = commitConfirmedSave(
-        updated,
-        res,
-      );
-      if (savePersonnelChanges) {
-        await savePersonnelChanges(currentPerson.id, fullyUpdated, {
-          skipWorkloadSync: true,
-          skipApiUpdate: true,
-        });
-      }
+        const res = await persistWorkloadToServer(updated);
+        const { person: fullyUpdated, edited } = commitConfirmedSave(
+          updated,
+          res,
+        );
+        if (savePersonnelChanges) {
+          await savePersonnelChanges(currentPerson.id, fullyUpdated, {
+            skipWorkloadSync: true,
+            skipApiUpdate: true,
+          });
+        }
 
-      markTeacherValidated(currentPerson.id, !edited);
-      setHasUnsavedChanges(edited);
-      removeTeacherWorkloadDraft(currentPerson.id);
-
-      showToast(
-        edited
-          ? "Saved. Your newer edits are kept and still need saving."
-          : "Workload verified and saved to database!",
-        edited ? "warning" : "success",
-      );
-    } catch (err) {
-      console.warn("Save workload error:", err);
-      const errMsg = err?.message || "Failed to save workload schedule";
-      await showAlert("Error", errMsg);
-    } finally {
-      setIsSaving(false);
-    }
+        markTeacherValidated(currentPerson.id, !edited);
+        setHasUnsavedChanges(edited);
+        removeTeacherWorkloadDraft(currentPerson.id);
+        return { edited };
+      },
+    );
+    setIsSaving(false);
   };
 
   // The one workload save used by the header Save button AND the unsaved-changes dialog's Save button.
@@ -17041,7 +16981,7 @@ function WorkloadInner() {
           if (!prev) return true;
           const curSnap = getPersonWorkloadSnapshot(p);
           if (JSON.stringify(curSnap) !== JSON.stringify(prev)) return true;
-          if (localStorage.getItem(`draft_workload_${p.id}`)) return true;
+          if (readTeacherWorkloadDraft(p.id)) return true;
           return false;
         });
 
@@ -17161,7 +17101,6 @@ function WorkloadInner() {
       }
 
       markCleanRef.current?.();
-      showToast("Workload schedule saved to database successfully.", "success");
       return { ok: true };
     } catch (err) {
       console.warn("Failed to save workload schedule:", err);
@@ -17179,12 +17118,6 @@ function WorkloadInner() {
           lastError: err?.message || String(err),
         });
       }
-      await reportError({
-        title: "Workload Save Failed",
-        message: err?.message || "Failed to save workload schedule",
-        error: err,
-        canRetry: true,
-      });
       return {
         ok: false,
         title: "Error",
@@ -17198,10 +17131,16 @@ function WorkloadInner() {
 
   // Header Save button: same save, errors shown in the existing alert.
   const handleSave = async () => {
-    const result = await runWorkloadSave();
-    if (result && result.ok === false) {
-      await showAlert(result.title, result.message);
-    }
+    await runSaveFlow(
+      {
+        title: "Saving Workload",
+        message: "Saving workload to database...",
+        successTitle: "Workload saved",
+        successMessage: "Workload schedule saved to database successfully.",
+        errorTitle: "Workload not saved",
+      },
+      () => runWorkloadSave(),
+    );
   };
 
   // Always points at the latest render's save (it reads current state), for the dialog's Save button.
@@ -17872,8 +17811,7 @@ function WorkloadInner() {
                         let totalSecMins = 0;
 
                         (personnel || []).forEach((p) => {
-                          const draftKey = `draft_workload_${p.id}`;
-                          const savedDraft = localStorage.getItem(draftKey);
+                          const savedDraft = null; // unsaved edits live in React state; no browser copy is read back
                           let activeP = p;
                           if (savedDraft) {
                             try {

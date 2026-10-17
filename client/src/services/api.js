@@ -399,6 +399,43 @@ export const api = {
     });
     return parseJsonOrThrow(res);
   },
+  // Designations page: replace ONE person's designation rows (assign / change / remove).
+  saveDesignationsForPersonnel: async (
+    personnelId,
+    designation,
+    designations,
+  ) => {
+    const res = await fetchWithAuth(
+      `${API_BASE}/designations/personnel/${encodeURIComponent(personnelId)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ designation, designations }),
+      },
+    );
+    return parseJsonOrThrow(res);
+  },
+  getDesignationsNa: async (schoolYear) => {
+    const res = await fetchWithAuth(
+      `${API_BASE}/designations/na?schoolYear=${encodeURIComponent(schoolYear || "SY 26-27")}`,
+    );
+    return parseJsonOrThrow(res);
+  },
+  saveDesignationsNa: async (naMap, schoolYear) => {
+    const res = await fetchWithAuth(`${API_BASE}/designations/na`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ naMap, schoolYear: schoolYear || "SY 26-27" }),
+    });
+    return parseJsonOrThrow(res);
+  },
+  // The saved record straight from the database (the baseline for the unsaved-changes check).
+  getPersonnelById: async (id) => {
+    const res = await fetchWithAuth(
+      `${API_BASE}/personnel/${encodeURIComponent(id)}`,
+    );
+    return parseJsonOrThrow(res);
+  },
   deletePersonnel: async (id, meta = {}) => {
     const res = await fetchWithAuth(`${API_BASE}/personnel/${id}`, {
       method: "DELETE",
@@ -433,6 +470,29 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(record),
     });
+    return parseJsonOrThrow(res);
+  },
+  // The Change School Head dialog: replaces the head(s) in one atomic, server-verified write.
+  // Resolves with the heads exactly as stored in the database ({ success, heads: [{ id, isMain, level }] }).
+  saveSchoolHeadConfig: async ({
+    hasMultipleHeads,
+    mainHeadId,
+    assignments,
+    schoolId,
+  }) => {
+    const res = await fetchWithAuth(
+      `${API_BASE}/personnel/school-head-config`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          hasMultipleHeads: Boolean(hasMultipleHeads),
+          mainHeadId: mainHeadId || null,
+          assignments: assignments || {},
+          schoolId,
+        }),
+      },
+    );
     return parseJsonOrThrow(res);
   },
   toggleSchoolHead: async (id, isSchoolHead, isMainSh = true, extra = {}) => {

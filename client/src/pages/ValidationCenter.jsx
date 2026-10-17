@@ -49,6 +49,7 @@ export default function ValidationCenter() {
     sdoSchoolHead,
     activeTerm,
     setActiveTerm,
+    runSaveFlow,
   } = useApp();
 
   const [certified, setCertified] = useState(false);
@@ -146,36 +147,40 @@ export default function ValidationCenter() {
         allowancesMap: allowancesMap || localDraft?.allowancesMap || {},
       };
 
-      const res = await api.resubmitSchoolValidation({
-        schoolId: schoolInfo.schoolId,
-        schoolYear: schoolInfo.schoolYear || "2024-2025",
-        payload,
-        signature: signature || null,
-        certifiedBy: principalName,
-      });
-
-      if (res?.success) {
-        if (showToast)
-          showToast(
+      const flow = await runSaveFlow(
+        {
+          title: "Re-submitting eSF7",
+          message: "Re-submitting eSF7 to SDO...",
+          successTitle: "eSF7 re-submitted",
+          successMessage:
             "eSF7 successfully re-submitted to SDO with RESUBMITTED status!",
-            "success",
-          );
+          errorTitle: "Re-submission error",
+        },
+        async () => {
+          let res;
+          try {
+            res = await api.resubmitSchoolValidation({
+              schoolId: schoolInfo.schoolId,
+              schoolYear: schoolInfo.schoolYear || "2024-2025",
+              payload,
+              signature: signature || null,
+              certifiedBy: principalName,
+            });
+          } catch (err) {
+            console.error("Re-submit failed:", err);
+            throw new Error(
+              apiErrorMessage(err, "Unable to re-submit eSF7 to SDO."),
+            );
+          }
+          if (!res?.success) {
+            throw new Error(res?.error || "Failed to re-submit eSF7 to SDO.");
+          }
+        },
+      );
+      if (flow.ok) {
         await fetchSdoValidation();
         await fetchHistory();
-      } else {
-        if (showAlert)
-          await showAlert(
-            "Re-submission Error",
-            res?.error || "Failed to re-submit eSF7 to SDO.",
-          );
       }
-    } catch (err) {
-      console.error("Re-submit failed:", err);
-      if (showAlert)
-        await showAlert(
-          "Re-submission Error",
-          apiErrorMessage(err, "Unable to re-submit eSF7 to SDO."),
-        );
     } finally {
       setIsResubmittingToSdo(false);
     }

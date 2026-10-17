@@ -1,6 +1,5 @@
 import React from "react";
 import { AppProvider, useApp } from "./context/AppContext";
-import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
 const Dashboard = React.lazy(() => import("./pages/Dashboard"));
 const NodeMap = React.lazy(() => import("./pages/NodeMap"));
@@ -64,8 +63,6 @@ function MainAppContent() {
   const {
     activeView = "landing",
     setActiveView = () => {},
-    isNodeUnlocked = () => true,
-    showToast = () => {},
     toast = null,
     setToast = () => {},
     customModal = null,
@@ -137,6 +134,20 @@ function MainAppContent() {
     prevViewRef.current = activeView;
   }, [activeView, user, isInitialized]);
 
+  // While a save is running nothing behind the modal can be used: no navigation away, no reload prompt-less
+  // exits, and Esc / Tab are swallowed (the overlay also covers every click).
+  const savingLoading =
+    customModal?.type === "saving" && customModal.status === "loading";
+  React.useEffect(() => {
+    if (!savingLoading) return undefined;
+    const warn = (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [savingLoading]);
+
   // Public Faculty Room QR Profiling bypass (No Login Required)
   if (isRoomProfiling || activeView === "room-profiling") {
     return (
@@ -146,8 +157,171 @@ function MainAppContent() {
     );
   }
 
+  const renderSavingModal = () => {
+    const m = customModal;
+    const tone =
+      m.status === "success"
+        ? { color: "#15803D", bg: "#DCFCE7", mark: "✓" }
+        : m.status === "error"
+          ? { color: "#DC2626", bg: "#FEE2E2", mark: "✕" }
+          : null;
+    return (
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-busy={m.status === "loading"}
+        tabIndex={-1}
+        ref={(el) => el && !el.contains(document.activeElement) && el.focus()}
+        onKeyDown={(e) => {
+          if (m.status === "loading" && (e.key === "Escape" || e.key === "Tab"))
+            e.preventDefault();
+          if (m.status !== "loading" && e.key === "Escape" && m.onClose)
+            m.onClose();
+        }}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(10, 25, 47, 0.4)",
+          backdropFilter: "blur(4px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000001,
+          outline: "none",
+        }}
+      >
+        <div
+          style={{
+            background: "#FFFFFF",
+            borderRadius: "16px",
+            width: "440px",
+            maxWidth: "90%",
+            padding: "24px",
+            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+            border: "1.5px solid var(--line)",
+            animation: "scaleUp 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            {m.status === "loading" ? (
+              <svg
+                width="44"
+                height="44"
+                viewBox="0 0 44 44"
+                aria-hidden="true"
+              >
+                <circle
+                  cx="22"
+                  cy="22"
+                  r="18"
+                  fill="none"
+                  stroke="#E2E8F0"
+                  strokeWidth="4"
+                />
+                <path
+                  d="M22 4a18 18 0 0 1 18 18"
+                  fill="none"
+                  stroke="var(--blue, #2563EB)"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                >
+                  <animateTransform
+                    attributeName="transform"
+                    type="rotate"
+                    from="0 22 22"
+                    to="360 22 22"
+                    dur="0.8s"
+                    repeatCount="indefinite"
+                  />
+                </path>
+              </svg>
+            ) : (
+              <div
+                style={{
+                  width: "44px",
+                  height: "44px",
+                  borderRadius: "50%",
+                  background: tone.bg,
+                  color: tone.color,
+                  fontSize: "24px",
+                  fontWeight: 800,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {tone.mark}
+              </div>
+            )}
+          </div>
+          <h3
+            style={{
+              margin: "14px 0 10px",
+              fontSize: "18px",
+              color: "var(--navy)",
+              fontWeight: "800",
+            }}
+          >
+            {m.title}
+          </h3>
+          <div
+            style={{
+              margin: "0 0 20px",
+              fontSize: "14px",
+              color: "#475569",
+              lineHeight: "1.5",
+              whiteSpace: "pre-line",
+              wordBreak: "break-word",
+              textAlign: m.status === "error" ? "left" : "center",
+            }}
+          >
+            {m.message}
+          </div>
+          {m.status !== "loading" && (
+            <div
+              style={{
+                display: "flex",
+                gap: "8px",
+                justifyContent: "flex-end",
+              }}
+            >
+              {m.status === "error" && (
+                <button
+                  className="btn secondary"
+                  onClick={m.onClose}
+                  style={{ minHeight: "38px", padding: "0 16px" }}
+                >
+                  Close
+                </button>
+              )}
+              <button
+                className="btn"
+                autoFocus
+                onClick={
+                  m.status === "error" && m.canRetry ? m.onRetry : m.onClose
+                }
+                style={{
+                  minHeight: "38px",
+                  padding: "0 16px",
+                  background:
+                    "linear-gradient(180deg, var(--blue), var(--navy))",
+                  borderColor: "var(--navy)",
+                  color: "white",
+                }}
+              >
+                {m.status === "error" ? (m.canRetry ? "Retry" : "OK") : "OK"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderCustomModal = () => {
     if (!customModal) return null;
+    if (customModal.type === "saving") return renderSavingModal();
     return (
       <div
         style={{

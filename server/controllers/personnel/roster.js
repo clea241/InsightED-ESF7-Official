@@ -923,41 +923,155 @@ router.get("/", async (req, res) => {
  * (Triggered on 'ADD PERSONNEL' or when user clicks 'SAVE')
  * Strictly without raw_payload.
  */
-router.post("/bulk", async (req, res) => {
-  const client = await db.pool.connect();
-  try {
-    const schoolId =
-      getSchoolIdFromRequest(req) ||
-      req.body.schoolId ||
-      req.body.school_id ||
-      "108348";
-    const cleanSchoolId = String(schoolId).replace(/^SCH-/i, "").trim();
-    const schoolYear =
-      req.body.schoolYear || req.body.school_year || "SY 26-27";
-    const personnelList = req.body.personnelList || req.body.personnel || [];
+// POST /api/personnel/bulk
+// Set-based upsert: ONE lookup of the school's existing people, then multi-row
+// INSERT ... ON CONFLICT DO UPDATE in chunks, in ONE short transaction. Rows whose data did not
+// change are skipped by the ON CONFLICT ... WHERE ... IS DISTINCT FROM guard (no new row version,
+// no index churn). A per-school+year advisory lock rejects a concurrent duplicate save.
+const BULK_CHUNK = 50;
 
-    if (!Array.isArray(personnelList) || personnelList.length === 0) {
-      return res.json({
-        success: true,
-        count: 0,
-        message: "No personnel to save.",
+const PROFILE_COLS = [
+  "id",
+  "prn",
+  "school_id",
+  "school_year",
+  "type",
+  "salutation",
+  "first_name",
+  "middle_name",
+  "last_name",
+  "name_extension",
+  "tin",
+  "no_tin",
+  "sex_at_birth",
+  "civil_status",
+  "solo_parent",
+  "religion",
+  "ethnic_group",
+  "birthdate",
+  "age",
+  "philsys_no",
+  "no_philsys",
+  "employee_no",
+  "deped_email",
+  "no_deped_email",
+  "allow_email_discrepancy",
+  "is_school_head",
+  "is_main_sh",
+  "legacy_id",
+];
+// Columns the upsert may change (everything except the key); used for the skip-if-unchanged guard.
+// is_school_head / is_main_sh are NOT in this list on purpose: a bulk roster save (which can replay an old
+// outbox copy) must never flip who the School Head is. New rows still get the flags on INSERT; existing rows
+// change them only through PUT /school-head-config or PUT /:id/school-head.
+const PROFILE_UPDATE_COLS = PROFILE_COLS.filter(
+  (c) =>
+    c !== "id" &&
+    c !== "legacy_id" &&
+    c !== "is_school_head" &&
+    c !== "is_main_sh",
+);
+
+const EMP_COLS = [
+  "id",
+  "personnel_id",
+  "position_category",
+  "position",
+  "step_increment",
+  "actual_step",
+  "school_reported_step",
+  "fund_source",
+  "nature_of_appointment",
+  "hiring_arrangement",
+  "deployment_status",
+  "assigned_schools",
+  "grade_levels_taught",
+  "first_service_date",
+  "last_promotion_date",
+  "new_station_date",
+  "last_lateral_movement_date",
+];
+const EMP_JSONB = new Set(["assigned_schools", "grade_levels_taught"]);
+
+const multiValues = (rows, cols, jsonb = new Set()) => {
+  const params = [];
+  const tuples = rows.map((row) => {
+    const ph = cols.map((c) => {
+      params.push(row[c]);
+      return `$${params.length}${jsonb.has(c) ? "::jsonb" : ""}`;
+    });
+    return `(${ph.join(", ")}, NOW())`;
+  });
+  return { params, tuples };
+};
+
+router.post("/bulk", async (req, res) => {
+  const schoolId =
+    getSchoolIdFromRequest(req) ||
+    req.body.schoolId ||
+    req.body.school_id ||
+    "108348";
+  const cleanSchoolId = String(schoolId).replace(/^SCH-/i, "").trim();
+  const schoolYear = req.body.schoolYear || req.body.school_year || "SY 26-27";
+  const personnelList = req.body.personnelList || req.body.personnel || [];
+
+  if (!Array.isArray(personnelList) || personnelList.length === 0) {
+    return res.json({
+      success: true,
+      count: 0,
+      message: "No personnel to save.",
+    });
+  }
+
+  const client = await db.getClient();
+  try {
+    await client.query("BEGIN");
+
+    // Single-flight per school + year: a concurrent duplicate is rejected, not queued behind
+    // the same rows (that is what produced lock waits and statement timeouts).
+    const lockRes = await client.query(
+      "SELECT pg_try_advisory_xact_lock(hashtext($1)) AS locked",
+      [`personnel_bulk:${cleanSchoolId}:${schoolYear}`],
+    );
+    if (!lockRes.rows[0]?.locked) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({
+        error:
+          "A roster save for this school and school year is already in progress. Please wait for it to finish.",
       });
     }
 
-    await client.query("BEGIN");
-    let savedCount = 0;
-
-    const maxIdRes = await client.query(
-      "SELECT MAX(id::bigint) AS max_id FROM esf7_personnel_profile WHERE id ~ '^[0-9]+$'",
+    // One lookup of the school's existing people (uses the school_id index) instead of one
+    // SELECT per person.
+    const existingRes = await client.query(
+      `SELECT id, prn, legacy_id, first_name, last_name
+         FROM esf7_personnel_profile
+        WHERE school_id = ANY($1)`,
+      [[cleanSchoolId, `SCH-${cleanSchoolId}`]],
     );
-    let nextNumericId = maxIdRes.rows[0]?.max_id
-      ? BigInt(maxIdRes.rows[0].max_id)
-      : 843140n;
+    const byId = new Map();
+    const byPrn = new Map();
+    const byName = new Map();
+    for (const r of existingRes.rows) {
+      byId.set(String(r.id), r);
+      if (r.legacy_id) byId.set(String(r.legacy_id), r);
+      if (r.prn) byPrn.set(String(r.prn), r);
+      byName.set(`${r.first_name}|${r.last_name}`, r);
+    }
 
-    for (let idx = 0; idx < personnelList.length; idx++) {
-      const p = personnelList[idx];
-      const seq = idx + 1;
-
+    const needsNewId = (p) => {
+      const pid = p.id;
+      return (
+        !pid ||
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          pid,
+        ) ||
+        String(pid).startsWith("PER-") ||
+        String(pid).startsWith("local-p-") ||
+        !/^\d+$/.test(String(pid))
+      );
+    };
+    const nameKey = (p, seq) => {
       const fName = String(p.firstName || p.first_name || p.first || "TEACHER")
         .toUpperCase()
         .trim();
@@ -966,45 +1080,61 @@ router.post("/bulk", async (req, res) => {
       )
         .toUpperCase()
         .trim();
+      return { fName, lName };
+    };
+    const findExisting = (p, fName, lName) =>
+      byId.get(String(p.id || "")) ||
+      (p.prn ? byPrn.get(String(p.prn)) : undefined) ||
+      byName.get(`${fName}|${lName}`);
+
+    // New people need ids from the shared numeric counter. Allocate under a short global
+    // advisory lock so two concurrent saves cannot hand out the same id.
+    const anyNew = personnelList.some((p, i) => {
+      const { fName, lName } = nameKey(p, i + 1);
+      return !findExisting(p, fName, lName) && needsNewId(p);
+    });
+    let nextNumericId = 843140n;
+    if (anyNew) {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+        "personnel_id_alloc",
+      ]);
+      const maxIdRes = await client.query(
+        "SELECT MAX(id::bigint) AS max_id FROM esf7_personnel_profile WHERE id ~ '^[0-9]+$'",
+      );
+      if (maxIdRes.rows[0]?.max_id) {
+        nextNumericId = BigInt(maxIdRes.rows[0].max_id);
+      }
+    }
+
+    const crypto = require("crypto");
+    const profileById = new Map(); // last occurrence of an id wins (ON CONFLICT cannot hit a row twice)
+    const empById = new Map();
+
+    for (let idx = 0; idx < personnelList.length; idx++) {
+      const p = personnelList[idx];
+      const seq = idx + 1;
+      const { fName, lName } = nameKey(p, seq);
       const mName =
         String(p.middleName || p.middle_name || p.middle || "")
           .toUpperCase()
           .trim() || null;
       const ext = p.nameExtension || p.name_extension || null;
 
-      // Check if personnel already exists in this school by ID, legacy_id, PRN, or full name
-      const existingRes = await client.query(
-        `SELECT id, prn FROM esf7_personnel_profile 
-         WHERE REPLACE(school_id, 'SCH-', '') = $1 
-           AND (
-             id = $2 OR legacy_id = $2
-             OR ($3 <> '' AND prn = $3)
-             OR (first_name = $4 AND last_name = $5)
-           )
-         LIMIT 1`,
-        [cleanSchoolId, String(p.id || ""), String(p.prn || ""), fName, lName],
-      );
-
+      const existing = findExisting(p, fName, lName);
       let pId = p.id;
       let prn = null;
-      if (existingRes.rows.length > 0) {
-        pId = existingRes.rows[0].id;
-        prn = existingRes.rows[0].prn || formatCanonicalPrn(p.prn, seq);
+      if (existing) {
+        pId = existing.id;
+        prn = existing.prn || formatCanonicalPrn(p.prn, seq);
       } else {
-        if (
-          !pId ||
-          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-            pId,
-          ) ||
-          pId.startsWith("PER-") ||
-          pId.startsWith("local-p-") ||
-          !/^\d+$/.test(pId)
-        ) {
+        if (needsNewId(p)) {
           nextNumericId += 1n;
           pId = nextNumericId.toString();
         }
         prn = formatCanonicalPrn(p.prn, seq);
       }
+      pId = String(pId);
+
       const salutation = String(p.salutation || "MR.").toUpperCase();
       const pType = String(p.type || "teaching").toLowerCase();
       const sex = String(
@@ -1012,23 +1142,10 @@ router.post("/bulk", async (req, res) => {
       ).toUpperCase();
       const bDate = p.birthdate || null;
       const age = p.age ? Number(p.age) : calculateAge(bDate) || null;
-      const tin = p.tin || null;
-      const noTin = Boolean(p.noTin || p.no_tin);
       const rawCivil = String(p.civilStatus || p.civil_status || "").trim();
-      const civilStatus = rawCivil ? rawCivil.toUpperCase() : "SINGLE";
-      const soloParent = Boolean(p.soloParent || p.solo_parent);
-      const religion = p.religion || null;
       const rawEth = String(p.ethnicGroup || p.ethnic_group || "").trim();
-      const ethnic = rawEth ? rawEth.toUpperCase() : null;
       const rawPhilSys = String(p.philsysNo || p.philsys_no || "").trim();
       const noPhilsys = Boolean(p.noPhilsys || p.no_philsys) || !rawPhilSys;
-      const philsys = noPhilsys ? null : rawPhilSys || null;
-      const empNo = p.employeeNo || p.employee_no || null;
-      const depedEmail = p.depedEmail || p.deped_email || null;
-      const noEmail = Boolean(p.noDepedEmail || p.no_deped_email);
-      const allowDisc = Boolean(
-        p.allowEmailDiscrepancy || p.allow_email_discrepancy,
-      );
       const isHead = Boolean(p.isSchoolHead || p.is_school_head);
       const isMainSh = isHead
         ? Boolean(
@@ -1042,384 +1159,361 @@ router.post("/bulk", async (req, res) => {
           )
         : false;
 
-      const upsertProfileSql = `
-        INSERT INTO esf7_personnel_profile (
-          id, prn, school_id, school_year, type, salutation, first_name, middle_name, last_name, name_extension,
-          tin, no_tin, sex_at_birth, civil_status, solo_parent, religion, ethnic_group, birthdate, age,
-          philsys_no, no_philsys, employee_no, deped_email, no_deped_email, allow_email_discrepancy, is_school_head, is_main_sh,
-          deleted, status, legacy_id, updated_at
-        )
-        VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-          $11, $12, $13, $14, $15, $16, $17, $18, $19,
-          $20, $21, $22, $23, $24, $25, $26, $27,
-          false, 'canonical', $28, NOW()
-        )
-        ON CONFLICT (id) DO UPDATE SET
-          prn = EXCLUDED.prn,
-          school_id = EXCLUDED.school_id,
-          school_year = EXCLUDED.school_year,
-          type = EXCLUDED.type,
-          salutation = EXCLUDED.salutation,
-          first_name = EXCLUDED.first_name,
-          middle_name = EXCLUDED.middle_name,
-          last_name = EXCLUDED.last_name,
-          name_extension = EXCLUDED.name_extension,
-          tin = EXCLUDED.tin,
-          no_tin = EXCLUDED.no_tin,
-          sex_at_birth = EXCLUDED.sex_at_birth,
-          civil_status = EXCLUDED.civil_status,
-          solo_parent = EXCLUDED.solo_parent,
-          religion = EXCLUDED.religion,
-          ethnic_group = EXCLUDED.ethnic_group,
-          birthdate = EXCLUDED.birthdate,
-          age = EXCLUDED.age,
-          philsys_no = EXCLUDED.philsys_no,
-          no_philsys = EXCLUDED.no_philsys,
-          employee_no = EXCLUDED.employee_no,
-          deped_email = EXCLUDED.deped_email,
-          no_deped_email = EXCLUDED.no_deped_email,
-          allow_email_discrepancy = EXCLUDED.allow_email_discrepancy,
-          is_school_head = EXCLUDED.is_school_head,
-          is_main_sh = EXCLUDED.is_main_sh,
-          deleted = false,
-          updated_at = NOW();
-      `;
-
-      await client.query(upsertProfileSql, [
-        pId,
+      profileById.set(pId, {
+        id: pId,
         prn,
-        cleanSchoolId,
-        schoolYear,
-        pType,
+        school_id: cleanSchoolId,
+        school_year: schoolYear,
+        type: pType,
         salutation,
-        fName,
-        mName,
-        lName,
-        ext,
-        tin,
-        noTin,
-        sex,
-        civilStatus,
-        soloParent,
-        religion,
-        ethnic,
-        bDate,
+        first_name: fName,
+        middle_name: mName,
+        last_name: lName,
+        name_extension: ext,
+        tin: p.tin || null,
+        no_tin: Boolean(p.noTin || p.no_tin),
+        sex_at_birth: sex,
+        civil_status: rawCivil ? rawCivil.toUpperCase() : "SINGLE",
+        solo_parent: Boolean(p.soloParent || p.solo_parent),
+        religion: p.religion || null,
+        ethnic_group: rawEth ? rawEth.toUpperCase() : null,
+        birthdate: bDate,
         age,
-        philsys,
-        noPhilsys,
-        empNo,
-        depedEmail,
-        noEmail,
-        allowDisc,
-        isHead,
-        isMainSh,
-        p.legacyId || p.legacy_id || pId,
-      ]);
+        philsys_no: noPhilsys ? null : rawPhilSys || null,
+        no_philsys: noPhilsys,
+        employee_no: p.employeeNo || p.employee_no || null,
+        deped_email: p.depedEmail || p.deped_email || null,
+        no_deped_email: Boolean(p.noDepedEmail || p.no_deped_email),
+        allow_email_discrepancy: Boolean(
+          p.allowEmailDiscrepancy || p.allow_email_discrepancy,
+        ),
+        is_school_head: isHead,
+        is_main_sh: isMainSh,
+        legacy_id: p.legacyId || p.legacy_id || pId,
+      });
 
-      // Upsert into esf7_personnel_employment
       const pos =
         p.position || p.plantilla_position || p.position_title || "TEACHER I";
       const isCook = String(pos).toUpperCase().trim() === "COOK";
-      const posCat = isCook
-        ? "NON-TEACHING"
-        : p.positionCategory || p.position_category || "TEACHING";
       const step = sanitizeStepIncrement(p.stepIncrement || p.step_increment);
-      const actualStep = sanitizeStepIncrement(
-        p.actualStep || p.actual_step || step,
-      );
-      const schoolReportedStep = sanitizeStepIncrement(
-        p.schoolReportedStep || p.school_reported_step || step,
-      );
       let fund = (
         p.fundSource ||
         p.fund_source ||
         (isCook ? "SBFP" : "NATIONAL")
       ).toUpperCase();
       if (!isCook && fund === "SBFP") fund = "NATIONAL";
-      const appt = (
-        p.natureOfAppointment ||
-        p.nature_of_appointment ||
-        (isCook ? "CONTRACTUAL" : "REGULAR PERMANENT")
-      ).toUpperCase();
-      const hiring = (
-        p.hiringArrangement ||
-        p.hiring_arrangement ||
-        (isCook ? "CONTRACTUAL" : "REGULAR")
-      ).toUpperCase();
-      const deploy = (
-        p.deploymentStatus ||
-        p.deployment_status ||
-        "OWN STATION"
-      ).toUpperCase();
-      const assignedSchools = JSON.stringify(
-        p.assignedSchools || p.assigned_schools || [],
-      );
-      const gradeLevelsTaught = JSON.stringify(
-        sanitizeGradeArray(
-          p.assignedGradeLevels ||
-            p.assigned_grade_levels ||
-            p.gradeLevelsTaught ||
-            p.grade_levels_taught ||
-            [],
+      empById.set(pId, {
+        id: crypto.randomUUID(),
+        personnel_id: pId,
+        position_category: isCook
+          ? "NON-TEACHING"
+          : p.positionCategory || p.position_category || "TEACHING",
+        position: pos,
+        step_increment: step,
+        actual_step: sanitizeStepIncrement(
+          p.actualStep || p.actual_step || step,
         ),
-      );
-      const firstServiceDate = safeCoerceDate(
-        p.firstServiceDate || p.first_service_date,
-        "first_service_date",
-      );
-      const lastPromotionDate = safeCoerceDate(
-        p.lastPromotionDate || p.last_promotion_date,
-        "last_promotion_date",
-      );
-      const newStationDate = safeCoerceDate(
-        p.newStationDate || p.new_station_date,
-        "new_station_date",
-      );
-      const lastLateralMovementDate = safeCoerceDate(
-        p.lastLateralMovementDate || p.last_lateral_movement_date,
-        "last_lateral_movement_date",
-      );
+        school_reported_step: sanitizeStepIncrement(
+          p.schoolReportedStep || p.school_reported_step || step,
+        ),
+        fund_source: fund,
+        nature_of_appointment: (
+          p.natureOfAppointment ||
+          p.nature_of_appointment ||
+          (isCook ? "CONTRACTUAL" : "REGULAR PERMANENT")
+        ).toUpperCase(),
+        hiring_arrangement: (
+          p.hiringArrangement ||
+          p.hiring_arrangement ||
+          (isCook ? "CONTRACTUAL" : "REGULAR")
+        ).toUpperCase(),
+        deployment_status: (
+          p.deploymentStatus ||
+          p.deployment_status ||
+          "OWN STATION"
+        ).toUpperCase(),
+        assigned_schools: JSON.stringify(
+          p.assignedSchools || p.assigned_schools || [],
+        ),
+        grade_levels_taught: JSON.stringify(
+          sanitizeGradeArray(
+            p.assignedGradeLevels ||
+              p.assigned_grade_levels ||
+              p.gradeLevelsTaught ||
+              p.grade_levels_taught ||
+              [],
+          ),
+        ),
+        first_service_date: safeCoerceDate(
+          p.firstServiceDate || p.first_service_date,
+          "first_service_date",
+        ),
+        last_promotion_date: safeCoerceDate(
+          p.lastPromotionDate || p.last_promotion_date,
+          "last_promotion_date",
+        ),
+        new_station_date: safeCoerceDate(
+          p.newStationDate || p.new_station_date,
+          "new_station_date",
+        ),
+        last_lateral_movement_date: safeCoerceDate(
+          p.lastLateralMovementDate || p.last_lateral_movement_date,
+          "last_lateral_movement_date",
+        ),
+      });
+    }
 
-      const crypto = require("crypto");
-      const empId = crypto.randomUUID();
+    // Non-heads first so a head hand-over inside one batch never trips the one-head-per-school index.
+    const profileRows = [...profileById.values()].sort(
+      (a, b) => Number(a.is_school_head) - Number(b.is_school_head),
+    );
+    const empRows = [...empById.values()];
 
-      await client.query(
-        `
-        INSERT INTO esf7_personnel_employment (
-          id, personnel_id, position_category, position, step_increment,
-          actual_step, school_reported_step, fund_source, nature_of_appointment,
-          hiring_arrangement, deployment_status, assigned_schools, grade_levels_taught,
-          first_service_date, last_promotion_date, new_station_date, last_lateral_movement_date,
-          updated_at
-        )
-        VALUES (
-          $1, $2, $3, $4, $5,
-          $6, $7, $8, $9,
-          $10, $11, $12::jsonb, $13::jsonb,
-          $14, $15, $16, $17,
-          NOW()
-        )
-        ON CONFLICT (personnel_id) DO UPDATE SET
-          position_category = EXCLUDED.position_category,
-          position = EXCLUDED.position,
-          step_increment = EXCLUDED.step_increment,
-          actual_step = COALESCE(EXCLUDED.actual_step, esf7_personnel_employment.actual_step),
-          school_reported_step = COALESCE(EXCLUDED.school_reported_step, esf7_personnel_employment.school_reported_step),
-          fund_source = EXCLUDED.fund_source,
-          nature_of_appointment = EXCLUDED.nature_of_appointment,
-          hiring_arrangement = EXCLUDED.hiring_arrangement,
-          deployment_status = COALESCE(EXCLUDED.deployment_status, esf7_personnel_employment.deployment_status),
-          assigned_schools = CASE 
-            WHEN EXCLUDED.assigned_schools::text != '[]' THEN EXCLUDED.assigned_schools 
-            ELSE esf7_personnel_employment.assigned_schools 
-          END,
-          grade_levels_taught = CASE 
-            WHEN EXCLUDED.grade_levels_taught::text != '[]' THEN EXCLUDED.grade_levels_taught 
-            ELSE esf7_personnel_employment.grade_levels_taught 
-          END,
-          first_service_date = COALESCE(EXCLUDED.first_service_date, esf7_personnel_employment.first_service_date),
-          last_promotion_date = COALESCE(EXCLUDED.last_promotion_date, esf7_personnel_employment.last_promotion_date),
-          new_station_date = COALESCE(EXCLUDED.new_station_date, esf7_personnel_employment.new_station_date),
-          last_lateral_movement_date = COALESCE(EXCLUDED.last_lateral_movement_date, esf7_personnel_employment.last_lateral_movement_date),
-          updated_at = NOW();
-      `,
-        [
-          empId,
-          pId,
-          posCat,
-          pos,
-          step,
-          actualStep,
-          schoolReportedStep,
-          fund,
-          appt,
-          hiring,
-          deploy,
-          assignedSchools,
-          gradeLevelsTaught,
-          firstServiceDate,
-          lastPromotionDate,
-          newStationDate,
-          lastLateralMovementDate,
-        ],
+    const profileSet = PROFILE_UPDATE_COLS.map(
+      (c) => `${c} = EXCLUDED.${c}`,
+    ).join(", ");
+    const profileCmpOld = PROFILE_UPDATE_COLS.map(
+      (c) => `esf7_personnel_profile.${c}`,
+    ).join(", ");
+    const profileCmpNew = PROFILE_UPDATE_COLS.map((c) => `EXCLUDED.${c}`).join(
+      ", ",
+    );
+
+    let changed = 0;
+    for (let i = 0; i < profileRows.length; i += BULK_CHUNK) {
+      const { params, tuples } = multiValues(
+        profileRows.slice(i, i + BULK_CHUNK),
+        PROFILE_COLS,
       );
+      const r = await client.query(
+        `INSERT INTO esf7_personnel_profile (${PROFILE_COLS.join(", ")}, updated_at)
+         VALUES ${tuples.join(", ")}
+         ON CONFLICT (id) DO UPDATE SET ${profileSet}, deleted = false, updated_at = NOW()
+         WHERE (${profileCmpOld}) IS DISTINCT FROM (${profileCmpNew})
+            OR esf7_personnel_profile.deleted IS DISTINCT FROM false`,
+        params,
+      );
+      changed += r.rowCount || 0;
+    }
 
-      savedCount++;
+    for (let i = 0; i < empRows.length; i += BULK_CHUNK) {
+      const { params, tuples } = multiValues(
+        empRows.slice(i, i + BULK_CHUNK),
+        EMP_COLS,
+        EMP_JSONB,
+      );
+      const r = await client.query(
+        `INSERT INTO esf7_personnel_employment (${EMP_COLS.join(", ")}, updated_at)
+         VALUES ${tuples.join(", ")}
+         ON CONFLICT (personnel_id) DO UPDATE SET
+           position_category = EXCLUDED.position_category,
+           position = EXCLUDED.position,
+           step_increment = EXCLUDED.step_increment,
+           actual_step = COALESCE(EXCLUDED.actual_step, esf7_personnel_employment.actual_step),
+           school_reported_step = COALESCE(EXCLUDED.school_reported_step, esf7_personnel_employment.school_reported_step),
+           fund_source = EXCLUDED.fund_source,
+           nature_of_appointment = EXCLUDED.nature_of_appointment,
+           hiring_arrangement = EXCLUDED.hiring_arrangement,
+           deployment_status = COALESCE(EXCLUDED.deployment_status, esf7_personnel_employment.deployment_status),
+           assigned_schools = CASE WHEN EXCLUDED.assigned_schools::text != '[]' THEN EXCLUDED.assigned_schools ELSE esf7_personnel_employment.assigned_schools END,
+           grade_levels_taught = CASE WHEN EXCLUDED.grade_levels_taught::text != '[]' THEN EXCLUDED.grade_levels_taught ELSE esf7_personnel_employment.grade_levels_taught END,
+           first_service_date = COALESCE(EXCLUDED.first_service_date, esf7_personnel_employment.first_service_date),
+           last_promotion_date = COALESCE(EXCLUDED.last_promotion_date, esf7_personnel_employment.last_promotion_date),
+           new_station_date = COALESCE(EXCLUDED.new_station_date, esf7_personnel_employment.new_station_date),
+           last_lateral_movement_date = COALESCE(EXCLUDED.last_lateral_movement_date, esf7_personnel_employment.last_lateral_movement_date),
+           updated_at = NOW()
+         WHERE (
+           esf7_personnel_employment.position_category, esf7_personnel_employment.position,
+           esf7_personnel_employment.step_increment, esf7_personnel_employment.actual_step,
+           esf7_personnel_employment.school_reported_step, esf7_personnel_employment.fund_source,
+           esf7_personnel_employment.nature_of_appointment, esf7_personnel_employment.hiring_arrangement,
+           esf7_personnel_employment.deployment_status, esf7_personnel_employment.assigned_schools::text,
+           esf7_personnel_employment.grade_levels_taught::text, esf7_personnel_employment.first_service_date,
+           esf7_personnel_employment.last_promotion_date, esf7_personnel_employment.new_station_date,
+           esf7_personnel_employment.last_lateral_movement_date
+         ) IS DISTINCT FROM (
+           EXCLUDED.position_category, EXCLUDED.position, EXCLUDED.step_increment,
+           EXCLUDED.actual_step, EXCLUDED.school_reported_step, EXCLUDED.fund_source,
+           EXCLUDED.nature_of_appointment, EXCLUDED.hiring_arrangement, EXCLUDED.deployment_status,
+           EXCLUDED.assigned_schools::text, EXCLUDED.grade_levels_taught::text, EXCLUDED.first_service_date,
+           EXCLUDED.last_promotion_date, EXCLUDED.new_station_date, EXCLUDED.last_lateral_movement_date
+         )`,
+        params,
+      );
+      changed += r.rowCount || 0;
     }
 
     await client.query("COMMIT");
+
+    // Verify: every person that was sent must now exist in the table. Success is never claimed on a guess.
+    const sentIds = profileRows.map((r) => r.id);
+    const stored = await db.query(
+      "SELECT id FROM esf7_personnel_profile WHERE id = ANY($1::text[])",
+      [sentIds],
+    );
+    const storedIds = new Set(stored.rows.map((r) => String(r.id)));
+    const notStored = sentIds.filter((id) => !storedIds.has(String(id)));
+    if (notStored.length > 0) {
+      throw new Error(
+        `The roster was not stored as requested (${notStored.length} record(s) missing after saving).`,
+      );
+    }
+
     res.json({
       success: true,
-      count: savedCount,
+      count: profileRows.length,
+      changed,
       message:
         "Successfully saved " +
-        savedCount +
+        profileRows.length +
         " personnel into esf7_personnel_profile.",
     });
   } catch (err) {
-    await client.query("ROLLBACK");
+    await client.query("ROLLBACK").catch(() => {});
     console.error("Error in POST /api/personnel/bulk:", err);
-    res.status(500).json({ error: err.message });
+    if (!res.headersSent) res.status(500).json({ error: err.message });
   } finally {
     client.release();
   }
 });
 
-// PUT /api/personnel/:id/school-head — Dedicated endpoint to toggle or designate a School Head
-router.put("/:id/school-head", async (req, res) => {
-  console.log(
-    "--> [PUT /api/personnel/:id/school-head] hit with params:",
-    req.params,
-    "body:",
-    req.body,
-  );
-  const targetId = String(req.params.id || "").trim();
-  const schoolId =
+// ---- School Head ----------------------------------------------------------------------------------
+// Both routes are one atomic write that is read back and verified before they answer (see schoolHeads.js).
+const schoolHeads = require("./schoolHeads");
+
+const schoolOf = (req) =>
+  schoolHeads.cleanSid(
     getSchoolIdFromRequest(req) ||
-    req.query.schoolId ||
-    req.query.school_id ||
-    req.body?.schoolId ||
-    req.body?.school_id ||
-    "";
-  let cleanSchoolId = String(schoolId).replace(/^SCH-/i, "").trim();
-  const isSchoolHead = Boolean(
-    req.body?.isSchoolHead ?? req.body?.is_school_head,
+      req.query?.schoolId ||
+      req.query?.school_id ||
+      req.body?.schoolId ||
+      req.body?.school_id,
   );
-  const isMainSh = isSchoolHead
-    ? Boolean(req.body?.isMainSh ?? req.body?.is_main_sh ?? true)
-    : false;
-  const hasMultipleHeads = Boolean(req.body?.hasMultipleHeads);
-  const schoolHeadLevel =
-    req.body?.schoolHeadLevel || req.body?.school_head_level || null;
 
+// PUT /api/personnel/school-head-config — the Change School Head dialog. Replaces the school's head(s) in one go:
+// the previous head is unset and the new one set in the same transaction.
+router.put("/school-head-config", async (req, res) => {
   try {
-    const pool =
-      db.pool || (typeof db.getPool === "function" ? db.getPool() : null);
-    if (!pool || typeof pool.connect !== "function") {
-      throw new Error("Database pool unavailable");
+    const body = req.body || {};
+    const hasMultipleHeads = Boolean(body.hasMultipleHeads);
+    const assignments =
+      body.assignments && typeof body.assignments === "object"
+        ? body.assignments
+        : {};
+    const mainHeadId = body.mainHeadId ? String(body.mainHeadId) : null;
+
+    const requested = new Map(); // personnel ref -> level
+    for (const [level, ref] of Object.entries(assignments)) {
+      if (ref) requested.set(String(ref), hasMultipleHeads ? level : null);
+    }
+    if (mainHeadId && !requested.has(mainHeadId))
+      requested.set(mainHeadId, null);
+    if (!hasMultipleHeads && requested.size > 1) {
+      return res
+        .status(400)
+        .json({ error: "Only one School Head can be designated." });
     }
 
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
+    const result = await schoolHeads.writeSchoolHeads(schoolOf(req), {
+      setHeads: [...requested.entries()].map(([id, level]) => ({
+        id,
+        level,
+        isMain: hasMultipleHeads ? String(mainHeadId) === id : true,
+      })),
+      clearOthers: true,
+    });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    if (!err.status) console.error("PUT /personnel/school-head-config:", err);
+    return schoolHeads.sendError(res, err);
+  }
+});
 
-      let effectiveSchoolId = cleanSchoolId;
-      if (!effectiveSchoolId) {
-        const pCheck = await client.query(
-          "SELECT school_id FROM esf7_personnel_profile WHERE id = $1 OR legacy_id = $1 OR prn = $1 LIMIT 1",
-          [targetId],
-        );
-        if (pCheck.rows.length > 0 && pCheck.rows[0].school_id) {
-          effectiveSchoolId = String(pCheck.rows[0].school_id)
-            .replace(/^SCH-/i, "")
-            .trim();
-        }
-      }
-      const sidPair = effectiveSchoolId
-        ? [effectiveSchoolId, `SCH-${effectiveSchoolId}`]
-        : [];
+// PUT /api/personnel/:id/school-head — set or remove ONE person as School Head.
+router.put("/:id/school-head", async (req, res) => {
+  const targetId = String(req.params.id || "").trim();
+  try {
+    const isSchoolHead = Boolean(
+      req.body?.isSchoolHead ?? req.body?.is_school_head,
+    );
+    const hasMultipleHeads = Boolean(req.body?.hasMultipleHeads);
+    const isMain = isSchoolHead
+      ? Boolean(req.body?.isMainSh ?? req.body?.is_main_sh ?? true)
+      : false;
+    const level =
+      req.body?.schoolHeadLevel || req.body?.school_head_level || null;
 
-      // 1. If designating as School Head, unset existing heads / main heads
-      if (isSchoolHead && sidPair.length > 0) {
-        if (!hasMultipleHeads) {
-          await client.query(
-            "UPDATE esf7_personnel_profile SET is_school_head = FALSE, is_main_sh = FALSE, school_head_level = NULL, updated_at = NOW() WHERE school_id = ANY($1) AND (is_school_head = TRUE OR is_main_sh = TRUE)",
-            [sidPair],
-          );
-        } else if (isMainSh) {
-          await client.query(
-            "UPDATE esf7_personnel_profile SET is_main_sh = FALSE, updated_at = NOW() WHERE school_id = ANY($1) AND is_main_sh = TRUE",
-            [sidPair],
-          );
-        }
-      }
-
-      // 2. Update the target personnel in esf7_personnel_profile
-      await client.query(
-        "UPDATE esf7_personnel_profile SET is_school_head = $1, is_main_sh = $2, school_head_level = $3, updated_at = NOW() WHERE id = $4 OR legacy_id = $4 OR prn = $4",
-        [
-          isSchoolHead,
-          isMainSh,
-          isSchoolHead ? schoolHeadLevel : null,
-          targetId,
-        ],
-      );
-
-      // 2b. Sync normalized esf7_personnel_node_status and esf7_school_profile
-      if (isSchoolHead && sidPair.length > 0 && !hasMultipleHeads) {
-        await client
-          .query(
-            "UPDATE esf7_personnel_node_status SET is_school_head = FALSE, updated_at = NOW() WHERE school_id = ANY($1) AND is_school_head = TRUE",
-            [sidPair],
-          )
-          .catch(() => {});
-      }
-      await client
-        .query(
-          "UPDATE esf7_personnel_node_status SET is_school_head = $1, updated_at = NOW() WHERE (personnel_id = $2 OR legacy_id = $2)",
-          [isSchoolHead, targetId],
-        )
-        .catch(() => {});
-
-      if (sidPair.length > 0) {
-        const pRow = await client
-          .query(
-            "SELECT first_name, last_name, full_name_clean FROM esf7_personnel_profile WHERE id = $1 OR legacy_id = $1 OR prn = $1 LIMIT 1",
-            [targetId],
-          )
-          .catch(() => ({ rows: [] }));
-        const headName = pRow.rows[0]
-          ? pRow.rows[0].full_name_clean ||
-            `${pRow.rows[0].first_name || ""} ${pRow.rows[0].last_name || ""}`.trim()
-          : null;
-
-        if (isSchoolHead) {
-          await client
-            .query(
-              `UPDATE esf7_school_profile 
-               SET school_head_id = $1, school_head_name = COALESCE($2, school_head_name), school_head_level = $3, updated_at = NOW() 
-               WHERE school_id = ANY($4)`,
-              [targetId, headName, schoolHeadLevel, sidPair],
-            )
-            .catch(() => {});
-        } else {
-          await client
-            .query(
-              `UPDATE esf7_school_profile 
-               SET school_head_id = NULL, school_head_name = NULL, school_head_level = NULL, updated_at = NOW() 
-               WHERE school_id = ANY($1) AND school_head_id = $2`,
-              [sidPair, targetId],
-            )
-            .catch(() => {});
-        }
-      }
-
-      // Normalized relational tables are the single source of truth
-
-      await client.query("COMMIT");
-    } catch (err) {
-      await client.query("ROLLBACK").catch(() => {});
-      console.error("[PUT /api/personnel/:id/school-head] Toggle error:", err);
-      throw err;
-    } finally {
-      client.release();
-    }
-
+    const result = isSchoolHead
+      ? await schoolHeads.writeSchoolHeads(schoolOf(req), {
+          setHeads: [{ id: targetId, isMain, level }],
+          clearOthers: !hasMultipleHeads,
+          clearMainOthers: hasMultipleHeads && isMain,
+        })
+      : await schoolHeads.writeSchoolHeads(schoolOf(req), {
+          unsetIds: [targetId],
+        });
     res.json({
       success: true,
       id: targetId,
       isSchoolHead,
-      isMainSh,
+      isMainSh: isMain,
+      heads: result.heads,
       message: isSchoolHead
         ? "School Head designated."
         : "School Head designation removed.",
     });
   } catch (err) {
-    console.error("Error in PUT /api/personnel/:id/school-head:", err);
-    res.status(500).json({ error: err.message });
+    if (!err.status) console.error("PUT /personnel/:id/school-head:", err);
+    return schoolHeads.sendError(res, err);
   }
 });
+
+// Tables that reference a person. Both lists are applied in ONE statement inside the delete
+// transaction (see DELETE /:id). Columns/tables missing from a given database are skipped.
+const CASCADE_UNLINK = [
+  ["esf7_regular_sections", ["adviser_id"]],
+  ["esf7_sned_sections", ["adviser_id"]],
+  ["esf7_als_sections", ["adviser_id"]],
+  ["esf7_aral_sections", ["tutor_id"]],
+  ["esf7_remedial_enrichment_sections", ["assigned_teacher_id"]],
+  ["esf7_workload_transfer", ["absent_personnel_id", "relieving_personnel_id"]],
+];
+const CASCADE_DELETE = [
+  ...[
+    "esf7_workload_rows",
+    "esf7_workload_row",
+    "esf7_shs_workload_rows",
+    "esf7_admin_task",
+    "esf7_related_task",
+    "esf7_personnel_employment",
+    "esf7_personnel_education",
+    "esf7_personnel_educ",
+    "esf7_perssonel_educ",
+    "esf7_personnel_learning_areas",
+    "esf7_personnel_learning_area",
+    "esf7_personnel_ld_trainings",
+    "esf7_personnel_trainings",
+    "esf7_personnel_ld",
+    "esf7_personnel_l&d",
+    "esf7_personnel_designations",
+    "esf7_personnel_designation",
+    "esf7_personnel_extra_tasks",
+    "esf7_personnel_allowances",
+    "esf7_personnel_allowance",
+    "esf7_overload_late_undertime",
+    "overload_late_undertime",
+    "esf7_overload_no_work",
+    "overload_absences",
+    "overload_pay_and_reason",
+    "esf7_work_immersion",
+    "esf7_personnel_node_status",
+    "esf7_room_submissions_staging",
+    "esf7_personnel_submission",
+    "esf7_requests",
+  ].map((t) => [t, ["personnel_id"]]),
+  ["clustered_personnel", ["prn"]],
+  ["esf7_personnel_id_mapping", ["legacy_id", "new_id"]],
+];
 
 router.delete("/:id", async (req, res) => {
   const targetId = String(req.params.id || "").trim();
@@ -1511,17 +1605,9 @@ router.delete("/:id", async (req, res) => {
       return s.length >= 2;
     };
 
-    const cleanFullName =
-      `${String(fName || "").trim()} ${String(lName || "").trim()}`
-        .trim()
-        .toUpperCase();
     const validTargetId = isNonGenericVal(targetId) ? targetId : null;
     const validPrn = isNonGenericVal(prn) ? prn : null;
     const validEmpNo = isNonGenericVal(empNo) ? empNo : null;
-    const validName =
-      isNonGenericVal(cleanFullName) && cleanFullName !== "TEACHER STAFF"
-        ? cleanFullName
-        : null;
     const allPersonnelIds = Array.from(
       new Set(
         [
@@ -1537,268 +1623,105 @@ router.delete("/:id", async (req, res) => {
     );
 
     // Execute cascade cleanups across ALL pools
-    const executeCascadeDeletes = async (pool) => {
-      if (!pool || !pool.query) return;
-      if (!allPersonnelIds || allPersonnelIds.length === 0) return;
+    // One transaction on ONE pooled client, released in `finally`. Only 4 round trips:
+    // BEGIN, one schema lookup, ONE statement that unlinks references, deletes every child row and
+    // finally the parent profile (data-modifying CTEs), then COMMIT. The response is sent only after
+    // COMMIT, so a refresh right after the success can never still see the person.
+    const executeCascadeDeletes = async (acquireClient) => {
+      if (!allPersonnelIds || allPersonnelIds.length === 0) return 0;
+      const client = await acquireClient();
+      try {
+        await client.query("BEGIN");
 
-      // 1. Unlink foreign references in underlying sections & transfer tables
-      await Promise.all([
-        pool
-          .query(
-            `UPDATE esf7_regular_sections SET adviser_id = NULL WHERE adviser_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `UPDATE esf7_sned_sections SET adviser_id = NULL WHERE adviser_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `UPDATE esf7_als_sections SET adviser_id = NULL WHERE adviser_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `UPDATE esf7_aral_sections SET tutor_id = NULL WHERE tutor_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `UPDATE esf7_remedial_enrichment_sections SET assigned_teacher_id = NULL WHERE assigned_teacher_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `UPDATE esf7_workload_transfer SET absent_personnel_id = NULL WHERE absent_personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `UPDATE esf7_workload_transfer SET relieving_personnel_id = NULL WHERE relieving_personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-      ]);
+        // Which of the optional / legacy tables and columns exist in this database.
+        const wanted = new Set([
+          ...CASCADE_UNLINK.map(([t]) => t),
+          ...CASCADE_DELETE.map(([t]) => t),
+        ]);
+        const colRes = await client.query(
+          `SELECT table_name, column_name FROM information_schema.columns
+            WHERE table_schema = ANY(current_schemas(false)) AND table_name = ANY($1::text[])`,
+          [[...wanted]],
+        );
+        const have = new Set(
+          colRes.rows.map((r) => `${r.table_name}.${r.column_name}`),
+        );
+        const quote = (ident) => `"${String(ident).replace(/"/g, '""')}"`;
 
-      // 2. Cascade delete from all child tables
-      await Promise.all([
-        pool
-          .query(
-            `DELETE FROM esf7_workload_rows WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_workload_row WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_shs_workload_rows WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_admin_task WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_related_task WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_personnel_employment WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_personnel_education WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_personnel_educ WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_perssonel_educ WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_personnel_learning_areas WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_personnel_learning_area WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_personnel_ld_trainings WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_personnel_trainings WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_personnel_ld WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM "esf7_personnel_l&d" WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_personnel_designations WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_personnel_designation WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_personnel_extra_tasks WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_personnel_allowances WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_personnel_allowance WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_overload_late_undertime WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM overload_late_undertime WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_overload_no_work WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM overload_absences WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM overload_pay_and_reason WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_work_immersion WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_personnel_node_status WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_room_submissions_staging WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_personnel_submission WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_requests WHERE personnel_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM clustered_personnel WHERE prn = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-        pool
-          .query(
-            `DELETE FROM esf7_personnel_id_mapping WHERE legacy_id = ANY($1::text[]) OR new_id = ANY($1::text[])`,
-            [allPersonnelIds],
-          )
-          .catch(() => {}),
-      ]);
+        const ctes = [];
+        for (const [table, cols] of CASCADE_UNLINK) {
+          const live = cols.filter((c) => have.has(`${table}.${c}`));
+          if (live.length === 0) continue;
+          const sets = live
+            .map(
+              (c) =>
+                `${quote(c)} = CASE WHEN ${quote(c)} = ANY($1::text[]) THEN NULL ELSE ${quote(c)} END`,
+            )
+            .join(", ");
+          const where = live
+            .map((c) => `${quote(c)} = ANY($1::text[])`)
+            .join(" OR ");
+          ctes.push(`UPDATE ${quote(table)} SET ${sets} WHERE ${where}`);
+        }
+        for (const [table, cols] of CASCADE_DELETE) {
+          const live = cols.filter((c) => have.has(`${table}.${c}`));
+          if (live.length === 0) continue;
+          const where = live
+            .map((c) => `${quote(c)} = ANY($1::text[])`)
+            .join(" OR ");
+          ctes.push(`DELETE FROM ${quote(table)} WHERE ${where}`);
+        }
 
-      // 3. Delete parent profile record LAST (after child records are cleared)
-      await pool
-        .query(
-          `DELETE FROM esf7_personnel_profile WHERE id::text = ANY($1::text[]) OR legacy_id = ANY($1::text[]) OR prn = ANY($1::text[])`,
+        const withClause =
+          ctes.length > 0
+            ? `WITH ${ctes.map((sql, i) => `c${i} AS (${sql})`).join(", ")} `
+            : "";
+        const result = await client.query(
+          `${withClause}DELETE FROM esf7_personnel_profile
+            WHERE id::text = ANY($1::text[]) OR legacy_id = ANY($1::text[]) OR prn = ANY($1::text[])
+        RETURNING id`,
           [allPersonnelIds],
-        )
-        .catch(() => {});
+        );
+        await client.query("COMMIT");
+        return result.rowCount || 0;
+      } catch (e) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw e;
+      } finally {
+        client.release();
+      }
     };
 
-    await executeCascadeDeletes(db);
-    if (db.getStagingPool) await executeCascadeDeletes(db.getStagingPool());
-    if (db.getProdPool) await executeCascadeDeletes(db.getProdPool());
+    // Request-scoped primary pool first, then any distinct explicit pool (staging/prod).
+    const deletedProfiles = await executeCascadeDeletes(() => db.getClient());
+    const primaryPool =
+      process.env.NODE_ENV === "production" ? db.getProdPool() : db.getPool();
+    const extraPools = new Set(
+      [db.getStagingPool(), db.getProdPool()].filter(
+        (pl) => pl && pl !== primaryPool,
+      ),
+    );
+    for (const extra of extraPools) {
+      await executeCascadeDeletes(() => extra.connect());
+    }
+
+    // Verify: nothing with any of this person's ids may be left in the profile table.
+    const leftover = await db.query(
+      `SELECT id FROM esf7_personnel_profile
+        WHERE id::text = ANY($1::text[]) OR legacy_id = ANY($1::text[]) OR prn = ANY($1::text[])`,
+      [allPersonnelIds],
+    );
+    if (leftover.rows.length > 0) {
+      throw new Error(
+        "The personnel record is still in the database after the delete, so it was not removed.",
+      );
+    }
 
     res.json({
       success: true,
       count: 1,
+      deletedProfiles,
+      deletedIds: allPersonnelIds,
       message: `Personnel profile ${targetId} and all linked records deleted successfully.`,
     });
   } catch (err) {

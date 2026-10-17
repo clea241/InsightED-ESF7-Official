@@ -23,7 +23,7 @@ import {
 
 export default function UnsyncedChangesQueue() {
   const { user } = useAuth();
-  const { schoolInfo, showToast, showConfirm } = useApp();
+  const { schoolInfo, showToast, showConfirm, runSaveFlow } = useApp();
 
   const [entries, setEntries] = useState([]);
   const [retryingId, setRetryingId] = useState(null);
@@ -86,25 +86,25 @@ export default function UnsyncedChangesQueue() {
   const handleRetrySingle = async (entry) => {
     setRetryingId(entry.id);
     try {
-      const res = await retryOutboxEntry(entry);
-      if (res && res.success) {
-        if (showToast) {
-          showToast(
-            `✓ Saved ${formatModuleName(entry.module)} to server.`,
-            "success",
-          );
-        }
-        await loadEntries();
-      } else {
-        if (showToast) {
-          showToast(
-            `Could not save ${formatModuleName(entry.module)}. Kept in queue.`,
-            "error",
-          );
-        }
-      }
-    } catch (err) {
-      console.warn("Retry failed:", err);
+      const name = formatModuleName(entry.module);
+      const flow = await runSaveFlow(
+        {
+          title: "Saving Changes",
+          message: `Saving ${name} to the server...`,
+          successTitle: "Saved",
+          successMessage: `${name} was saved to the server.`,
+          errorTitle: "Not saved",
+        },
+        async () => {
+          const res = await retryOutboxEntry(entry, { silent: true });
+          if (!(res && res.success)) {
+            throw new Error(
+              `Could not save ${name}: ${res?.error || "the server did not confirm the save"}. It stays in the queue.`,
+            );
+          }
+        },
+      );
+      if (flow.ok) await loadEntries();
     } finally {
       setRetryingId(null);
     }
@@ -116,42 +116,42 @@ export default function UnsyncedChangesQueue() {
     let successCount = 0;
     let failCount = 0;
 
-    for (const entry of entries) {
-      try {
-        const res = await retryOutboxEntry(entry);
-        if (res && res.success) {
-          successCount++;
-        } else {
-          failCount++;
+    await runSaveFlow(
+      {
+        title: "Saving Changes",
+        message: "Saving unsynced changes to the server...",
+        successTitle: "Saved",
+        successMessage: () =>
+          `All ${successCount} unsynced items were saved to the server.`,
+        errorTitle: "Some items were not saved",
+        retryable: false,
+      },
+      async ({ progress }) => {
+        let i = 0;
+        for (const entry of entries) {
+          progress(++i, entries.length);
+          try {
+            const res = await retryOutboxEntry(entry, { silent: true });
+            if (res && res.success) {
+              successCount++;
+            } else {
+              failCount++;
+            }
+          } catch (err) {
+            failCount++;
+          }
         }
-      } catch (err) {
-        failCount++;
-      }
-    }
+        if (failCount > 0) {
+          throw new Error(
+            `Saved ${successCount} item(s); ${failCount} item(s) are still in the queue.`,
+          );
+        }
+      },
+    );
 
     setRetryingAll(false);
     setShowOnlineBanner(false);
     await loadEntries();
-
-    if (successCount > 0 && failCount === 0) {
-      if (showToast)
-        showToast(
-          `✓ All ${successCount} unsynced items saved to server!`,
-          "success",
-        );
-    } else if (successCount > 0 && failCount > 0) {
-      if (showToast)
-        showToast(
-          `Saved ${successCount} items; ${failCount} items still in queue.`,
-          "warning",
-        );
-    } else if (failCount > 0) {
-      if (showToast)
-        showToast(
-          `Save failed for ${failCount} items. They remain in queue.`,
-          "error",
-        );
-    }
   };
 
   const handleDiscardSingle = async (entry) => {

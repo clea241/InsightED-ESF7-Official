@@ -201,3 +201,62 @@
 
 ## 2026-10-17 - Room QR accept fix
 - executeMultiRowUpsert (server/controllers/room_profiling/index.js) now supports esf7_personnel_ld_trainings and esf7_personnel_designations; "Approve and Merge All" no longer fails with "Unsupported table".
+
+## 2026-10-17 - Personnel delete no longer triggers roster bulk save
+- Client sends one DELETE (was id + PRN); Roster resyncs its saved baseline after delete so the dirty guard does not prompt a full POST /api/personnel/bulk.
+- Server DELETE /api/personnel/:id cascade now runs on one pooled client in one transaction (was ~44 parallel queries per pool). Regression test: server/tests/unit/personnel_delete_no_bulk.test.js.
+
+## 2026-10-17 - Room QR roster load
+- GET /api/room-profiling/roster now selects employment dates, trainings and learning areas and formats via the shared formatPersonnelRecord (same as Personnel Profiling). Fixes empty First Day of Service / Step / Training / Learning Area in Room QR.
+- Room QR /verify-passcode now returns the full record via the shared loadRoomRosterFromDb (was a sparse copy). Accept ("Approve and Merge All") only replaces a person's esf7_personnel_ld_trainings rows when the submission carries training rows, so an empty list can no longer wipe saved L&D.
+- Fix: personnel delete 500 "sourcePool.connect is not a function" (regression from the transaction rewrite: db is a wrapper, not a Pool). Delete now uses db.getClient() for the primary pool, pool.connect() only for distinct extra pools, releases in finally, and no longer swallows a failed parent-row delete. Behavioural test: server/tests/unit/personnel_delete_handler.test.js.
+
+## 2026-10-17 - Designations persistence
+- "Mark N/A" is now stored in new table esf7_school_designation_na (school + school year; auto-created on first use) via GET/PUT /api/designations/na; loaded on page open. Previously browser storage + context only.
+- Designations Save writes each changed person's designation rows via PUT /api/designations/personnel/:id (one short transaction, shared sync with the profile save, school-checked) instead of resending the whole profile. Removing an assignment deletes the row.
+- GET /api/designations is now scoped to the session school.
+
+## 2026-10-17 - Room QR Approve & Merge
+- Verified: /api/room-profiling/accept already wrote to the normalized tables in one transaction; only the banner text said "local draft". Banner now says merged and saved to the database.
+- Accept now also persists the learning-area matrix (esf7_personnel_learning_areas) when the submission carries one (it was only echoed back, never saved).
+- Approve & Merge (single, review, and Merge All) show a blocking SweetAlert (services/saveAlert.js): loading, "Saving N of M" progress, success, or the real error. Merge All sends one request (one transaction) per teacher; failures are listed and stay pending. Local state updates only from the server response; double-clicks are blocked.
+
+## 2026-10-17 - Roster save: no more full-roster bulk writes / duplicate submits
+- POST /api/personnel/bulk rewritten set-based: one lookup of the school's people, multi-row INSERT..ON CONFLICT in chunks of 50, unchanged rows skipped in SQL (IS DISTINCT FROM), one short transaction, per school+year advisory lock (concurrent duplicate -> 409), id allocation under its own advisory lock and only when a new person exists. Was 3 sequential queries per person incl. a non-indexable REPLACE(school_id) lookup and a whole-table MAX(id) scan on every save.
+- Roster: save is single-flight; only new/edited rows are sent; add-person auto-save sends just that person (it used to send the whole roster, then the review-modal Save sent it again); local state is marked saved only after server confirmation; SweetAlert saving/success/error flow on the Save button and review modal.
+
+## 2026-10-17 - Personnel delete: not optimistic, one round trip
+- Client deletePersonnel calls the server FIRST and only then updates local state; failures throw (row stays). Roster trash and Personnel Profile delete show a blocking SweetAlert (loading, success, or the real error). Trash stays disabled while a delete runs; one DELETE request.
+- Server DELETE /api/personnel/:id: children + parent removed in ONE statement (data-modifying CTEs) in a 4-round-trip transaction (was ~40 statements x 3 round trips with savepoints). Only tables/columns that exist are touched. Responds after COMMIT with deletedProfiles/deletedIds.
+
+## 2026-10-17 - Personnel Profile unsaved-changes check uses the database
+- Opening a profile fetches it from GET /api/personnel/:id; the dirty baseline is that fresh record (nothing counts as changed until it loads). Browser copies (localStorage draft_personnel_*, draft_learning_areas_*) no longer hydrate the form or the baseline; cross-person draft diffs removed.
+- Drafts are now a per-user+school+record delta in sessionStorage with the record version they were made from; stale versions are dropped, matching ones are offered via a confirm (never restored silently). Save clears the draft and re-reads the server record as the new baseline; Discard resets to server data; logout clears all drafts.
+- Diff normalization: "false"/false, "0"/0, null/""/undefined equal; N/A and 0 defaults injected into rows (e.g. Other Training Rows) and generated row keys ignored; rows with ids compared by id.
+- Server: single-person response now carries updated_at (newest write across profile/employment/education/learning areas/trainings/designations) as the record version.
+
+## 2026-10-17 - Personnel Profile unsaved-changes check uses the database
+- Opening a profile fetches it from GET /api/personnel/:id; the dirty baseline is that fresh record (nothing counts as changed until it loads). Browser copies (localStorage draft_personnel_*, draft_learning_areas_*) no longer hydrate the form or the baseline; cross-person draft diffs removed.
+- Drafts are now a per-user+school+record delta in sessionStorage with the record version they were made from; stale versions are dropped, matching ones are offered via a confirm (never restored silently). Save clears the draft and re-reads the server record as the new baseline; Discard resets to server data; logout clears all drafts.
+- Diff normalization: "false"/false, "0"/0, null/""/undefined equal; N/A and 0 defaults injected into rows (e.g. Other Training Rows) and generated row keys ignored; rows with ids compared by id.
+- Server: single-person response now carries updated_at (newest write across profile/employment/education/learning areas/trainings/designations) as the record version.
+
+## 2026-10-17 - Workload tab drafts use the shared database-first draft store
+- Workload already fetched saved rows (GET /workloads/personnel/:id/state) as its baseline; its unsaved-edit drafts were full-person copies in localStorage (draft_workload_*) that also fed the editor and a browser-draft banner. Now: drafts live in the same shared store as the Identity tab (services/profileDraft.js), sessionStorage only, keyed user+school+employee+tab (workload:<term>), as a delta (rows added/changed + removed) with the saved version they were made from. Version mismatch -> dropped; a match is still offered through the existing restore prompt.
+- Editor starts from the saved record; no browser overlay; server-unreachable no longer falls back to a browser draft. Other teachers' unsaved edits are detected from in-memory state vs their saved rows. Discard resets every edited teacher to server data. Logout clears all drafts.
+
+## 2026-10-17 - "Unsent Changes Available" no longer re-prompts
+- Root causes: (1) the crash-safety snapshot was stored WITHOUT an employee id but the save cleanup looked it up WITH one, so it was never deleted; (2) "Keep Database Version" deleted nothing (entry stayed queued); (3) the prompt ran on mount (before the record was fetched) and again whenever the user object changed; (4) entries were shared across employees and had no version.
+- Shared helper (services/outbox.js checkAndPromptOutboxOnSectionOpen): runs once per load per user+school+employee+tab (module-level resolved flag + in-flight dedupe, safe for remounts/Strict Mode), drops stale (baseVersion mismatch), other-employee, unattributed and no-op entries without asking, pauses the crash-safety writer while the question is open, and BOTH answers consume the entry. Same-modal wording/buttons; outside-click/Esc no longer dismisses it ambiguously.
+- Identity tab: one restore flow after the fetch (session draft first, then the outbox entry), crash-safety payload is now the changed-fields delta tagged with employee + version; Workload tags its entries with employee + version too. Logout resets the prompt state.
+
+## 2026-10-17 - One blocking "saving" modal replaces save/update/delete toasts
+- New shared modal = the same customModal the Roster delete confirmation uses (App.jsx renderSavingModal), driven by AppContext beginSaveFlow/runSaveFlow: opens loading, blocks the screen (no Esc/backdrop dismissal, Esc/Tab swallowed, beforeunload warning), shows success only after the awaited write resolves, or the real error with Retry/Close; one flow at a time; no timers. SweetAlert helper (services/saveAlert.js) removed so there is a single modal.
+- Migrated: Designations, Identity/Profile (save, validate+save, delete), Workload (header save, save+verify, confirm all, clear term/all, allowances), Personnel Roster (save, delete, school head), Organized Classes, School Profile, Deployment, Allowances, Overload DTR logs, Request Center, Validation Center re-submit, Unsynced Changes queue, Room QR approve/merge/re-apply, converted-station import. Their old success/offline toasts and reportError popups were removed (SweetAlerts now sit above the modal).
+- AppContext write paths made database-first: addPersonnelAbsence/removePersonnelAbsence, toggleSchoolHead, designateSchoolHeadsConfig, borrowed-personnel actions; savePersonnelChanges no longer announces a "synced" toast itself.
+
+## 2026-10-17 - Change School Head: atomic, verified, database-first
+- Root cause (server): the per-person route swallowed errors from its side tables inside the transaction; in PostgreSQL one failed statement aborts the transaction, so COMMIT silently became ROLLBACK while the route still answered 200. It also never checked rows touched, wrote through db.pool instead of the request-scoped client, and changed the old and new head in separate requests.
+- Root cause (client): the Roster ignored designateSchoolHeadsConfig result and fired "designated as School Head" + synced its baseline regardless.
+- Now: PUT /api/personnel/school-head-config (and PUT /:id/school-head) = one transaction, advisory lock, savepoints for secondary tables, exact-row checks, commit, then read-back and compare; any mismatch = error, nothing reported saved. Client renders the card from the heads the server returns; failure keeps the previous head; no toast (the shared saving modal is the only confirmation).
+- Bulk roster saves (incl. replayed outbox copies) can no longer change is_school_head/is_main_sh on existing rows. Read-back verification added to bulk roster save, personnel delete, and designation N/A save.

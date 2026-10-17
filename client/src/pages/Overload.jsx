@@ -4228,7 +4228,7 @@ export default function Overload() {
                                   );
                                 }
 
-                                await addPersonnelAbsence({
+                                const res = await addPersonnelAbsence({
                                   personnelId: tardinessTeacherId,
                                   startDate: selectedTardyDate,
                                   endDate: selectedTardyDate,
@@ -4254,11 +4254,8 @@ export default function Overload() {
                                   daily_overload_earned:
                                     impact.earnedDailyOverloadMinutes,
                                 });
-
-                                showToast(
-                                  `✓ DTR Log saved for ${selectedTardyDate}!`,
-                                );
-                                setSelectedTardyDate("");
+                                if (res && res.success !== false)
+                                  setSelectedTardyDate("");
                               }}
                               style={{
                                 background: "var(--blue, #2563eb)",
