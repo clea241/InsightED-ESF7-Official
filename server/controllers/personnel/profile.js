@@ -294,7 +294,8 @@ async function syncLearningAreasInTransaction(
   const cleanSchoolId = String(targetSchoolId || "108348")
     .replace(/^SCH-/i, "")
     .trim();
-  const laId = `LA-${cleanSchoolId}-${String(personnelId).slice(0, 8)}`;
+  const crypto = require("crypto");
+  const laId = `LA-${cleanSchoolId}-${crypto.randomUUID()}`;
 
   await client.query(
     `INSERT INTO esf7_personnel_learning_areas (id, personnel_id, matrix_data, updated_at)
@@ -1475,34 +1476,73 @@ router.put("/:id", async (req, res) => {
       );
     }
 
-    const finalFName = (
-      first_name !== undefined
+    const curFName = String(current.first_name || "")
+      .trim()
+      .toUpperCase();
+    const incomingFName =
+      first_name !== undefined &&
+      String(first_name).trim().toUpperCase() !== curFName
         ? first_name
-        : firstName !== undefined
+        : firstName !== undefined &&
+            String(firstName).trim().toUpperCase() !== curFName
           ? firstName
-          : current.first_name || ""
-    ).toUpperCase();
-    const finalMName = (
-      middle_name !== undefined
+          : first_name !== undefined
+            ? first_name
+            : firstName !== undefined
+              ? firstName
+              : current.first_name || "";
+    const finalFName = String(incomingFName).trim().toUpperCase();
+
+    const curMName = String(current.middle_name || "")
+      .trim()
+      .toUpperCase();
+    const incomingMName =
+      middle_name !== undefined &&
+      String(middle_name).trim().toUpperCase() !== curMName
         ? middle_name
-        : middleName !== undefined
+        : middleName !== undefined &&
+            String(middleName).trim().toUpperCase() !== curMName
           ? middleName
-          : current.middle_name || ""
-    ).toUpperCase();
-    const finalLName = (
-      last_name !== undefined
+          : middle_name !== undefined
+            ? middle_name
+            : middleName !== undefined
+              ? middleName
+              : current.middle_name || "";
+    const finalMName = String(incomingMName).trim().toUpperCase();
+
+    const curLName = String(current.last_name || "")
+      .trim()
+      .toUpperCase();
+    const incomingLName =
+      last_name !== undefined &&
+      String(last_name).trim().toUpperCase() !== curLName
         ? last_name
-        : lastName !== undefined
+        : lastName !== undefined &&
+            String(lastName).trim().toUpperCase() !== curLName
           ? lastName
-          : current.last_name || ""
-    ).toUpperCase();
-    const finalExt = (
-      name_extension !== undefined
+          : last_name !== undefined
+            ? last_name
+            : lastName !== undefined
+              ? lastName
+              : current.last_name || "";
+    const finalLName = String(incomingLName).trim().toUpperCase();
+
+    const curExt = String(current.name_extension || "")
+      .trim()
+      .toUpperCase();
+    const incomingExt =
+      name_extension !== undefined &&
+      String(name_extension).trim().toUpperCase() !== curExt
         ? name_extension
-        : nameExtension !== undefined
+        : nameExtension !== undefined &&
+            String(nameExtension).trim().toUpperCase() !== curExt
           ? nameExtension
-          : current.name_extension || ""
-    ).toUpperCase();
+          : name_extension !== undefined
+            ? name_extension
+            : nameExtension !== undefined
+              ? nameExtension
+              : current.name_extension || "";
+    const finalExt = String(incomingExt).trim().toUpperCase();
     const finalTin = (tin !== undefined ? tin : current.tin || "").trim();
     const finalNoTin =
       no_tin !== undefined
@@ -1579,13 +1619,18 @@ router.put("/:id", async (req, res) => {
             ? !!current.no_philsys
             : false;
     const finalPhilSys = finalNoPhilSys ? null : cleanPhilSys || null;
-    const finalEmpNo = (
-      employee_no !== undefined
+    const curEmpNo = String(current.employee_no || "").trim();
+    const incomingEmpNo =
+      employee_no !== undefined && String(employee_no).trim() !== curEmpNo
         ? employee_no
-        : employeeNo !== undefined
+        : employeeNo !== undefined && String(employeeNo).trim() !== curEmpNo
           ? employeeNo
-          : current.employee_no || ""
-    ).trim();
+          : employee_no !== undefined
+            ? employee_no
+            : employeeNo !== undefined
+              ? employeeNo
+              : current.employee_no || "";
+    const finalEmpNo = String(incomingEmpNo).trim();
     const empApptCheck = (
       nature_of_appointment ||
       natureOfAppointment ||
@@ -1595,13 +1640,18 @@ router.put("/:id", async (req, res) => {
       .toUpperCase()
       .trim();
     const isRegularPermanent = empApptCheck === "REGULAR PERMANENT";
-    const rawEmail = (
-      deped_email !== undefined
+    const curEmail = String(current.deped_email || "").trim();
+    const incomingEmail =
+      deped_email !== undefined && String(deped_email).trim() !== curEmail
         ? deped_email
-        : depedEmail !== undefined
+        : depedEmail !== undefined && String(depedEmail).trim() !== curEmail
           ? depedEmail
-          : current.deped_email || ""
-    ).trim();
+          : deped_email !== undefined
+            ? deped_email
+            : depedEmail !== undefined
+              ? depedEmail
+              : current.deped_email || "";
+    const rawEmail = String(incomingEmail).trim();
     const finalEmail = isRegularPermanent && rawEmail === "N/A" ? "" : rawEmail;
     const finalNoEmail = isRegularPermanent
       ? false
@@ -2035,6 +2085,13 @@ router.put("/:id", async (req, res) => {
       matrix_data: laRow.matrix_data || {},
       la_raw_payload: {},
     };
+
+    try {
+      const roomProfiling = require("../room_profiling");
+      if (typeof roomProfiling.invalidateRosterCache === "function") {
+        roomProfiling.invalidateRosterCache(targetSchoolId);
+      }
+    } catch (_) {}
 
     res.json(formatPersonnelRecord(combinedRow, trRes.rows, dsgRes.rows));
   } catch (err) {

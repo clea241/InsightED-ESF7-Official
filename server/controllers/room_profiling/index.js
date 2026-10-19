@@ -97,6 +97,19 @@ setInterval(
   15 * 60 * 1000,
 ).unref();
 
+// Memory-backed read-through cache for Room Roster
+const activeRosterCache = new Map();
+
+function invalidateRosterCache(cleanSchoolId) {
+  if (!cleanSchoolId) {
+    activeRosterCache.clear();
+  } else {
+    const sid = String(cleanSchoolId).replace(/^SCH-/i, "").trim();
+    activeRosterCache.delete(sid);
+    activeRosterCache.delete(`SCH-${sid}`);
+  }
+}
+
 // GET /api/room-profiling/check-lockout — Check if a passcode / personnel is locked out across all devices
 router.get("/check-lockout", async (req, res, next) => {
   try {
@@ -1301,8 +1314,9 @@ router.post("/accept", async (req, res, next) => {
           shouldFieldUpdate("matrixData") ||
           shouldFieldUpdate("matrix_data"))
       ) {
+        const crypto = require("crypto");
         learningAreaUpsertRows.push({
-          id: `LA-${cleanSchoolId}-${String(resolvedId).slice(0, 8)}`,
+          id: `LA-${cleanSchoolId}-${crypto.randomUUID()}`,
           personnel_id: resolvedId,
           matrix_data: JSON.stringify(laMap),
           updated_at: now,
@@ -1778,6 +1792,7 @@ router.post("/accept", async (req, res, next) => {
     }
 
     // 6. Cache cleanup
+    invalidateRosterCache(cleanSchoolId);
     await cacheService.delPattern("room_profiling:*");
     await cacheService.delPattern("personnel:*");
 
@@ -2005,8 +2020,6 @@ router.get("/snapshots/:id", async (req, res, next) => {
 });
 
 // POST /api/room-profiling/sync-roster — School Head laptop broadcasts active roster
-const activeRosterCache = new Map();
-
 router.post("/sync-roster", async (req, res, next) => {
   try {
     if (!isTableInitialized) await initQueueTable();
@@ -2673,7 +2686,20 @@ router.get("/roster", async (req, res, next) => {
     const schoolId = req.query.schoolId || req.query.school_id || "502624";
     const cleanSchoolId = String(schoolId).replace(/^SCH-/i, "").trim();
 
-    // 1. Database-First: same normalized tables + shared formatter as Personnel Profiling
+    // 1. Read-through cache check before DB query
+    try {
+      const cached = activeRosterCache.get(cleanSchoolId);
+      if (cached && Array.isArray(cached.roster) && cached.roster.length > 0) {
+        return res.json(cached.roster);
+      }
+    } catch (cacheErr) {
+      console.warn(
+        "activeRosterCache read error, falling back to DB:",
+        cacheErr?.message,
+      );
+    }
+
+    // 2. Database-First: same normalized tables + shared formatter as Personnel Profiling
     // (GET /api/personnel), so service dates, trainings and learning areas are not dropped.
     const formatted = await loadRoomRosterFromDb(cleanSchoolId);
     if (formatted.length > 0) {
@@ -2748,9 +2774,27 @@ router.post(
 
       const { QR_VALIDITY_MS } = await loadScheduleRules();
 
-      // 1. Database-First: full record from the shared Room QR loader, so the teacher
-      // returned on success is not a sparse copy that hides service date / PhilSys / L&D.
-      const roster = await loadRoomRosterFromDb(cleanSchoolId);
+      // 1. Database-First with read-through cache: full record from shared Room QR loader
+      let roster = null;
+      try {
+        const cached = activeRosterCache.get(cleanSchoolId);
+        if (
+          cached &&
+          Array.isArray(cached.roster) &&
+          cached.roster.length > 0
+        ) {
+          roster = cached.roster;
+        }
+      } catch (_) {}
+      if (!roster) {
+        roster = await loadRoomRosterFromDb(cleanSchoolId);
+        if (roster && roster.length > 0) {
+          activeRosterCache.set(cleanSchoolId, {
+            roster,
+            syncedAt: Date.now(),
+          });
+        }
+      }
 
       let matched = null;
       for (const teacher of roster) {
@@ -2803,4 +2847,6 @@ router.post(
   },
 );
 
+router.activeRosterCache = activeRosterCache;
+router.invalidateRosterCache = invalidateRosterCache;
 module.exports = router;

@@ -1380,6 +1380,13 @@ router.post("/bulk", async (req, res) => {
       );
     }
 
+    try {
+      const roomProfiling = require("../room_profiling");
+      if (typeof roomProfiling.invalidateRosterCache === "function") {
+        roomProfiling.invalidateRosterCache(cleanSchoolId);
+      }
+    } catch (_) {}
+
     res.json({
       success: true,
       count: profileRows.length,
@@ -1446,7 +1453,7 @@ router.put("/school-head-config", async (req, res) => {
     res.json({ success: true, ...result });
   } catch (err) {
     if (!err.status) console.error("PUT /personnel/school-head-config:", err);
-    return schoolHeads.sendError(res, err);
+    return schoolHeads.sendError(res, err, req);
   }
 });
 
@@ -1485,7 +1492,7 @@ router.put("/:id/school-head", async (req, res) => {
     });
   } catch (err) {
     if (!err.status) console.error("PUT /personnel/:id/school-head:", err);
-    return schoolHeads.sendError(res, err);
+    return schoolHeads.sendError(res, err, req);
   }
 });
 
@@ -1737,6 +1744,13 @@ router.delete("/:id", async (req, res) => {
         "The personnel record is still in the database after the delete, so it was not removed.",
       );
     }
+
+    try {
+      const roomProfiling = require("../room_profiling");
+      if (typeof roomProfiling.invalidateRosterCache === "function") {
+        roomProfiling.invalidateRosterCache(sid || cleanSchoolId);
+      }
+    } catch (_) {}
 
     res.json({
       success: true,

@@ -414,6 +414,13 @@ router.post("/import-converted", async (req, res) => {
       `✅ [Converted School Import] Copied ${importedCount} records from Old ID [${sourceOldId}] to New Station [${targetSchoolId}] in ${targetTable}`,
     );
 
+    try {
+      const roomProfiling = require("../room_profiling");
+      if (typeof roomProfiling.invalidateRosterCache === "function") {
+        roomProfiling.invalidateRosterCache(targetSchoolId);
+      }
+    } catch (_) {}
+
     res.json({
       success: true,
       message: `Successfully imported ${importedCount} faculty records from previous School ID [${sourceOldId}].`,
