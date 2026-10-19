@@ -135,45 +135,61 @@ router.get("/incoming", async (req, res, next) => {
       } catch (e) {}
     }
 
-    const queryText = `
-      SELECT * FROM esf7_requests 
-      WHERE (
-        target_school_id = $1 
-        OR target_school_id = $2 
-        OR REPLACE(target_school_id, 'SCH-', '') = $1 
-        OR target_school_id ILIKE $3
-        ${schoolNames.length > 0 ? `OR UPPER(TRIM(target_school_id)) = $4` : ""}
-      ) 
-        AND LOWER(status) = 'pending' 
-      ORDER BY created_at DESC
-    `;
-    const params = [
-      cleanSchoolId,
-      `SCH-${cleanSchoolId}`,
-      `%${cleanSchoolId}%`,
-    ];
-    if (schoolNames.length > 0) {
-      params.push(schoolNames[0]);
+    const targetSchoolIds = [cleanSchoolId, `SCH-${cleanSchoolId}`];
+    if (schoolNames.length > 0 && !targetSchoolIds.includes(schoolNames[0])) {
+      targetSchoolIds.push(schoolNames[0]);
     }
 
-    let result = await db.query(queryText, params);
+    // 1. Fast indexed query hitting idx_esf7_requests_target
+    const fastQuery = `
+      SELECT * FROM esf7_requests 
+      WHERE target_school_id = ANY($1) 
+        AND status = 'pending' 
+      ORDER BY created_at DESC
+    `;
+    let result = await db.query(fastQuery, [targetSchoolIds]);
 
-    // Fallback: If 0 rows found in active pool, check the alternative pool (bounded to 3s)
-    if (result.rows.length === 0 && db.isDivisionOrTestAccount(cleanSchoolId)) {
-      const fallbackPool = db.prodPool;
-      const fallbackRes = await Promise.race([
-        fallbackPool.query(queryText, params),
-        new Promise((_, rej) =>
-          setTimeout(() => rej(new Error("fallback timeout")), 3000),
-        ),
-      ]).catch(() => ({ rows: [] }));
+    // Fallback: If 0 rows found, check with legacy fuzzy filter in case of unconventional target format
+    if (result.rows.length === 0) {
+      const fallbackQuery = `
+        SELECT * FROM esf7_requests 
+        WHERE (
+          target_school_id = $1 
+          OR target_school_id = $2 
+          OR REPLACE(target_school_id, 'SCH-', '') = $1 
+          OR target_school_id ILIKE $3
+          ${schoolNames.length > 0 ? `OR UPPER(TRIM(target_school_id)) = $4` : ""}
+        ) 
+          AND LOWER(status) = 'pending' 
+        ORDER BY created_at DESC
+      `;
+      const fallbackParams = [
+        cleanSchoolId,
+        `SCH-${cleanSchoolId}`,
+        `%${cleanSchoolId}%`,
+      ];
+      if (schoolNames.length > 0) fallbackParams.push(schoolNames[0]);
+
+      const fallbackRes = await db
+        .query(fallbackQuery, fallbackParams)
+        .catch(() => ({ rows: [] }));
       if (fallbackRes.rows.length > 0) {
         result = fallbackRes;
+      } else if (db.isDivisionOrTestAccount(cleanSchoolId)) {
+        // Fallback for division/test accounts across alternative pool
+        const altPool = db.prodPool;
+        const altRes = await Promise.race([
+          altPool.query(fastQuery, [targetSchoolIds]),
+          new Promise((_, rej) =>
+            setTimeout(() => rej(new Error("fallback timeout")), 3000),
+          ),
+        ]).catch(() => ({ rows: [] }));
+        if (altRes.rows.length > 0) result = altRes;
       }
     }
 
     const formatted = result.rows.map(formatRequestRecord);
-    await cacheService.set(cacheKey, formatted, 5);
+    await cacheService.set(cacheKey, formatted, 30);
     res.json(formatted);
   } catch (err) {
     return handleControllerError(err, req, res, next);
@@ -194,35 +210,47 @@ router.get("/outgoing", async (req, res, next) => {
     const cached = await cacheService.get(cacheKey);
     if (cached) return res.json(cached);
 
-    const queryText = `
+    const requesterSchoolIds = [cleanSchoolId, `SCH-${cleanSchoolId}`];
+
+    // 1. Fast indexed query hitting idx_esf7_requests_requester
+    const fastQuery = `
       SELECT * FROM esf7_requests 
-      WHERE (requester_school_id = $1 OR requester_school_id = $2 OR REPLACE(requester_school_id, 'SCH-', '') = $1 OR requester_school_id ILIKE $3) 
+      WHERE requester_school_id = ANY($1) 
       ORDER BY created_at DESC
     `;
-    const params = [
-      cleanSchoolId,
-      `SCH-${cleanSchoolId}`,
-      `%${cleanSchoolId}%`,
-    ];
+    let result = await db.query(fastQuery, [requesterSchoolIds]);
 
-    let result = await db.query(queryText, params);
-
-    // Fallback: If 0 rows found in active pool, check alternative pool (bounded to 3s)
-    if (result.rows.length === 0 && db.isDivisionOrTestAccount(cleanSchoolId)) {
-      const fallbackPool = db.prodPool;
-      const fallbackRes = await Promise.race([
-        fallbackPool.query(queryText, params),
-        new Promise((_, rej) =>
-          setTimeout(() => rej(new Error("fallback timeout")), 3000),
-        ),
-      ]).catch(() => ({ rows: [] }));
+    // Fallback: If 0 rows found in active pool, check with legacy fuzzy filter
+    if (result.rows.length === 0) {
+      const fallbackQuery = `
+        SELECT * FROM esf7_requests 
+        WHERE (requester_school_id = $1 OR requester_school_id = $2 OR REPLACE(requester_school_id, 'SCH-', '') = $1 OR requester_school_id ILIKE $3) 
+        ORDER BY created_at DESC
+      `;
+      const fallbackParams = [
+        cleanSchoolId,
+        `SCH-${cleanSchoolId}`,
+        `%${cleanSchoolId}%`,
+      ];
+      const fallbackRes = await db
+        .query(fallbackQuery, fallbackParams)
+        .catch(() => ({ rows: [] }));
       if (fallbackRes.rows.length > 0) {
         result = fallbackRes;
+      } else if (db.isDivisionOrTestAccount(cleanSchoolId)) {
+        const altPool = db.prodPool;
+        const altRes = await Promise.race([
+          altPool.query(fastQuery, [requesterSchoolIds]),
+          new Promise((_, rej) =>
+            setTimeout(() => rej(new Error("fallback timeout")), 3000),
+          ),
+        ]).catch(() => ({ rows: [] }));
+        if (altRes.rows.length > 0) result = altRes;
       }
     }
 
     const formatted = result.rows.map(formatRequestRecord);
-    await cacheService.set(cacheKey, formatted, 5);
+    await cacheService.set(cacheKey, formatted, 30);
     res.json(formatted);
   } catch (err) {
     return handleControllerError(err, req, res, next);
@@ -268,7 +296,7 @@ router.get("/history", async (req, res, next) => {
     }
 
     const formatted = result.rows.map(formatRequestRecord);
-    await cacheService.set(cacheKey, formatted, 5);
+    await cacheService.set(cacheKey, formatted, 30);
     res.json(formatted);
   } catch (err) {
     return handleControllerError(err, req, res, next);
@@ -672,7 +700,14 @@ router.post("/create", async (req, res, next) => {
       ],
     );
 
-    await cacheService.delPattern("requests:*");
+    const cleanReqId = String(requesterId).replace(/^SCH-/i, "").trim();
+    const cleanTId = String(tSchoolId).replace(/^SCH-/i, "").trim();
+    await Promise.all([
+      cacheService.delPattern(`requests:*:${cleanReqId}*`),
+      cacheService.delPattern(`requests:*:${cleanTId}*`),
+      cacheService.delPattern("requests:*"),
+    ]).catch(() => {});
+
     res.json({
       success: true,
       request: formatRequestRecord(insertRes.rows[0]),
@@ -701,7 +736,23 @@ router.post("/:id/respond", async (req, res, next) => {
       return res.status(404).json({ error: "Request not found." });
     }
 
-    await cacheService.delPattern("requests:*");
+    const row = result.rows[0];
+    const cleanReqId = String(row.requester_school_id || "")
+      .replace(/^SCH-/i, "")
+      .trim();
+    const cleanTId = String(row.target_school_id || "")
+      .replace(/^SCH-/i, "")
+      .trim();
+    await Promise.all([
+      cleanReqId
+        ? cacheService.delPattern(`requests:*:${cleanReqId}*`)
+        : Promise.resolve(),
+      cleanTId
+        ? cacheService.delPattern(`requests:*:${cleanTId}*`)
+        : Promise.resolve(),
+      cacheService.delPattern("requests:*"),
+    ]).catch(() => {});
+
     res.json({
       success: true,
       status: action,
