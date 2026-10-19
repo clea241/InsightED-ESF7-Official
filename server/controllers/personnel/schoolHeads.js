@@ -7,6 +7,10 @@
 // always released, and success is only reported after the rows are read back (outside the transaction) and match
 // what was asked for.
 const db = require("../../db");
+const {
+  handleControllerError,
+  isPoolAcquireTimeout,
+} = require("../../utils/poolErrors");
 
 class SchoolHeadError extends Error {
   constructor(status, message, extra = {}) {
@@ -43,7 +47,14 @@ async function writeSchoolHeads(
   if (!sid) throw new SchoolHeadError(400, "A school is required.");
   const sidPair = [sid, `SCH-${sid}`];
 
-  const client = await db.getClient();
+  // Dedicate a connection from prodPool (or school pool) so designation writes are not starved by general read traffic
+  const pool =
+    (typeof db.getPoolForSchool === "function"
+      ? db.getPoolForSchool(sid)
+      : null) ||
+    db.prodPool ||
+    db.getPool();
+  const client = await pool.connect();
   let resolvedSet = [];
   let resolvedUnset = [];
   try {
@@ -235,7 +246,10 @@ async function writeSchoolHeads(
   return { heads };
 }
 
-const sendError = (res, err) => {
+const sendError = (res, err, req, next) => {
+  if (isPoolAcquireTimeout(err)) {
+    return handleControllerError(err, req || {}, res, next);
+  }
   const status = err instanceof SchoolHeadError ? err.status : 500;
   return res.status(status).json({
     error: err.message || "The School Head could not be saved.",
