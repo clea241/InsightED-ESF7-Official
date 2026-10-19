@@ -3542,16 +3542,83 @@ export const AppProvider = ({ children }) => {
   const isNodeUnlocked = (nodeId) => {
     if (bypassNodeLocks) return true;
     // Nodes locked by default for DepEd review & alignment
-    if (["overload", "allowances"].includes(nodeId)) return false;
+    if (["workload", "overload", "allowances"].includes(nodeId)) return false;
     if (!nodeId) return true;
     return true;
   };
 
+  const getExpectedSchoolGrades = (info) => {
+    if (!info) return [];
+    const offerings = (info.curricularOffering || []).map((o) =>
+      String(o).toUpperCase(),
+    );
+    const grades = [];
+    const hasElem = offerings.some(
+      (o) =>
+        o.includes("ELEM") ||
+        o.includes("KINDER") ||
+        o === "PURELY ES" ||
+        o.includes("ES"),
+    );
+    const hasJHS = offerings.some(
+      (o) => o.includes("JHS") || o.includes("JUNIOR"),
+    );
+    const hasSHS = offerings.some(
+      (o) => o.includes("SHS") || o.includes("SENIOR"),
+    );
+
+    if (hasElem || (!hasJHS && !hasSHS && offerings.length === 0)) {
+      grades.push(
+        "Kinder",
+        "Grade 1",
+        "Grade 2",
+        "Grade 3",
+        "Grade 4",
+        "Grade 5",
+        "Grade 6",
+      );
+    }
+    if (hasJHS) {
+      grades.push("Grade 7", "Grade 8", "Grade 9", "Grade 10");
+    }
+    if (hasSHS) {
+      grades.push("Grade 11", "Grade 12");
+    }
+    return grades;
+  };
+
   const isNodeCompleted = (nodeId) => {
+    if (nodeId === "school") {
+      const isMarked = (journeyState?.completedNodes || []).includes("school");
+      // School Shift Schedule is mandatory: all offered grade levels must have an assigned shift
+      const conf = schoolInfo?.shiftsConfig || {};
+      const expectedGrades = getExpectedSchoolGrades(schoolInfo);
+      if (expectedGrades.length > 0) {
+        const allCovered = expectedGrades.every((g) => Boolean(conf[g]));
+        if (!allCovered) return false;
+      } else {
+        if (Object.keys(conf).length === 0) return false;
+      }
+      return isMarked;
+    }
     return (journeyState?.completedNodes || []).includes(nodeId);
   };
 
   const completeNode = async (nodeId, nextNodeId) => {
+    if (nodeId === "school") {
+      const conf = schoolInfo?.shiftsConfig || {};
+      const expectedGrades = getExpectedSchoolGrades(schoolInfo);
+      const isComplete =
+        expectedGrades.length > 0
+          ? expectedGrades.every((g) => Boolean(conf[g]))
+          : Object.keys(conf).length > 0;
+      if (!isComplete) {
+        console.warn(
+          "[completeNode] Blocked completing Node 1: School Shift Schedule is mandatory for all offered grades.",
+        );
+        return;
+      }
+    }
     const updatedCompleted = Array.from(
       new Set([...(journeyState.completedNodes || []), nodeId]),
     );
@@ -3716,19 +3783,45 @@ export const AppProvider = ({ children }) => {
   const [requestHistory, setRequestHistory] = useState([]);
   const [districtSchools, setDistrictSchools] = useState([]);
 
-  // Set after a 401/403 so the poller stops; cleared at login and logout.
+  // Safely check if JWT token is expired without throwing
+  const isTokenExpired = (tok) => {
+    if (!tok) return true;
+    try {
+      const parts = String(tok).split(".");
+      if (parts.length !== 3) return false;
+      const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+      const jsonPayload = decodeURIComponent(
+        atob(base64)
+          .split("")
+          .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+          .join(""),
+      );
+      const payload = JSON.parse(jsonPayload);
+      if (payload && typeof payload.exp === "number") {
+        return Date.now() >= payload.exp * 1000;
+      }
+      return false;
+    } catch (err) {
+      // Treat parse failure as "not expired" so valid sessions are never blocked
+      return false;
+    }
+  };
+
+  // Set after a 401/403 or invalid session so the poller stops; cleared at login and logout.
   const requestsBlockedRef = useRef(false);
   const refreshInFlightRef = useRef(null);
 
   const refreshRequests = async (targetId = null) => {
+    // Return early with no request when there is no token or token is expired
+    const token = localStorage.getItem("token");
+    if (!token || isTokenExpired(token)) {
+      requestsBlockedRef.current = true;
+      return true;
+    }
+
     // The school always comes from the verified session, never from component state captured earlier.
     const cleanId = resolveSchoolId(targetId);
-    if (
-      !cleanId ||
-      requestsBlockedRef.current ||
-      !localStorage.getItem("token")
-    )
-      return true;
+    if (!cleanId || requestsBlockedRef.current) return true;
 
     // Request deduplication: return existing active refresh promise if in-flight
     if (refreshInFlightRef.current) {
@@ -3738,22 +3831,40 @@ export const AppProvider = ({ children }) => {
     const run = async () => {
       try {
         // Each list loads independently: a failure in one (e.g. a 502 on history) keeps that list's last
-        // good data and never blocks the others. Transient 502/503/504 are retried with short backoff.
+        // good data and never blocks the others. Transient 502/503/504 are retried with backoff.
         const withRetry = async (fn) => {
-          const delays = [500, 1500];
+          const defaultDelays = [500, 1500];
           for (let attempt = 0; ; attempt++) {
             try {
               return await fn();
             } catch (err) {
               const st = /** @type {any} */ (err)?.status;
+              const curToken = localStorage.getItem("token");
               if (
                 ![502, 503, 504].includes(st) ||
-                attempt >= delays.length ||
+                attempt >= defaultDelays.length ||
                 requestsBlockedRef.current ||
-                !localStorage.getItem("token")
+                !curToken ||
+                isTokenExpired(curToken)
               )
                 throw err;
-              await new Promise((r) => setTimeout(r, delays[attempt]));
+
+              let retryDelay = defaultDelays[attempt];
+              if (st === 503) {
+                // Honor server's Retry-After header with a sensible cap (max 10s) and fallback to defaultDelays
+                const rawHeader =
+                  err?.retryAfter ||
+                  err?.body?.retryAfter ||
+                  (typeof err?.headers?.get === "function" &&
+                    err.headers.get("retry-after")) ||
+                  err?.headers?.["retry-after"];
+                const parsedSecs = Number(rawHeader);
+                if (!isNaN(parsedSecs) && parsedSecs > 0) {
+                  retryDelay = Math.min(parsedSecs * 1000, 10000);
+                }
+              }
+
+              await new Promise((r) => setTimeout(r, retryDelay));
             }
           }
         };
@@ -5977,24 +6088,35 @@ export const AppProvider = ({ children }) => {
   const refreshRequestsRef = useRef(refreshRequests);
   refreshRequestsRef.current = refreshRequests;
   useEffect(() => {
-    requestsBlockedRef.current = false; // a new login (or logout) starts clean
-    if (!user || !localStorage.getItem("token")) return undefined;
+    const token = localStorage.getItem("token");
+    if (!user || !token || isTokenExpired(token)) {
+      requestsBlockedRef.current = true;
+      return undefined;
+    }
+    // Only reset requestsBlockedRef to false when session is valid on login or token refresh
+    requestsBlockedRef.current = false;
     let timer = null;
     let delay = 10000;
     let stopped = false;
     const tick = async () => {
+      const curToken = localStorage.getItem("token");
       if (
         stopped ||
         requestsBlockedRef.current ||
-        !localStorage.getItem("token")
-      )
+        !curToken ||
+        isTokenExpired(curToken)
+      ) {
+        requestsBlockedRef.current = true;
         return;
+      }
       const ok = await refreshRequestsRef.current();
       delay = ok ? 10000 : Math.min(60000, delay * 2);
+      const afterToken = localStorage.getItem("token");
       if (
         !stopped &&
         !requestsBlockedRef.current &&
-        localStorage.getItem("token")
+        afterToken &&
+        !isTokenExpired(afterToken)
       )
         timer = setTimeout(tick, delay);
     };
@@ -6267,13 +6389,44 @@ export const AppProvider = ({ children }) => {
   useEffect(() => {
     // flushDrafts() (logout, recovery) asks for the newest state and persists it locally first.
     registerSnapshotProvider(async () => {
-      const latest = latestDraftRef.current;
-      if (!latest || loadIncompleteRef.current) return null;
-      await setLocalDraft(latest.key, latest.data);
+      const cur = currentStateRef.current;
+      const sid =
+        cur?.schoolInfo?.schoolId ||
+        schoolInfo?.schoolId ||
+        getSessionSchoolId();
+      const sy =
+        cur?.schoolInfo?.schoolYear || schoolInfo?.schoolYear || "SY 26-27";
+      if (!sid || loadIncompleteRef.current) return null;
+
+      const draftKey = `draft_${sid}_${sy}`;
+      const payloadData = {
+        schoolInfo: cur?.schoolInfo || schoolInfo,
+        personnel: cur?.personnel || personnel,
+        classSections: cur?.classSections || classSections,
+        deletedSectionIds: (
+          cur?.deletedSectionIds ||
+          deletedSectionIds ||
+          []
+        ).map(String),
+        allowSectionDeletion: true,
+        workloadTransfers: cur?.workloadTransfers || workloadTransfers,
+        absences: cur?.absences || absences,
+        deletedPersonnelIds: cur?.deletedPersonnelIds || deletedPersonnelIds,
+        journey_state: cur?.journeyState || journeyState,
+        lastUpdated: new Date().toISOString(),
+      };
+
+      latestDraftRef.current = {
+        key: draftKey,
+        schoolYear: sy,
+        data: payloadData,
+      };
+
+      await setLocalDraft(draftKey, payloadData);
       return {
-        schoolId: latest.data.schoolInfo.schoolId,
-        schoolYear: latest.schoolYear,
-        payload: latest.data,
+        schoolId: sid,
+        schoolYear: sy,
+        payload: payloadData,
       };
     });
     const offLock = onServerLock(async () => {
@@ -6447,6 +6600,117 @@ export const AppProvider = ({ children }) => {
           mergedSnapshot = merged;
 
           // Bidirectional normalization for all profile fields
+          if (
+            updatedPerson.firstName !== undefined &&
+            updatedPerson.firstName !== p.firstName
+          ) {
+            merged.firstName = updatedPerson.firstName;
+            merged.first_name = updatedPerson.firstName;
+          } else if (
+            updatedPerson.first_name !== undefined &&
+            updatedPerson.first_name !== p.first_name
+          ) {
+            merged.firstName = updatedPerson.first_name;
+            merged.first_name = updatedPerson.first_name;
+          } else if (updatedPerson.firstName !== undefined) {
+            merged.firstName = updatedPerson.firstName;
+            merged.first_name = updatedPerson.firstName;
+          } else if (updatedPerson.first_name !== undefined) {
+            merged.firstName = updatedPerson.first_name;
+            merged.first_name = updatedPerson.first_name;
+          }
+
+          if (
+            updatedPerson.middleName !== undefined &&
+            updatedPerson.middleName !== p.middleName
+          ) {
+            merged.middleName = updatedPerson.middleName;
+            merged.middle_name = updatedPerson.middleName;
+          } else if (
+            updatedPerson.middle_name !== undefined &&
+            updatedPerson.middle_name !== p.middle_name
+          ) {
+            merged.middleName = updatedPerson.middle_name;
+            merged.middle_name = updatedPerson.middle_name;
+          } else if (updatedPerson.middleName !== undefined) {
+            merged.middleName = updatedPerson.middleName;
+            merged.middle_name = updatedPerson.middleName;
+          } else if (updatedPerson.middle_name !== undefined) {
+            merged.middleName = updatedPerson.middle_name;
+            merged.middle_name = updatedPerson.middle_name;
+          }
+
+          if (
+            updatedPerson.lastName !== undefined &&
+            updatedPerson.lastName !== p.lastName
+          ) {
+            merged.lastName = updatedPerson.lastName;
+            merged.last_name = updatedPerson.lastName;
+          } else if (
+            updatedPerson.last_name !== undefined &&
+            updatedPerson.last_name !== p.last_name
+          ) {
+            merged.lastName = updatedPerson.last_name;
+            merged.last_name = updatedPerson.last_name;
+          } else if (updatedPerson.lastName !== undefined) {
+            merged.lastName = updatedPerson.lastName;
+            merged.last_name = updatedPerson.lastName;
+          } else if (updatedPerson.last_name !== undefined) {
+            merged.lastName = updatedPerson.last_name;
+            merged.last_name = updatedPerson.last_name;
+          }
+
+          if (
+            updatedPerson.nameExtension !== undefined &&
+            updatedPerson.nameExtension !== p.nameExtension
+          ) {
+            merged.nameExtension = updatedPerson.nameExtension;
+            merged.name_extension = updatedPerson.nameExtension;
+            merged.extensionName = updatedPerson.nameExtension;
+          } else if (
+            updatedPerson.name_extension !== undefined &&
+            updatedPerson.name_extension !== p.name_extension
+          ) {
+            merged.nameExtension = updatedPerson.name_extension;
+            merged.name_extension = updatedPerson.name_extension;
+            merged.extensionName = updatedPerson.name_extension;
+          } else if (updatedPerson.nameExtension !== undefined) {
+            merged.nameExtension = updatedPerson.nameExtension;
+            merged.name_extension = updatedPerson.nameExtension;
+            merged.extensionName = updatedPerson.nameExtension;
+          } else if (updatedPerson.name_extension !== undefined) {
+            merged.nameExtension = updatedPerson.name_extension;
+            merged.name_extension = updatedPerson.name_extension;
+            merged.extensionName = updatedPerson.name_extension;
+          }
+
+          if (updatedPerson.sexAtBirth !== undefined) {
+            merged.sexAtBirth = updatedPerson.sexAtBirth;
+            merged.sex_at_birth = updatedPerson.sexAtBirth;
+          } else if (updatedPerson.sex_at_birth !== undefined) {
+            merged.sexAtBirth = updatedPerson.sex_at_birth;
+            merged.sex_at_birth = updatedPerson.sex_at_birth;
+          } else if (updatedPerson.sex !== undefined) {
+            merged.sexAtBirth = updatedPerson.sex;
+            merged.sex_at_birth = updatedPerson.sex;
+          } else if (merged.sexAtBirth) {
+            merged.sex_at_birth = merged.sexAtBirth;
+          } else if (merged.sex_at_birth) {
+            merged.sexAtBirth = merged.sex_at_birth;
+          }
+
+          if (updatedPerson.religion !== undefined) {
+            merged.religion = updatedPerson.religion;
+          }
+
+          if (updatedPerson.birthdate !== undefined) {
+            merged.birthdate = updatedPerson.birthdate;
+          }
+
+          if (updatedPerson.age !== undefined) {
+            merged.age = updatedPerson.age;
+          }
+
           if (updatedPerson.civilStatus !== undefined) {
             merged.civilStatus = updatedPerson.civilStatus;
             merged.civil_status = updatedPerson.civilStatus;
@@ -6555,42 +6819,97 @@ export const AppProvider = ({ children }) => {
           }
 
           // Employment dates & step increments (explicitly preserve 'N/A')
-          if (updatedPerson.firstServiceDate !== undefined) {
+          if (
+            updatedPerson.firstServiceDate !== undefined &&
+            updatedPerson.firstServiceDate !== p.firstServiceDate
+          ) {
             merged.firstServiceDate = updatedPerson.firstServiceDate;
             merged.first_service_date = updatedPerson.firstServiceDate;
+          } else if (
+            updatedPerson.first_service_date !== undefined &&
+            updatedPerson.first_service_date !== p.first_service_date
+          ) {
+            merged.firstServiceDate = updatedPerson.first_service_date;
+            merged.first_service_date = updatedPerson.first_service_date;
+          } else if (updatedPerson.firstServiceDate !== undefined) {
+            merged.firstServiceDate = updatedPerson.firstServiceDate;
+            merged.first_service_date = updatedPerson.firstServiceDate;
+          } else if (updatedPerson.first_service_date !== undefined) {
+            merged.firstServiceDate = updatedPerson.first_service_date;
+            merged.first_service_date = updatedPerson.first_service_date;
           } else if (merged.firstServiceDate) {
             merged.first_service_date = merged.firstServiceDate;
           } else if (merged.first_service_date) {
             merged.firstServiceDate = merged.first_service_date;
           }
 
-          if (updatedPerson.lastPromotionDate !== undefined) {
+          if (
+            updatedPerson.lastPromotionDate !== undefined &&
+            updatedPerson.lastPromotionDate !== p.lastPromotionDate
+          ) {
             merged.lastPromotionDate = updatedPerson.lastPromotionDate;
             merged.last_promotion_date = updatedPerson.lastPromotionDate;
-          } else if (merged.lastPromotionDate !== undefined) {
-            merged.last_promotion_date = merged.lastPromotionDate;
-          } else if (merged.last_promotion_date !== undefined) {
-            merged.lastPromotionDate = merged.last_promotion_date;
+          } else if (
+            updatedPerson.last_promotion_date !== undefined &&
+            updatedPerson.last_promotion_date !== p.last_promotion_date
+          ) {
+            merged.lastPromotionDate = updatedPerson.last_promotion_date;
+            merged.last_promotion_date = updatedPerson.last_promotion_date;
+          } else if (updatedPerson.lastPromotionDate !== undefined) {
+            merged.lastPromotionDate = updatedPerson.lastPromotionDate;
+            merged.last_promotion_date = updatedPerson.lastPromotionDate;
+          } else if (updatedPerson.last_promotion_date !== undefined) {
+            merged.lastPromotionDate = updatedPerson.last_promotion_date;
+            merged.last_promotion_date = updatedPerson.last_promotion_date;
           }
 
-          if (updatedPerson.newStationDate !== undefined) {
+          if (
+            updatedPerson.newStationDate !== undefined &&
+            updatedPerson.newStationDate !== p.newStationDate
+          ) {
             merged.newStationDate = updatedPerson.newStationDate;
             merged.new_station_date = updatedPerson.newStationDate;
-          } else if (merged.newStationDate !== undefined) {
-            merged.new_station_date = merged.newStationDate;
-          } else if (merged.new_station_date !== undefined) {
-            merged.newStationDate = merged.new_station_date;
+          } else if (
+            updatedPerson.new_station_date !== undefined &&
+            updatedPerson.new_station_date !== p.new_station_date
+          ) {
+            merged.newStationDate = updatedPerson.new_station_date;
+            merged.new_station_date = updatedPerson.new_station_date;
+          } else if (updatedPerson.newStationDate !== undefined) {
+            merged.newStationDate = updatedPerson.newStationDate;
+            merged.new_station_date = updatedPerson.newStationDate;
+          } else if (updatedPerson.new_station_date !== undefined) {
+            merged.newStationDate = updatedPerson.new_station_date;
+            merged.new_station_date = updatedPerson.new_station_date;
           }
 
-          if (updatedPerson.lastLateralMovementDate !== undefined) {
+          if (
+            updatedPerson.lastLateralMovementDate !== undefined &&
+            updatedPerson.lastLateralMovementDate !== p.lastLateralMovementDate
+          ) {
             merged.lastLateralMovementDate =
               updatedPerson.lastLateralMovementDate;
             merged.last_lateral_movement_date =
               updatedPerson.lastLateralMovementDate;
-          } else if (merged.lastLateralMovementDate !== undefined) {
-            merged.last_lateral_movement_date = merged.lastLateralMovementDate;
-          } else if (merged.last_lateral_movement_date !== undefined) {
-            merged.lastLateralMovementDate = merged.last_lateral_movement_date;
+          } else if (
+            updatedPerson.last_lateral_movement_date !== undefined &&
+            updatedPerson.last_lateral_movement_date !==
+              p.last_lateral_movement_date
+          ) {
+            merged.lastLateralMovementDate =
+              updatedPerson.last_lateral_movement_date;
+            merged.last_lateral_movement_date =
+              updatedPerson.last_lateral_movement_date;
+          } else if (updatedPerson.lastLateralMovementDate !== undefined) {
+            merged.lastLateralMovementDate =
+              updatedPerson.lastLateralMovementDate;
+            merged.last_lateral_movement_date =
+              updatedPerson.lastLateralMovementDate;
+          } else if (updatedPerson.last_lateral_movement_date !== undefined) {
+            merged.lastLateralMovementDate =
+              updatedPerson.last_lateral_movement_date;
+            merged.last_lateral_movement_date =
+              updatedPerson.last_lateral_movement_date;
           }
 
           if (merged.stepIncrement)
@@ -9962,12 +10281,22 @@ export const AppProvider = ({ children }) => {
           .trim()
           .toUpperCase();
         const desigsList = Array.isArray(p.designations)
-          ? p.designations.map((d) =>
-              String(d || "")
+          ? p.designations.map((d) => {
+              const str =
+                typeof d === "object" && d !== null
+                  ? d.serializedKey ||
+                    d.serialized_key ||
+                    d.designationName ||
+                    d.designation_name ||
+                    d.name ||
+                    d.designation ||
+                    ""
+                  : String(d || "");
+              return String(str)
                 .replace(/::APPROVED_SDS/gi, "")
                 .trim()
-                .toUpperCase(),
-            )
+                .toUpperCase();
+            })
           : [];
         return reqDesig.keys.some(
           (k) =>

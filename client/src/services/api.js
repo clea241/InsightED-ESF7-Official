@@ -13,6 +13,9 @@ export const getApiBase = () => {
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
   if (typeof window !== "undefined" && window.location) {
     const pathname = window.location.pathname || "";
+    if (pathname.includes("/insighted-esf7-prod2")) {
+      return "/insighted-esf7-prod2/api";
+    }
     if (pathname.includes("/insighted-esf7-prod")) {
       return "/insighted-esf7-prod/api";
     }
@@ -203,6 +206,8 @@ const parseJsonOrThrow = async (res, url = res.url, { note = true } = {}) => {
       { url, status: res.status },
     );
     err.body = body;
+    err.retryAfter =
+      (body && body.retryAfter) || res.headers.get("retry-after") || null;
     throw decorate(err, res, note);
   }
   if (!isJson) {
