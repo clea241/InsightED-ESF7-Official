@@ -3,7 +3,8 @@ import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 
 const require = createRequire(import.meta.url);
-const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
+const read = (p) =>
+  readFileSync(new URL(p, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
 const {
   REQUIRED_COLUMNS,
