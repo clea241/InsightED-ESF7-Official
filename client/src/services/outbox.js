@@ -638,6 +638,15 @@ export async function reconcileOutboxWithDatabase({
     const mod = entry.module;
     const dbSection = dbBaseline[mod];
 
+    // Auto-remove any phantom legacy recovery entries
+    if (
+      mod === "recovered_legacy" ||
+      entry.lastError === "Recovered from legacy local backup"
+    ) {
+      await removeOutboxEntry(entry.id);
+      continue;
+    }
+
     // If identical to database, save effectively completed: delete silently
     if (
       dbSection &&
@@ -881,25 +890,6 @@ export async function runOneTimeLegacyCleanup({
               } else if (key.includes("sections")) {
                 mod = "organized_classes";
                 endpoint = "/api/sections/bulk";
-              }
-
-              // Check if differs from DB baseline
-              const dbSection = dbBaseline[mod];
-              const differs =
-                !dbSection ||
-                JSON.stringify(parsed) !== JSON.stringify(dbSection);
-
-              if (differs) {
-                await upsertOutboxEntry({
-                  kind: "unsaved",
-                  schoolId,
-                  user,
-                  schoolYear,
-                  module: mod,
-                  endpoint,
-                  payload: parsed,
-                  lastError: "Recovered from legacy local backup",
-                });
               }
             }
           } catch (e) {

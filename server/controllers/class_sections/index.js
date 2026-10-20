@@ -44,14 +44,64 @@ function storedAdviser(row) {
 }
 
 // Canonical personnel resolver across id, prn, and legacy_id to enforce Foreign Key validity
-async function resolvePersonnelId(clientOrDb, rawId) {
+async function resolvePersonnelId(clientOrDb, rawId, targetSchoolId = null) {
   if (!rawId || String(rawId).trim() === "") return null;
   const trimmed = String(rawId).trim();
   const res = await clientOrDb.query(
     "SELECT id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 OR legacy_id = $1 LIMIT 1",
     [trimmed],
   );
-  return res.rows.length > 0 ? res.rows[0].id : null;
+  if (res.rows.length > 0) return res.rows[0].id;
+
+  // JIT fallback from esf7_database master data
+  try {
+    const mRes = await clientOrDb.query(
+      "SELECT * FROM esf7_database WHERE employee_no = $1 OR prn = $1 OR CAST(id AS TEXT) = $1 LIMIT 1",
+      [trimmed],
+    );
+    if (mRes.rows.length > 0) {
+      const m = mRes.rows[0];
+      const canId = String(
+        m.prn ||
+          m.employee_no ||
+          `PER-${m.school_id || targetSchoolId || "000000"}-${m.id}`,
+      ).trim();
+      const schId = String(m.school_id || targetSchoolId || "000000")
+        .replace(/^SCH-/i, "")
+        .trim();
+      await clientOrDb.query(
+        `INSERT INTO esf7_personnel_profile (
+          id, legacy_id, prn, school_id, school_year, first_name, middle_name, last_name, suffix,
+          sex, birthdate, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, 'SY 26-27', $5, $6, $7, $8, $9, $10, NOW(), NOW())
+        ON CONFLICT (id) DO UPDATE SET updated_at = NOW()`,
+        [
+          canId,
+          m.employee_no ? String(m.employee_no).trim() : null,
+          m.prn ? String(m.prn).trim() : null,
+          schId,
+          m.first_name || m.firstname || "TEACHER",
+          m.middle_name || m.middlename || null,
+          m.last_name || m.lastname || "TEACHER",
+          m.suffix || null,
+          m.sex || m.gender || null,
+          m.date_of_birth || m.birthdate || null,
+        ],
+      );
+      await clientOrDb
+        .query(
+          `INSERT INTO esf7_personnel_employment (
+          id, personnel_id, position_title, position_category, appointment_status, created_at, updated_at
+        ) VALUES ($1, $2, $3, 'TEACHING', 'PERMANENT', NOW(), NOW())
+        ON CONFLICT (personnel_id) DO UPDATE SET updated_at = NOW()`,
+          [`EMP-${canId}`, canId, m.position || m.position_title || "Teacher"],
+        )
+        .catch(() => {});
+      return canId;
+    }
+  } catch (_e) {}
+
+  return null;
 }
 
 function formatRegularRecord(row) {

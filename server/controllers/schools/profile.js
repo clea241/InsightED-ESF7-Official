@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const db = require("../../db");
 const { getSchoolIdFromRequest } = require("../../utils/auth");
+const cacheService = require("../../services/cacheService");
 
 // Helper to convert time string (HH:MM or HH:MM AM/PM) to minutes from midnight
 function parseTimeToMins(tStr) {
@@ -299,6 +300,9 @@ router.put("/curricular-config", async (req, res) => {
         updatedAt: row.updated_at,
       },
     });
+    cacheService
+      .delPattern(`esf7:school:identity:${cleanSchoolId}:*`)
+      .catch(() => {});
   } catch (err) {
     console.error("[Curricular Config PUT Error]:", err.message);
     res.status(500).json({ error: err.message });
@@ -334,6 +338,9 @@ router.post("/shifts", async (req, res) => {
       ],
     );
 
+    cacheService
+      .delPattern(`esf7:school:identity:${cleanSchoolId}:*`)
+      .catch(() => {});
     res.json({ success: true, numberOfShifts: String(shifts) });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -367,6 +374,9 @@ router.put("/subjects", async (req, res) => {
       ],
     );
 
+    cacheService
+      .delPattern(`esf7:school:identity:${cleanSchoolId}:*`)
+      .catch(() => {});
     res.json({ success: true, subjectsConfig });
   } catch (err) {
     res.status(500).json({ error: err.message });

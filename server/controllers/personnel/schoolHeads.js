@@ -84,6 +84,77 @@ async function writeSchoolHeads(
           [sidPair, wanted],
         )
       : { rows: [] };
+    let missingRefs = wanted.filter(
+      (ref) =>
+        !found.rows.some(
+          (r) =>
+            String(r.id) === String(ref) ||
+            String(r.legacy_id) === String(ref) ||
+            String(r.prn) === String(ref),
+        ),
+    );
+
+    // JIT Resolution: if any wanted person is not yet in esf7_personnel_profile,
+    // auto-materialize them directly from master esf7_database
+    if (missingRefs.length > 0) {
+      try {
+        const masterRes = await client.query(
+          `SELECT * FROM esf7_database
+            WHERE (CAST(school_id AS TEXT) = ANY($1) OR CAST(schoool_id AS TEXT) = ANY($1))
+              AND (employee_no = ANY($2) OR prn = ANY($2) OR CAST(id AS TEXT) = ANY($2))`,
+          [sidPair, missingRefs],
+        );
+        for (const m of masterRes.rows) {
+          const canId = String(
+            m.prn || m.employee_no || `PER-${sid}-${m.id}`,
+          ).trim();
+          await client.query(
+            `INSERT INTO esf7_personnel_profile (
+              id, legacy_id, prn, school_id, school_year, first_name, middle_name, last_name, suffix,
+              sex, birthdate, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, 'SY 26-27', $5, $6, $7, $8, $9, $10, NOW(), NOW())
+            ON CONFLICT (id) DO UPDATE SET updated_at = NOW()`,
+            [
+              canId,
+              m.employee_no ? String(m.employee_no).trim() : null,
+              m.prn ? String(m.prn).trim() : null,
+              sid,
+              m.first_name || m.firstname || "SCHOOL",
+              m.middle_name || m.middlename || null,
+              m.last_name || m.lastname || "HEAD",
+              m.suffix || null,
+              m.sex || m.gender || null,
+              m.date_of_birth || m.birthdate || null,
+            ],
+          );
+          await client
+            .query(
+              `INSERT INTO esf7_personnel_employment (
+              id, personnel_id, position_title, position_category, appointment_status, created_at, updated_at
+            ) VALUES ($1, $2, $3, 'RELATED TEACHING', 'PERMANENT', NOW(), NOW())
+            ON CONFLICT (personnel_id) DO UPDATE SET updated_at = NOW()`,
+              [
+                `EMP-${canId}`,
+                canId,
+                m.position || m.position_title || "Principal",
+              ],
+            )
+            .catch(() => {});
+
+          found.rows.push({
+            id: canId,
+            legacy_id: m.employee_no ? String(m.employee_no).trim() : null,
+            prn: m.prn ? String(m.prn).trim() : null,
+          });
+        }
+      } catch (jitErr) {
+        console.warn(
+          "[writeSchoolHeads] JIT master fallback warning:",
+          jitErr.message,
+        );
+      }
+    }
+
     const toCanonical = (ref) =>
       found.rows.find(
         (r) =>

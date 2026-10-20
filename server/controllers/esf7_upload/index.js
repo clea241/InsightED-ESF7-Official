@@ -298,7 +298,7 @@ router.post("/", upload.single("file"), async (req, res) => {
       ) VALUES (
         $1, $2, 'REGULAR', $3, $4, 'QUEUED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
-      ON CONFLICT (school_id, semester) DO UPDATE SET
+      ON CONFLICT (school_id) DO UPDATE SET
         iern = EXCLUDED.iern,
         link = EXCLUDED.link,
         file_path = EXCLUDED.file_path,

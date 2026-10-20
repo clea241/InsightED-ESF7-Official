@@ -3322,6 +3322,25 @@ export default function PersonnelProfile() {
         personObj.prc_specialization = personObj.prcSpecialization;
       }
 
+      if (
+        !personObj.sexAtBirth &&
+        (personObj.sex_at_birth ||
+          personObj.sex ||
+          dbPerson.sexAtBirth ||
+          dbPerson.sex_at_birth ||
+          dbPerson.sex)
+      ) {
+        personObj.sexAtBirth =
+          personObj.sex_at_birth ||
+          personObj.sex ||
+          dbPerson.sexAtBirth ||
+          dbPerson.sex_at_birth ||
+          dbPerson.sex;
+        personObj.sex_at_birth = personObj.sexAtBirth;
+      } else if (personObj.sexAtBirth) {
+        personObj.sex_at_birth = personObj.sexAtBirth;
+      }
+
       const rawPos = personObj.position || dbPerson.position || "";
       if (!isCanonicalPosition(rawPos)) {
         personObj = {
@@ -3735,6 +3754,51 @@ export default function PersonnelProfile() {
       if (!base) return base;
       let updated = { ...base, [key]: value };
 
+      if (key === "firstName" || key === "first_name") {
+        updated.firstName = value;
+        updated.first_name = value;
+      }
+      if (key === "middleName" || key === "middle_name") {
+        updated.middleName = value;
+        updated.middle_name = value;
+      }
+      if (key === "lastName" || key === "last_name") {
+        updated.lastName = value;
+        updated.last_name = value;
+      }
+      if (
+        key === "nameExtension" ||
+        key === "name_extension" ||
+        key === "extensionName"
+      ) {
+        updated.nameExtension = value;
+        updated.name_extension = value;
+        updated.extensionName = value;
+      }
+      if (key === "firstServiceDate" || key === "first_service_date") {
+        updated.firstServiceDate = value;
+        updated.first_service_date = value;
+      }
+      if (key === "lastPromotionDate" || key === "last_promotion_date") {
+        updated.lastPromotionDate = value;
+        updated.last_promotion_date = value;
+      }
+      if (key === "newStationDate" || key === "new_station_date") {
+        updated.newStationDate = value;
+        updated.new_station_date = value;
+      }
+      if (
+        key === "lastLateralMovementDate" ||
+        key === "last_lateral_movement_date"
+      ) {
+        updated.lastLateralMovementDate = value;
+        updated.last_lateral_movement_date = value;
+      }
+      if (key === "sexAtBirth" || key === "sex_at_birth" || key === "sex") {
+        updated.sexAtBirth = value;
+        updated.sex_at_birth = value;
+        updated.sex = value;
+      }
       if (key === "civilStatus" || key === "civil_status") {
         updated.civilStatus = value;
         updated.civil_status = value;

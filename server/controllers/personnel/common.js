@@ -1360,11 +1360,14 @@ function formatTrainingRecord(row) {
 function formatDesignationRecord(row) {
   if (!row) return null;
   const raw = row.extras || {};
+  const canonicalName = row.serialized_key || row.designation_name || "";
   return {
     ...raw,
     id: row.id,
     personnelId: row.personnel_id,
     personnel_id: row.personnel_id,
+    name: canonicalName,
+    designation: canonicalName,
     designationName: row.designation_name,
     designation_name: row.designation_name,
     keyStage: row.key_stage || raw.keyStage || null,

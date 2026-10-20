@@ -130,7 +130,7 @@ router.get("/:id", async (req, res) => {
       LEFT JOIN esf7_personnel_employment e ON p.id = e.personnel_id
       LEFT JOIN esf7_perssonel_educ ed ON p.id = ed.personnel_id
       LEFT JOIN esf7_personnel_learning_areas la ON p.id = la.personnel_id
-      WHERE p.id = $1 OR p.prn = $1 
+      WHERE p.id = $1 OR p.prn = $1 OR p.legacy_id = $1 OR p.employee_no = $1 
       LIMIT 1
     `,
       [req.params.id],

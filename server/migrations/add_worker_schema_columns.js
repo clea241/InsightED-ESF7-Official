@@ -48,6 +48,21 @@ const COLUMNS = [
     "shs_inclusive_programs",
     "JSONB DEFAULT '[]'::jsonb",
   ],
+  ["esf7_school_profile", "extras", "JSONB DEFAULT '{}'::jsonb"],
+  ["esf7_als_sections", "raw_payload", "JSONB DEFAULT '{}'::jsonb"],
+  ["esf7_aral_sections", "raw_payload", "JSONB DEFAULT '{}'::jsonb"],
+  ["esf7_personnel_designations", "raw_payload", "JSONB DEFAULT '{}'::jsonb"],
+  ["esf7_personnel_learning_areas", "raw_payload", "JSONB DEFAULT '{}'::jsonb"],
+  ["esf7_perssonel_educ", "raw_payload", "JSONB DEFAULT '{}'::jsonb"],
+  [
+    "esf7_remedial_enrichment_sections",
+    "raw_payload",
+    "JSONB DEFAULT '{}'::jsonb",
+  ],
+  ["esf7_shs_workload_rows", "raw_payload", "JSONB DEFAULT '{}'::jsonb"],
+  ["esf7_sned_sections", "raw_payload", "JSONB DEFAULT '{}'::jsonb"],
+  ["esf7_workload_transfer", "raw_payload", "JSONB DEFAULT '{}'::jsonb"],
+  ["overload_pay_and_reason", "raw_payload", "JSONB DEFAULT '{}'::jsonb"],
 ];
 
 async function columnExists(client, table, column) {

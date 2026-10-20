@@ -59,7 +59,9 @@ export default function NodeMap() {
           Icon: FiBookOpen,
           view: "school",
           summary: schoolInfo?.schoolId
-            ? `School ID: ${schoolInfo.schoolId}`
+            ? !isNodeCompleted("school")
+              ? "Action Required: Declare shift schedule"
+              : `School ID: ${schoolInfo.schoolId}`
             : "Configure school identity",
         },
         {
@@ -143,12 +145,11 @@ export default function NodeMap() {
           id: "workload",
           nodeNumber: "06",
           title: "Workload & Timetable",
-          subtitle: "Teaching schedules, period durations & timetable",
+          subtitle: "Module temporarily locked for DepEd policy alignment",
           Icon: FiClock,
           view: "workload",
-          summary: !isInitialized
-            ? "Loading slots..."
-            : `${personnel.reduce((acc, p) => acc + (p.workloadRows?.length || 0), 0)} Workload Slots`,
+          isLockedNode: true,
+          summary: "Locked for DepEd Policy Review",
         },
       ],
     },
@@ -422,12 +423,11 @@ export default function NodeMap() {
                 "requests",
                 "classes",
                 "designation",
-                "workload",
                 "validation",
               ].includes(node.id);
               const isExplicitlyLocked =
                 !bypassNodeLocks &&
-                (["overload", "allowances"].includes(node.id) ||
+                (["workload", "overload", "allowances"].includes(node.id) ||
                   Boolean(node.isLockedNode));
               const isUnlocked =
                 !isExplicitlyLocked &&

@@ -375,7 +375,16 @@ router.get("/", async (req, res) => {
 
       dbList.push(formatted);
       if (formatted.id) {
-        dbById.set(String(formatted.id).trim().toUpperCase(), formatted);
+        const uId = String(formatted.id).trim().toUpperCase();
+        dbById.set(uId, formatted);
+        const stripped = uId.replace(/^PER-/, "").replace(/^PRN-/, "");
+        if (stripped && stripped !== uId) {
+          dbById.set(stripped, formatted);
+          const parts = stripped.split("-");
+          if (parts.length > 1) {
+            dbById.set(parts[parts.length - 1], formatted);
+          }
+        }
       }
       if (row.legacy_id || formatted.legacy_id || formatted.legacyId) {
         const leg = String(
@@ -384,6 +393,10 @@ router.get("/", async (req, res) => {
           .trim()
           .toUpperCase();
         dbByLegacyId.set(leg, formatted);
+        const strippedLeg = leg.replace(/^PER-/, "").replace(/^PRN-/, "");
+        if (strippedLeg && strippedLeg !== leg) {
+          dbByLegacyId.set(strippedLeg, formatted);
+        }
       }
       if (formatted.prn) {
         dbByPrn.set(String(formatted.prn).trim().toUpperCase(), formatted);
@@ -441,7 +454,10 @@ router.get("/", async (req, res) => {
       );
 
       const dbMatch =
-        (idKey && (dbById.get(idKey) || dbByLegacyId.get(idKey))) ||
+        (idKey &&
+          (dbById.get(idKey) ||
+            dbByLegacyId.get(idKey) ||
+            dbByEmpNo.get(idKey))) ||
         (prnKey && dbByPrn.get(prnKey)) ||
         (normPrn && dbByPrn.get(normPrn)) ||
         (empKey && dbByEmpNo.get(empKey)) ||
@@ -451,10 +467,9 @@ router.get("/", async (req, res) => {
         usedDbIds.add(String(dbMatch.id).trim().toUpperCase());
 
         const isDbMatchPlaceholder =
-          (!dbMatch.position && m.position) ||
-          (dbMatch.firstName === "TEACHER" &&
-            String(dbMatch.lastName || "").startsWith("STAFF") &&
-            m.firstName !== "TEACHER");
+          dbMatch.firstName === "TEACHER" &&
+          String(dbMatch.lastName || "").startsWith("STAFF") &&
+          m.firstName !== "TEACHER";
 
         const savedWkl = getWorkloadForTeacher(
           dbMatch.id || m.id,
@@ -473,14 +488,18 @@ router.get("/", async (req, res) => {
 
         const mergedRecord = isDbMatchPlaceholder
           ? {
-              ...m,
               ...dbMatch,
-              firstName: m.firstName,
-              first_name: m.first_name,
-              lastName: m.lastName,
-              last_name: m.last_name,
-              middleName: m.middleName || dbMatch.middleName,
-              middle_name: m.middle_name || dbMatch.middle_name,
+              ...m,
+              id: dbMatch.id,
+              legacyId: dbMatch.legacyId || m.id,
+              legacy_id: dbMatch.legacy_id || m.id,
+              prn: dbMatch.prn || m.prn,
+              firstName: m.firstName || m.first_name,
+              first_name: m.first_name || m.firstName,
+              lastName: m.lastName || m.last_name,
+              last_name: m.last_name || m.lastName,
+              middleName: m.middleName || m.middle_name || dbMatch.middleName,
+              middle_name: m.middle_name || m.middleName || dbMatch.middle_name,
               position: m.position || dbMatch.position,
               plantilla_position:
                 m.plantilla_position || dbMatch.plantilla_position,
@@ -533,7 +552,257 @@ router.get("/", async (req, res) => {
           : {
               ...m,
               ...dbMatch,
-              position: dbMatch.position || m.position,
+              // Explicitly ensure dbMatch values win over m for all profile fields
+              firstName:
+                dbMatch.firstName ||
+                dbMatch.first_name ||
+                m.firstName ||
+                m.first_name,
+              first_name:
+                dbMatch.first_name ||
+                dbMatch.firstName ||
+                m.first_name ||
+                m.firstName,
+              lastName:
+                dbMatch.lastName ||
+                dbMatch.last_name ||
+                m.lastName ||
+                m.last_name,
+              last_name:
+                dbMatch.last_name ||
+                dbMatch.lastName ||
+                m.last_name ||
+                m.lastName,
+              middleName:
+                dbMatch.middleName !== undefined
+                  ? dbMatch.middleName
+                  : m.middleName || m.middle_name || "",
+              middle_name:
+                dbMatch.middle_name !== undefined
+                  ? dbMatch.middle_name
+                  : m.middle_name || m.middleName || "",
+              nameExtension:
+                dbMatch.nameExtension !== undefined
+                  ? dbMatch.nameExtension
+                  : m.nameExtension || m.name_extension || "",
+              name_extension:
+                dbMatch.name_extension !== undefined
+                  ? dbMatch.name_extension
+                  : m.name_extension || m.nameExtension || "",
+              sexAtBirth:
+                dbMatch.sexAtBirth ||
+                dbMatch.sex_at_birth ||
+                m.sexAtBirth ||
+                m.sex_at_birth ||
+                "",
+              sex_at_birth:
+                dbMatch.sex_at_birth ||
+                dbMatch.sexAtBirth ||
+                m.sex_at_birth ||
+                m.sexAtBirth ||
+                "",
+              birthdate: dbMatch.birthdate || m.birthdate || null,
+              age:
+                dbMatch.age !== null && dbMatch.age !== undefined
+                  ? dbMatch.age
+                  : m.age,
+              civilStatus:
+                dbMatch.civilStatus ||
+                dbMatch.civil_status ||
+                m.civilStatus ||
+                m.civil_status ||
+                "",
+              civil_status:
+                dbMatch.civil_status ||
+                dbMatch.civilStatus ||
+                m.civil_status ||
+                m.civilStatus ||
+                "",
+              tin: dbMatch.tin !== undefined ? dbMatch.tin : m.tin || "",
+              noTin:
+                dbMatch.noTin !== undefined ? dbMatch.noTin : m.noTin || false,
+              philsysNo:
+                dbMatch.philsysNo !== undefined
+                  ? dbMatch.philsysNo
+                  : m.philsysNo || "",
+              noPhilsys:
+                dbMatch.noPhilsys !== undefined
+                  ? dbMatch.noPhilsys
+                  : m.noPhilsys || false,
+              depedEmail:
+                dbMatch.depedEmail !== undefined
+                  ? dbMatch.depedEmail
+                  : m.depedEmail || m.deped_email || "",
+              deped_email:
+                dbMatch.deped_email !== undefined
+                  ? dbMatch.deped_email
+                  : m.deped_email || m.depedEmail || "",
+              noDepedEmail:
+                dbMatch.noDepedEmail !== undefined
+                  ? dbMatch.noDepedEmail
+                  : m.noDepedEmail || false,
+              position: dbMatch.position || m.position || "",
+              position_title:
+                dbMatch.position_title ||
+                dbMatch.position ||
+                m.position_title ||
+                m.position ||
+                "",
+              positionCategory:
+                dbMatch.positionCategory ||
+                dbMatch.position_category ||
+                m.positionCategory ||
+                m.position_category ||
+                "TEACHING",
+              position_category:
+                dbMatch.position_category ||
+                dbMatch.positionCategory ||
+                m.position_category ||
+                m.positionCategory ||
+                "TEACHING",
+              stepIncrement:
+                dbMatch.stepIncrement ||
+                dbMatch.step_increment ||
+                m.stepIncrement ||
+                m.step_increment ||
+                1,
+              step_increment:
+                dbMatch.step_increment ||
+                dbMatch.stepIncrement ||
+                m.step_increment ||
+                m.stepIncrement ||
+                1,
+              fundSource:
+                dbMatch.fundSource ||
+                dbMatch.fund_source ||
+                m.fundSource ||
+                m.fund_source ||
+                "",
+              fund_source:
+                dbMatch.fund_source ||
+                dbMatch.fundSource ||
+                m.fund_source ||
+                m.fundSource ||
+                "",
+              natureOfAppointment:
+                dbMatch.natureOfAppointment ||
+                dbMatch.nature_of_appointment ||
+                m.natureOfAppointment ||
+                m.nature_of_appointment ||
+                "",
+              nature_of_appointment:
+                dbMatch.nature_of_appointment ||
+                dbMatch.natureOfAppointment ||
+                m.nature_of_appointment ||
+                m.natureOfAppointment ||
+                "",
+              hiringArrangement:
+                dbMatch.hiringArrangement ||
+                dbMatch.hiring_arrangement ||
+                m.hiringArrangement ||
+                m.hiring_arrangement ||
+                "",
+              hiring_arrangement:
+                dbMatch.hiring_arrangement ||
+                dbMatch.hiringArrangement ||
+                m.hiring_arrangement ||
+                m.hiringArrangement ||
+                "",
+              deploymentStatus:
+                dbMatch.deploymentStatus ||
+                dbMatch.deployment_status ||
+                m.deploymentStatus ||
+                m.deployment_status ||
+                "OWN STATION",
+              deployment_status:
+                dbMatch.deployment_status ||
+                dbMatch.deploymentStatus ||
+                m.deployment_status ||
+                m.deploymentStatus ||
+                "OWN STATION",
+              assignedSchools: Array.isArray(dbMatch.assignedSchools)
+                ? dbMatch.assignedSchools
+                : Array.isArray(dbMatch.assigned_schools)
+                  ? dbMatch.assigned_schools
+                  : m.assignedSchools || [],
+              assigned_schools: Array.isArray(dbMatch.assigned_schools)
+                ? dbMatch.assigned_schools
+                : Array.isArray(dbMatch.assignedSchools)
+                  ? dbMatch.assignedSchools
+                  : m.assigned_schools || [],
+              gradeLevelsTaught: Array.isArray(dbMatch.gradeLevelsTaught)
+                ? dbMatch.gradeLevelsTaught
+                : m.gradeLevelsTaught || [],
+              grade_levels_taught: Array.isArray(dbMatch.grade_levels_taught)
+                ? dbMatch.grade_levels_taught
+                : m.grade_levels_taught || [],
+              collegeDegree:
+                dbMatch.collegeDegree ||
+                dbMatch.college_degree ||
+                m.collegeDegree ||
+                m.college_degree ||
+                "",
+              college_degree:
+                dbMatch.college_degree ||
+                dbMatch.collegeDegree ||
+                m.college_degree ||
+                m.collegeDegree ||
+                "",
+              major:
+                dbMatch.major !== undefined ? dbMatch.major : m.major || "",
+              minor:
+                dbMatch.minor !== undefined ? dbMatch.minor : m.minor || "N/A",
+              highestEducationalAttainment:
+                dbMatch.highestEducationalAttainment ||
+                dbMatch.highest_educational_attainment ||
+                m.highestEducationalAttainment ||
+                m.highest_educational_attainment ||
+                "",
+              highest_educational_attainment:
+                dbMatch.highest_educational_attainment ||
+                dbMatch.highestEducationalAttainment ||
+                m.highest_educational_attainment ||
+                m.highestEducationalAttainment ||
+                "",
+              degreeRows:
+                Array.isArray(dbMatch.degreeRows) &&
+                dbMatch.degreeRows.length > 0
+                  ? dbMatch.degreeRows
+                  : m.degreeRows || [],
+              collegeDegrees:
+                Array.isArray(dbMatch.collegeDegrees) &&
+                dbMatch.collegeDegrees.length > 0
+                  ? dbMatch.collegeDegrees
+                  : m.collegeDegrees || [],
+              prcSpecialization:
+                dbMatch.prcSpecialization ||
+                dbMatch.prc_specialization ||
+                m.prcSpecialization ||
+                m.prc_specialization ||
+                "",
+              prc_specialization:
+                dbMatch.prc_specialization ||
+                dbMatch.prcSpecialization ||
+                m.prc_specialization ||
+                m.prcSpecialization ||
+                "",
+              eligibility:
+                Array.isArray(dbMatch.eligibility) &&
+                dbMatch.eligibility.length > 0
+                  ? dbMatch.eligibility
+                  : Array.isArray(m.eligibility)
+                    ? m.eligibility
+                    : [],
+              workloadRows: resolvedWkl,
+              designations:
+                Array.isArray(dbMatch.designations) &&
+                dbMatch.designations.length > 0
+                  ? dbMatch.designations
+                  : m.designations || [],
+              trainings:
+                Array.isArray(dbMatch.trainings) && dbMatch.trainings.length > 0
+                  ? dbMatch.trainings
+                  : m.trainings || [],
               position_title:
                 dbMatch.position_title || m.position_title || m.position,
               collegeDegree:

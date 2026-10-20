@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const db = require("../../db");
 const { getSchoolIdFromRequest } = require("../../utils/auth");
+const cacheService = require("../../services/cacheService");
 
 const VALID_SCHOOL_NODES = [
   "node_01_school",
@@ -121,6 +122,13 @@ router.get("/school", async (req, res) => {
       "199999";
     const schoolId = String(rawSchoolId).replace(/^SCH-/i, "").trim();
     const schoolYear = req.query.schoolYear || "SY 26-27";
+    const cacheKey = `esf7:node_status:school:${schoolId}:${schoolYear}`;
+
+    // Redis cache lookup (0 DB queries)
+    const cached = await cacheService.get(cacheKey).catch(() => null);
+    if (cached) {
+      return res.json(cached);
+    }
 
     // Query physical table and boolean view
     const statusRes = await db
@@ -138,7 +146,7 @@ router.get("/school", async (req, res) => {
       .catch(() => ({ rows: [] }));
 
     if (statusRes.rows.length === 0) {
-      return res.json({
+      const emptyPayload = {
         exists: false,
         schoolId,
         schoolYear,
@@ -161,13 +169,15 @@ router.get("/school", async (req, res) => {
           workload_completed: 0,
           all_personnel_ready: false,
         },
-      });
+      };
+      cacheService.set(cacheKey, emptyPayload, 60).catch(() => {});
+      return res.json(emptyPayload);
     }
 
     const row = statusRes.rows[0];
     const viewRow = viewRes.rows[0] || {};
 
-    res.json({
+    const responsePayload = {
       exists: true,
       schoolId: row.school_id,
       schoolName: viewRow.school_name || null,
@@ -200,7 +210,9 @@ router.get("/school", async (req, res) => {
       },
       personnelSummary: row.personnel_summary,
       updatedAt: row.updated_at,
-    });
+    };
+    cacheService.set(cacheKey, responsePayload, 60).catch(() => {});
+    res.json(responsePayload);
   } catch (err) {
     console.error("[NodeStatus] Error in GET /school:", err.message);
     res.status(500).json({ error: err.message });
@@ -265,6 +277,8 @@ router.put("/school/:nodeId", async (req, res) => {
       overallPercentage !== undefined ? overallPercentage : null,
     ]);
 
+    cacheService.delPattern(`esf7:node_status:*:${schoolId}:*`).catch(() => {});
+
     res.json({
       success: true,
       nodeId,
@@ -290,6 +304,13 @@ router.get("/personnel", async (req, res) => {
       "199999";
     const schoolId = String(rawSchoolId).replace(/^SCH-/i, "").trim();
     const schoolYear = req.query.schoolYear || "SY 26-27";
+    const cacheKey = `esf7:node_status:personnel:${schoolId}:${schoolYear}`;
+
+    // Redis cache lookup (0 DB queries)
+    const cached = await cacheService.get(cacheKey).catch(() => null);
+    if (cached) {
+      return res.json(cached);
+    }
 
     const result = await db.query(
       `
@@ -312,13 +333,15 @@ router.get("/personnel", async (req, res) => {
       [schoolId, schoolYear],
     );
 
-    res.json({
+    const responsePayload = {
       success: true,
       schoolId,
       schoolYear,
       count: result.rows.length,
       data: result.rows,
-    });
+    };
+    cacheService.set(cacheKey, responsePayload, 60).catch(() => {});
+    res.json(responsePayload);
   } catch (err) {
     console.error("[NodeStatus] Error in GET /personnel:", err.message);
     res.status(500).json({ error: err.message });
@@ -396,6 +419,8 @@ router.put("/personnel/:personnelId/:nodeId", async (req, res) => {
 
     // Recalculate school summary rollup in background
     updateSchoolPersonnelRollup(schoolId, schoolYear);
+
+    cacheService.delPattern(`esf7:node_status:*:${schoolId}:*`).catch(() => {});
 
     res.json({
       success: true,

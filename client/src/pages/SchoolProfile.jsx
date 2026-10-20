@@ -30,6 +30,7 @@ import {
   FiClock,
   FiX,
   FiCheck,
+  FiAlertCircle,
 } from "react-icons/fi";
 
 const OFFERING_METADATA = {
@@ -169,11 +170,13 @@ export default function SchoolProfile() {
   );
   // IERN (Integrated / Entity Reference Number)
   const [iern, setIern] = useState(schoolInfo?.iern || "");
-  // School Shift Schedule State (Optional)
-  const [hasShifts, setHasShifts] = useState("no"); // 'yes' | 'no'
+  // School Shift Schedule State (Required: always 'yes')
+  const [hasShifts, setHasShifts] = useState("yes");
   const [shiftStartTime, setShiftStartTime] = useState("07:00");
   const [shiftEndTime, setShiftEndTime] = useState("18:00");
-  const [shiftsConfig, setShiftsConfig] = useState({}); // { [gradeLevel]: "Single Shift" | "Double Shift" | "Triple Shift" }
+  const [shiftsConfig, setShiftsConfig] = useState(
+    schoolInfo?.shiftsConfig || {},
+  ); // { [gradeLevel]: "Single Shift" | "Double Shift" | "Triple Shift" }
   const [isSaving, setIsSaving] = useState(false);
 
   // Mutually exclusive shift selection per grade level
@@ -204,6 +207,17 @@ export default function SchoolProfile() {
     setShiftsConfig(updated);
     syncConfigDraft({ shiftsConfig: updated });
   };
+
+  const configuredShiftCount = (offeredGradeLevels || []).filter((g) =>
+    Boolean(shiftsConfig && shiftsConfig[g]),
+  ).length;
+  const isShiftScheduleComplete =
+    (offeredGradeLevels || []).length > 0 &&
+    configuredShiftCount === (offeredGradeLevels || []).length;
+  const missingShiftCount = Math.max(
+    0,
+    (offeredGradeLevels || []).length - configuredShiftCount,
+  );
 
   // Confirmation Modal & Spotlight Glow State
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
@@ -236,7 +250,8 @@ export default function SchoolProfile() {
       return sorted;
     };
 
-    const hasShiftsNorm = hasShifts === "yes" ? "yes" : "no";
+    const hasShiftsNorm =
+      hasShifts === "yes" ? "yes" : hasShifts === "no" ? "no" : "";
 
     return {
       iern: String(iern || "").trim(),
@@ -271,16 +286,10 @@ export default function SchoolProfile() {
       shsCurriculumModel: isSHSActive
         ? String(shsCurriculumModel || "Standard K-12 SHS Curriculum").trim()
         : "Standard K-12 SHS Curriculum",
-      hasShifts: hasShiftsNorm,
-      shiftStartTime:
-        hasShiftsNorm === "yes"
-          ? String(shiftStartTime || "07:00").trim()
-          : "07:00",
-      shiftEndTime:
-        hasShiftsNorm === "yes"
-          ? String(shiftEndTime || "18:00").trim()
-          : "18:00",
-      shiftsConfig: hasShiftsNorm === "yes" ? normObj(shiftsConfig) : {},
+      hasShifts: "yes",
+      shiftStartTime: String(shiftStartTime || "07:00").trim(),
+      shiftEndTime: String(shiftEndTime || "18:00").trim(),
+      shiftsConfig: normObj(shiftsConfig),
     };
   }, [
     iern,
@@ -369,7 +378,7 @@ export default function SchoolProfile() {
           snap.shsCurriculumModel || "Standard K-12 SHS Curriculum",
         );
         setIern(snap.iern || "");
-        setHasShifts(snap.hasShifts || "no");
+        setHasShifts("yes");
         setShiftStartTime(snap.shiftStartTime || "07:00");
         setShiftEndTime(snap.shiftEndTime || "18:00");
         setShiftsConfig(snap.shiftsConfig || {});
@@ -506,15 +515,7 @@ export default function SchoolProfile() {
           setIern(schoolInfo.iern);
         }
 
-        const hasShiftsVal =
-          config?.hasShifts !== undefined
-            ? config.hasShifts
-              ? "yes"
-              : "no"
-            : schoolInfo?.hasShifts
-              ? "yes"
-              : "no";
-        setHasShifts(hasShiftsVal);
+        setHasShifts("yes");
         setShiftStartTime(
           config?.shiftStartTime || schoolInfo?.shiftStartTime || "07:00",
         );
@@ -759,24 +760,31 @@ export default function SchoolProfile() {
     setIsSaving(true);
     let configData = null;
     try {
-      if (hasShifts === "yes") {
-        const parseM = (t) => {
-          if (!t) return null;
-          const parts = String(t).split(":").map(Number);
-          if (parts.length < 2 || isNaN(parts[0]) || isNaN(parts[1]))
-            return null;
-          return parts[0] * 60 + parts[1];
+      const missingShiftGrades = (offeredGradeLevels || []).filter(
+        (g) => !shiftsConfig[g],
+      );
+      if (missingShiftGrades.length > 0) {
+        return {
+          ok: false,
+          title: "School Shift Schedule Required",
+          message: `Please declare a shift schedule for all offered grade levels: ${missingShiftGrades.join(", ")}. You can click "Apply to all: Single Shift" to quickly set standard scheduling.`,
         };
-        const sM = parseM(shiftStartTime);
-        const eM = parseM(shiftEndTime);
-        if (sM === null || eM === null || sM < 240 || eM > 1320 || eM <= sM) {
-          return {
-            ok: false,
-            title: "Invalid Shift Window",
-            message:
-              "Declared shift hours must fall between 4:00 AM (04:00) and 10:00 PM (22:00), and End Time must be later than Start Time.",
-          };
-        }
+      }
+      const parseM = (t) => {
+        if (!t) return null;
+        const parts = String(t).split(":").map(Number);
+        if (parts.length < 2 || isNaN(parts[0]) || isNaN(parts[1])) return null;
+        return parts[0] * 60 + parts[1];
+      };
+      const sM = parseM(shiftStartTime);
+      const eM = parseM(shiftEndTime);
+      if (sM === null || eM === null || sM < 240 || eM > 1320 || eM <= sM) {
+        return {
+          ok: false,
+          title: "Invalid Shift Window",
+          message:
+            "Declared shift hours must fall between 4:00 AM (04:00) and 10:00 PM (22:00), and End Time must be later than Start Time.",
+        };
       }
 
       const selectedPrograms = [];
@@ -880,11 +888,10 @@ export default function SchoolProfile() {
         shsInclusivePrograms:
           hasShsInclusive === "yes" ? shsInclusivePrograms : [],
         inclusivePrograms: selectedInclusive,
-        shsCurriculumModel: isSHSActive ? shsCurriculumModel : null,
-        hasShifts: hasShifts === "yes",
-        shiftStartTime: hasShifts === "yes" ? shiftStartTime : "07:00",
-        shiftEndTime: hasShifts === "yes" ? shiftEndTime : "18:00",
-        shiftsConfig: hasShifts === "yes" ? shiftsConfig : {},
+        hasShifts: true,
+        shiftStartTime: shiftStartTime || "07:00",
+        shiftEndTime: shiftEndTime || "18:00",
+        shiftsConfig: shiftsConfig || {},
         schoolYear: schoolInfo.schoolYear || "SY 26-27",
       };
 
@@ -2671,13 +2678,16 @@ export default function SchoolProfile() {
                     style={{
                       fontSize: "11px",
                       fontWeight: "800",
-                      background: "#f1f5f9",
-                      color: "#64748b",
+                      background: isShiftScheduleComplete
+                        ? "#dcfce7"
+                        : "#fef2f2",
+                      color: isShiftScheduleComplete ? "#15803d" : "#b91c1c",
+                      border: `1px solid ${isShiftScheduleComplete ? "#bbf7d0" : "#fecaca"}`,
                       padding: "2px 8px",
                       borderRadius: "10px",
                     }}
                   >
-                    Optional
+                    {isShiftScheduleComplete ? "Complete" : "Required *"}
                   </span>
                 </div>
                 <p
@@ -2701,296 +2711,240 @@ export default function SchoolProfile() {
                 gap: "18px",
               }}
             >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  gap: "14px",
-                }}
-              >
-                <div>
-                  <label
-                    style={{
-                      fontSize: "14px",
-                      fontWeight: "800",
-                      color: "#0f172a",
-                      margin: 0,
-                      display: "block",
-                    }}
-                  >
-                    Does your school operate on a declared custom shift
-                    schedule?
-                  </label>
-                  <p
-                    style={{
-                      margin: "3px 0 0",
-                      fontSize: "12px",
-                      color: "#64748b",
-                    }}
-                  >
-                    If disabled, timetables default to DepEd standard single
-                    shift schedule.
-                  </p>
-                </div>
-
-                <div style={{ display: "flex", gap: "10px" }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setHasShifts("yes");
-                      syncConfigDraft({ hasShifts: "yes" });
-                    }}
-                    style={{
-                      padding: "8px 22px",
-                      borderRadius: "10px",
-                      border:
-                        hasShifts === "yes"
-                          ? "1.5px solid #0284c7"
-                          : "1px solid #cbd5e1",
-                      background: hasShifts === "yes" ? "#0284c7" : "#ffffff",
-                      color: hasShifts === "yes" ? "#ffffff" : "#475569",
-                      fontWeight: "800",
-                      fontSize: "13px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    YES
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setHasShifts("no");
-                      syncConfigDraft({ hasShifts: "no" });
-                    }}
-                    style={{
-                      padding: "8px 22px",
-                      borderRadius: "10px",
-                      border:
-                        hasShifts === "no"
-                          ? "1.5px solid #64748b"
-                          : "1px solid #cbd5e1",
-                      background: hasShifts === "no" ? "#64748b" : "#ffffff",
-                      color: hasShifts === "no" ? "#ffffff" : "#475569",
-                      fontWeight: "800",
-                      fontSize: "13px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    NO
-                  </button>
-                </div>
-              </div>
-
-              {hasShifts === "yes" && (
+              {!isShiftScheduleComplete && (
                 <div
                   style={{
-                    padding: "20px",
-                    background: "#f0f9ff",
-                    borderRadius: "16px",
-                    border: "1.5px solid #bae6fd",
+                    padding: "12px 16px",
+                    borderRadius: "12px",
+                    background: "#fff1f2",
+                    border: "1.5px solid #fecdd3",
+                    color: "#9f1239",
+                    fontSize: "13px",
+                    fontWeight: "700",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                  }}
+                >
+                  <FiAlertCircle
+                    size={18}
+                    style={{ flexShrink: 0, color: "#e11d48" }}
+                  />
+                  <span>
+                    Action Required: School Shift Schedule is mandatory. Please
+                    assign a shift for all {offeredGradeLevels.length} offered
+                    grade level{offeredGradeLevels.length === 1 ? "" : "s"} (
+                    {configuredShiftCount}/{offeredGradeLevels.length}{" "}
+                    completed). Node 1 cannot be completed without this
+                    schedule.
+                  </span>
+                </div>
+              )}
+
+              <div
+                style={{
+                  padding: "20px",
+                  background: "#f0f9ff",
+                  borderRadius: "16px",
+                  border: "1.5px solid #bae6fd",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "12px",
+                }}
+              >
+                {/* DYNAMIC GRADE-LEVEL SHIFT SCHEDULE TABLE */}
+                <div
+                  style={{
                     display: "flex",
                     flexDirection: "column",
                     gap: "12px",
                   }}
                 >
-                  {/* DYNAMIC GRADE-LEVEL SHIFT SCHEDULE TABLE */}
                   <div
                     style={{
                       display: "flex",
-                      flexDirection: "column",
-                      gap: "12px",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                      gap: "10px",
                     }}
                   >
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        flexWrap: "wrap",
-                        gap: "10px",
-                      }}
-                    >
-                      <div>
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "8px",
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          <h4
-                            style={{
-                              margin: 0,
-                              fontSize: "13px",
-                              fontWeight: "800",
-                              color: "#0f172a",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.04em",
-                            }}
-                          >
-                            Grade-Level Shift Distribution
-                          </h4>
-                          <span
-                            style={{
-                              fontSize: "11px",
-                              fontWeight: "800",
-                              padding: "2px 8px",
-                              borderRadius: "12px",
-                              background: "#e0f2fe",
-                              color: "#0284c7",
-                            }}
-                          >
-                            {Object.keys(shiftsConfig || {}).length} /{" "}
-                            {offeredGradeLevels.length} Configured
-                          </span>
-                        </div>
-                        <p
-                          style={{
-                            margin: "4px 0 0 0",
-                            fontSize: "12px",
-                            color: "#475569",
-                          }}
-                        >
-                          Select the operational shift for each offered grade
-                          level. Only one shift is permitted per grade level.
-                        </p>
-                      </div>
-
-                      {/* Quick Bulk Action Buttons */}
+                    <div>
                       <div
                         style={{
                           display: "flex",
                           alignItems: "center",
-                          gap: "6px",
+                          gap: "8px",
                           flexWrap: "wrap",
                         }}
                       >
+                        <h4
+                          style={{
+                            margin: 0,
+                            fontSize: "13px",
+                            fontWeight: "800",
+                            color: "#0f172a",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.04em",
+                          }}
+                        >
+                          Grade-Level Shift Distribution
+                        </h4>
                         <span
                           style={{
                             fontSize: "11px",
-                            fontWeight: "700",
-                            color: "#64748b",
+                            fontWeight: "800",
+                            padding: "2px 8px",
+                            borderRadius: "12px",
+                            background: "#e0f2fe",
+                            color: "#0284c7",
                           }}
                         >
-                          Apply to all:
+                          {Object.keys(shiftsConfig || {}).length} /{" "}
+                          {offeredGradeLevels.length} Configured
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => handleBulkGradeShift("Single Shift")}
-                          style={{
-                            padding: "4px 9px",
-                            borderRadius: "6px",
-                            fontSize: "11px",
-                            fontWeight: "800",
-                            border: "1px solid #7dd3fc",
-                            background: "#ffffff",
-                            color: "#0369a1",
-                            cursor: "pointer",
-                            transition: "all 0.15s ease",
-                          }}
-                        >
-                          Single Shift
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleBulkGradeShift("Double Shift")}
-                          style={{
-                            padding: "4px 9px",
-                            borderRadius: "6px",
-                            fontSize: "11px",
-                            fontWeight: "800",
-                            border: "1px solid #7dd3fc",
-                            background: "#ffffff",
-                            color: "#0369a1",
-                            cursor: "pointer",
-                            transition: "all 0.15s ease",
-                          }}
-                        >
-                          Double Shift
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleBulkGradeShift("Triple Shift")}
-                          style={{
-                            padding: "4px 9px",
-                            borderRadius: "6px",
-                            fontSize: "11px",
-                            fontWeight: "800",
-                            border: "1px solid #7dd3fc",
-                            background: "#ffffff",
-                            color: "#0369a1",
-                            cursor: "pointer",
-                            transition: "all 0.15s ease",
-                          }}
-                        >
-                          Triple Shift
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleBulkGradeShift(null)}
-                          style={{
-                            padding: "4px 9px",
-                            borderRadius: "6px",
-                            fontSize: "11px",
-                            fontWeight: "800",
-                            border: "1px solid #cbd5e1",
-                            background: "#f8fafc",
-                            color: "#64748b",
-                            cursor: "pointer",
-                            transition: "all 0.15s ease",
-                          }}
-                        >
-                          Clear
-                        </button>
                       </div>
-                    </div>
-
-                    {/* Responsive Table Container */}
-                    <div
-                      style={{
-                        width: "100%",
-                        overflowX: "auto",
-                        borderRadius: "12px",
-                        border: "1.5px solid #bae6fd",
-                        background: "#ffffff",
-                        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
-                      }}
-                    >
-                      <table
+                      <p
                         style={{
-                          width: "100%",
-                          minWidth: "560px",
-                          borderCollapse: "collapse",
-                          textAlign: "left",
+                          margin: "4px 0 0 0",
+                          fontSize: "12px",
+                          color: "#475569",
                         }}
                       >
-                        <thead>
-                          <tr
+                        Select the operational shift for each offered grade
+                        level. Only one shift is permitted per grade level.
+                      </p>
+                    </div>
+
+                    {/* Quick Bulk Action Buttons */}
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: "700",
+                          color: "#64748b",
+                        }}
+                      >
+                        Apply to all:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleBulkGradeShift("Single Shift")}
+                        style={{
+                          padding: "4px 9px",
+                          borderRadius: "6px",
+                          fontSize: "11px",
+                          fontWeight: "800",
+                          border: "1px solid #7dd3fc",
+                          background: "#ffffff",
+                          color: "#0369a1",
+                          cursor: "pointer",
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        Single Shift
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleBulkGradeShift("Double Shift")}
+                        style={{
+                          padding: "4px 9px",
+                          borderRadius: "6px",
+                          fontSize: "11px",
+                          fontWeight: "800",
+                          border: "1px solid #7dd3fc",
+                          background: "#ffffff",
+                          color: "#0369a1",
+                          cursor: "pointer",
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        Double Shift
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleBulkGradeShift("Triple Shift")}
+                        style={{
+                          padding: "4px 9px",
+                          borderRadius: "6px",
+                          fontSize: "11px",
+                          fontWeight: "800",
+                          border: "1px solid #7dd3fc",
+                          background: "#ffffff",
+                          color: "#0369a1",
+                          cursor: "pointer",
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        Triple Shift
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleBulkGradeShift(null)}
+                        style={{
+                          padding: "4px 9px",
+                          borderRadius: "6px",
+                          fontSize: "11px",
+                          fontWeight: "800",
+                          border: "1px solid #cbd5e1",
+                          background: "#f8fafc",
+                          color: "#64748b",
+                          cursor: "pointer",
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Responsive Table Container */}
+                  <div
+                    style={{
+                      width: "100%",
+                      overflowX: "auto",
+                      borderRadius: "12px",
+                      border: "1.5px solid #bae6fd",
+                      background: "#ffffff",
+                      boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
+                    }}
+                  >
+                    <table
+                      style={{
+                        width: "100%",
+                        minWidth: "560px",
+                        borderCollapse: "collapse",
+                        textAlign: "left",
+                      }}
+                    >
+                      <thead>
+                        <tr
+                          style={{
+                            background: "#f0f9ff",
+                            borderBottom: "1.5px solid #bae6fd",
+                          }}
+                        >
+                          <th
                             style={{
-                              background: "#f0f9ff",
-                              borderBottom: "1.5px solid #bae6fd",
+                              padding: "12px 16px",
+                              fontSize: "11px",
+                              fontWeight: "800",
+                              color: "#0369a1",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.05em",
                             }}
                           >
-                            <th
-                              style={{
-                                padding: "12px 16px",
-                                fontSize: "11px",
-                                fontWeight: "800",
-                                color: "#0369a1",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.05em",
-                              }}
-                            >
-                              Offered Grade Level
-                            </th>
-                            {[
-                              "Single Shift",
-                              "Double Shift",
-                              "Triple Shift",
-                            ].map((shiftName) => (
+                            Offered Grade Level
+                          </th>
+                          {["Single Shift", "Double Shift", "Triple Shift"].map(
+                            (shiftName) => (
                               <th
                                 key={shiftName}
                                 style={{
@@ -3006,117 +2960,117 @@ export default function SchoolProfile() {
                               >
                                 {shiftName}
                               </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {offeredGradeLevels.map((grade, idx) => {
-                            const currentShift = shiftsConfig?.[grade];
-                            return (
-                              <tr
-                                key={grade}
+                            ),
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {offeredGradeLevels.map((grade, idx) => {
+                          const currentShift = shiftsConfig?.[grade];
+                          return (
+                            <tr
+                              key={grade}
+                              style={{
+                                borderBottom:
+                                  idx === offeredGradeLevels.length - 1
+                                    ? "none"
+                                    : "1px solid #f1f5f9",
+                                background: currentShift
+                                  ? "#fcfdff"
+                                  : idx % 2 === 0
+                                    ? "#ffffff"
+                                    : "#fafafa",
+                                transition: "background 0.15s ease",
+                              }}
+                            >
+                              <td
                                 style={{
-                                  borderBottom:
-                                    idx === offeredGradeLevels.length - 1
-                                      ? "none"
-                                      : "1px solid #f1f5f9",
-                                  background: currentShift
-                                    ? "#fcfdff"
-                                    : idx % 2 === 0
-                                      ? "#ffffff"
-                                      : "#fafafa",
-                                  transition: "background 0.15s ease",
+                                  padding: "11px 16px",
+                                  fontSize: "13px",
+                                  fontWeight: "700",
+                                  color: "#0f172a",
                                 }}
                               >
-                                <td
+                                <div
                                   style={{
-                                    padding: "11px 16px",
-                                    fontSize: "13px",
-                                    fontWeight: "700",
-                                    color: "#0f172a",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "8px",
                                   }}
                                 >
-                                  <div
-                                    style={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: "8px",
-                                    }}
-                                  >
-                                    <span>{grade}</span>
-                                    {currentShift && (
-                                      <span
-                                        style={{
-                                          fontSize: "10px",
-                                          fontWeight: "800",
-                                          padding: "1px 7px",
-                                          borderRadius: "6px",
-                                          background: "#e0f2fe",
-                                          color: "#0284c7",
-                                        }}
-                                      >
-                                        {currentShift}
-                                      </span>
-                                    )}
-                                  </div>
-                                </td>
-
-                                {[
-                                  "Single Shift",
-                                  "Double Shift",
-                                  "Triple Shift",
-                                ].map((shiftType) => {
-                                  const isChecked = currentShift === shiftType;
-                                  return (
-                                    <td
-                                      key={shiftType}
-                                      onClick={() =>
-                                        handleGradeShiftChange(grade, shiftType)
-                                      }
+                                  <span>{grade}</span>
+                                  {currentShift && (
+                                    <span
                                       style={{
-                                        padding: "10px 16px",
-                                        textAlign: "center",
-                                        cursor: "pointer",
-                                        background: isChecked
-                                          ? "#f0f9ff"
-                                          : "transparent",
-                                        userSelect: "none",
+                                        fontSize: "10px",
+                                        fontWeight: "800",
+                                        padding: "1px 7px",
+                                        borderRadius: "6px",
+                                        background: "#e0f2fe",
+                                        color: "#0284c7",
                                       }}
                                     >
-                                      <div
-                                        style={{
-                                          display: "inline-flex",
-                                          alignItems: "center",
-                                          justifyContent: "center",
-                                          width: "22px",
-                                          height: "22px",
-                                          borderRadius: "6px",
-                                          border: isChecked
-                                            ? "2px solid #0284c7"
-                                            : "1.5px solid #cbd5e1",
-                                          background: isChecked
-                                            ? "#0284c7"
-                                            : "#ffffff",
-                                          color: "#ffffff",
-                                          transition: "all 0.15s ease",
-                                        }}
-                                      >
-                                        {isChecked && (
-                                          <FiCheck size={14} strokeWidth={3} />
-                                        )}
-                                      </div>
-                                    </td>
-                                  );
-                                })}
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                                      {currentShift}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+
+                              {[
+                                "Single Shift",
+                                "Double Shift",
+                                "Triple Shift",
+                              ].map((shiftType) => {
+                                const isChecked = currentShift === shiftType;
+                                return (
+                                  <td
+                                    key={shiftType}
+                                    onClick={() =>
+                                      handleGradeShiftChange(grade, shiftType)
+                                    }
+                                    style={{
+                                      padding: "10px 16px",
+                                      textAlign: "center",
+                                      cursor: "pointer",
+                                      background: isChecked
+                                        ? "#f0f9ff"
+                                        : "transparent",
+                                      userSelect: "none",
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        width: "22px",
+                                        height: "22px",
+                                        borderRadius: "6px",
+                                        border: isChecked
+                                          ? "2px solid #0284c7"
+                                          : "1.5px solid #cbd5e1",
+                                        background: isChecked
+                                          ? "#0284c7"
+                                          : "#ffffff",
+                                        color: "#ffffff",
+                                        transition: "all 0.15s ease",
+                                      }}
+                                    >
+                                      {isChecked && (
+                                        <FiCheck size={14} strokeWidth={3} />
+                                      )}
+                                    </div>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
-              )}
+              </div>
             </div>
           </article>
         </div>

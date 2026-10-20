@@ -572,7 +572,7 @@ const getPositionCategory = (pos) => {
     p.includes("SUPERVISOR") ||
     p.includes("COORDINATOR")
   ) {
-    return "TEACHING-RELATED";
+    return "RELATED TEACHING";
   }
   if (
     p.includes("ADMIN") ||

@@ -177,8 +177,11 @@ function queueNormalizedPersistence(schoolId, schoolYear, payload) {
       let client = null;
       try {
         client = await acquireClient();
+        await client.query("BEGIN");
         await persistNormalizedDraft(client, schoolId, schoolYear, nextPayload);
+        await client.query("COMMIT");
       } catch (err) {
+        if (client) await client.query("ROLLBACK").catch(() => {});
         console.warn(
           `[NormalizedDraftQueue] Error normalizing ${key}:`,
           err.message,
@@ -218,8 +221,11 @@ async function syncDraftToNodeStatus(schoolId, schoolYear, payload) {
       school_name: schoolInfo.schoolName || `School ${schoolId}`,
       region: schoolInfo.region || "",
       division: schoolInfo.division || "",
-      district: schoolInfo.district || "",
-      curricular_offering: schoolInfo.curricularOffering || ["Elementary"],
+      curricular_offering:
+        Array.isArray(schoolInfo.curricularOffering) &&
+        schoolInfo.curricularOffering.length > 0
+          ? schoolInfo.curricularOffering
+          : undefined,
       number_of_shifts: schoolInfo.numberOfShifts || "1",
       shs_curriculum_model:
         schoolInfo.shsCurriculumModel || "Standard K-12 SHS Curriculum",
@@ -1366,33 +1372,39 @@ async function persistNormalizedDraft(
       );
       idx += 11;
     }
-    await client
-      .query(
+    try {
+      await client.query("SAVEPOINT desig_batch_sp;");
+      await client.query(
         `
-      INSERT INTO esf7_personnel_designations (
-        id, personnel_id, school_id, designation_name, key_stage, grade_level,
-        subject_area, track, is_sds_approved, sds_confirmed, serialized_key, updated_at
-      )
-      VALUES ${vals.join(", ")}
-      ON CONFLICT (personnel_id, serialized_key) DO UPDATE SET
-        school_id = EXCLUDED.school_id,
-        designation_name = EXCLUDED.designation_name,
-        key_stage = EXCLUDED.key_stage,
-        grade_level = EXCLUDED.grade_level,
-        subject_area = EXCLUDED.subject_area,
-        track = EXCLUDED.track,
-        is_sds_approved = EXCLUDED.is_sds_approved,
-        sds_confirmed = EXCLUDED.sds_confirmed,
-        updated_at = NOW()
-    `,
+        INSERT INTO esf7_personnel_designations (
+          id, personnel_id, school_id, designation_name, key_stage, grade_level,
+          subject_area, track, is_sds_approved, sds_confirmed, serialized_key, updated_at
+        )
+        VALUES ${vals.join(", ")}
+        ON CONFLICT (id) DO UPDATE SET
+          school_id = EXCLUDED.school_id,
+          designation_name = EXCLUDED.designation_name,
+          key_stage = EXCLUDED.key_stage,
+          grade_level = EXCLUDED.grade_level,
+          subject_area = EXCLUDED.subject_area,
+          track = EXCLUDED.track,
+          is_sds_approved = EXCLUDED.is_sds_approved,
+          sds_confirmed = EXCLUDED.sds_confirmed,
+          serialized_key = EXCLUDED.serialized_key,
+          updated_at = NOW()
+        `,
         pars,
-      )
-      .catch((err) => {
-        console.warn(
-          "[persistNormalizedDraft] personnel_designations batch warning:",
-          err.message,
-        );
-      });
+      );
+      await client.query("RELEASE SAVEPOINT desig_batch_sp;");
+    } catch (err) {
+      await client
+        .query("ROLLBACK TO SAVEPOINT desig_batch_sp;")
+        .catch(() => {});
+      console.warn(
+        "[persistNormalizedDraft] personnel_designations batch warning (savepoint recovered):",
+        err.message,
+      );
+    }
   }
 
   // 3. Sections: Batch Upsert
@@ -1403,12 +1415,15 @@ async function persistNormalizedDraft(
       : [];
 
   if (incomingSections.length > 0) {
-    const existingIdRes = await client.query(
-      "SELECT id FROM esf7_regular_sections WHERE school_id = $1",
+    const existingSecRes = await client.query(
+      "SELECT id, grade_level, section_name FROM esf7_regular_sections WHERE school_id = $1",
       [cleanId],
     );
+    const existingByGradeAndName = new Map();
     let currentMaxSeq = 0;
-    for (const r of existingIdRes.rows) {
+    for (const r of existingSecRes.rows) {
+      const key = `${String(r.grade_level).trim().toUpperCase()}::${String(r.section_name).trim().toUpperCase()}`;
+      existingByGradeAndName.set(key, r.id);
       const m = String(r.id).match(/(\d+)$/);
       if (m) {
         const val = parseInt(m[1], 10);
@@ -1417,6 +1432,17 @@ async function persistNormalizedDraft(
     }
     const sectionParams = [];
     for (const s of incomingSections) {
+      const gradeLevel = String(
+        s.gradeLevel || s.grade_level || "Grade 7",
+      ).trim();
+      const sectionName = String(s.sectionName || s.section_name || "A")
+        .trim()
+        .toUpperCase();
+      const secType = String(s.sectionType || s.section_type || "MONO GRADE")
+        .trim()
+        .toUpperCase();
+
+      const gradeNameKey = `${gradeLevel.toUpperCase()}::${sectionName}`;
       const isDraftId =
         !s.id ||
         String(s.id).toLowerCase().startsWith("sec-draft-") ||
@@ -1428,19 +1454,12 @@ async function persistNormalizedDraft(
       let secId;
       if (!isDraftId) {
         secId = String(s.id).trim();
+      } else if (existingByGradeAndName.has(gradeNameKey)) {
+        secId = existingByGradeAndName.get(gradeNameKey);
       } else {
         currentMaxSeq += 1;
         secId = `SEC-${cleanId}-${currentMaxSeq}`;
       }
-      const gradeLevel = String(
-        s.gradeLevel || s.grade_level || "Grade 7",
-      ).trim();
-      const sectionName = String(s.sectionName || s.section_name || "A")
-        .trim()
-        .toUpperCase();
-      const secType = String(s.sectionType || s.section_type || "MONO GRADE")
-        .trim()
-        .toUpperCase();
 
       const rawAdv = s.advisorId || s.adviserId || s.adviser_id;
       let resolvedAdviserId = null;
@@ -1526,32 +1545,35 @@ async function persistNormalizedDraft(
         );
         idx += 12;
       }
-      await client
-        .query(
+      try {
+        await client.query("SAVEPOINT reg_sec_sp;");
+        await client.query(
           `
-        INSERT INTO esf7_regular_sections (
-          id, school_id, school_year, grade_level, section_name, section_type, adviser_id,
-          male_learners, female_learners, number_of_learners, size_status, extras, updated_at
-        )
-        VALUES ${vals.join(", ")}
-        ON CONFLICT (school_id, school_year, grade_level, section_name) DO UPDATE SET
-          section_type = EXCLUDED.section_type,
-          adviser_id = EXCLUDED.adviser_id,
-          male_learners = CASE WHEN EXCLUDED.male_learners IS NOT NULL THEN EXCLUDED.male_learners ELSE esf7_regular_sections.male_learners END,
-          female_learners = CASE WHEN EXCLUDED.female_learners IS NOT NULL THEN EXCLUDED.female_learners ELSE esf7_regular_sections.female_learners END,
-          number_of_learners = CASE WHEN EXCLUDED.number_of_learners > 0 THEN EXCLUDED.number_of_learners ELSE esf7_regular_sections.number_of_learners END,
-          size_status = COALESCE(EXCLUDED.size_status, esf7_regular_sections.size_status),
-          extras = EXCLUDED.extras,
-          updated_at = NOW()
-      `,
+          INSERT INTO esf7_regular_sections (
+            id, school_id, school_year, grade_level, section_name, section_type, adviser_id,
+            male_learners, female_learners, number_of_learners, size_status, extras, updated_at
+          )
+          VALUES ${vals.join(", ")}
+          ON CONFLICT (school_id, school_year, grade_level, section_name) DO UPDATE SET
+            section_type = EXCLUDED.section_type,
+            adviser_id = EXCLUDED.adviser_id,
+            male_learners = CASE WHEN EXCLUDED.male_learners IS NOT NULL THEN EXCLUDED.male_learners ELSE esf7_regular_sections.male_learners END,
+            female_learners = CASE WHEN EXCLUDED.female_learners IS NOT NULL THEN EXCLUDED.female_learners ELSE esf7_regular_sections.female_learners END,
+            number_of_learners = CASE WHEN EXCLUDED.number_of_learners > 0 THEN EXCLUDED.number_of_learners ELSE esf7_regular_sections.number_of_learners END,
+            size_status = COALESCE(EXCLUDED.size_status, esf7_regular_sections.size_status),
+            extras = EXCLUDED.extras,
+            updated_at = NOW()
+          `,
           pars,
-        )
-        .catch((err) => {
-          console.warn(
-            "[persistNormalizedDraft] regular_sections batch warning:",
-            err.message,
-          );
-        });
+        );
+        await client.query("RELEASE SAVEPOINT reg_sec_sp;");
+      } catch (err) {
+        await client.query("ROLLBACK TO SAVEPOINT reg_sec_sp;").catch(() => {});
+        console.warn(
+          "[persistNormalizedDraft] regular_sections batch warning (savepoint recovered):",
+          err.message,
+        );
+      }
     }
   }
 
@@ -2445,6 +2467,7 @@ const handleSaveDraft = async (req, res) => {
       await client.query("BEGIN; SET LOCAL lock_timeout = '2500ms';");
 
       try {
+        await client.query("SAVEPOINT sd_savepoint;");
         if (
           !hasDraftTable ||
           process.env.DISABLE_BLOB_DRAFT_WRITES === "true"
@@ -2454,6 +2477,7 @@ const handleSaveDraft = async (req, res) => {
             version: baseVersion ? Number(baseVersion) + 1 : 1,
             updatedAt: new Date().toISOString(),
           };
+          await client.query("RELEASE SAVEPOINT sd_savepoint;");
         } else if (withVersion) {
           const sql =
             baseVersion === null
@@ -2499,6 +2523,7 @@ const handleSaveDraft = async (req, res) => {
             version: Number(r.rows[0].version),
             updatedAt: r.rows[0].updated_at,
           };
+          await client.query("RELEASE SAVEPOINT sd_savepoint;");
         } else {
           const r = await safeDraftQuery(client, "sd_nover", () =>
             client.query(
@@ -2511,8 +2536,12 @@ const handleSaveDraft = async (req, res) => {
             ),
           );
           saved = { version: undefined, updatedAt: r.rows[0].updated_at };
+          await client.query("RELEASE SAVEPOINT sd_savepoint;");
         }
       } catch (draftErr) {
+        await client
+          .query("ROLLBACK TO SAVEPOINT sd_savepoint;")
+          .catch(() => {});
         if (draftErr.code === "42P01") {
           console.warn(
             "[DraftSave] school_drafts table not found or deprecated; skipping draft cache write.",
@@ -2585,6 +2614,10 @@ const handleSaveDraft = async (req, res) => {
     );
 
     cacheService.delPattern(`dashboard:stats:${schoolId}:*`).catch(() => {});
+    cacheService
+      .delPattern(`esf7:school:identity:${schoolId}:*`)
+      .catch(() => {});
+    cacheService.delPattern(`esf7:node_status:*:${schoolId}:*`).catch(() => {});
     if (!req.headers["x-smoke-test"]) {
       syncDraftToNodeStatus(schoolId, schoolYear, finalPayload).catch((e) => {
         console.warn("[SyncDraftToNodeStatus Background Warning]:", e.message);
@@ -2670,6 +2703,16 @@ router.delete("/draft", async (req, res) => {
         )
         .catch(() => {});
     }
+
+    cacheService
+      .delPattern(`dashboard:stats:${cleanSchoolId}:*`)
+      .catch(() => {});
+    cacheService
+      .delPattern(`esf7:school:identity:${cleanSchoolId}:*`)
+      .catch(() => {});
+    cacheService
+      .delPattern(`esf7:node_status:*:${cleanSchoolId}:*`)
+      .catch(() => {});
 
     res.json({ success: true, message: "Draft deleted successfully" });
   } catch (err) {

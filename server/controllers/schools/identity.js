@@ -4,6 +4,7 @@ const db = require("../../db");
 const { insightEdPool, usersDbPool } = require("../../db");
 const { getSchoolIdFromRequest } = require("../../utils/auth");
 const { resolveTestDivision } = require("../../utils/divisionTestRegistry");
+const cacheService = require("../../services/cacheService");
 
 function parseCurricularOffering(rawOff) {
   const s = String(rawOff || "")
@@ -11,18 +12,21 @@ function parseCurricularOffering(rawOff) {
     .trim();
   if (!s) return ["Elementary"];
 
-  if (s.includes("PURELY ES") || s === "PURELY ES") {
-    return ["Elementary"];
-  } else if (s.includes("PURELY JHS") || s === "PURELY JHS") {
-    return ["JHS"];
-  } else if (s.includes("PURELY SHS") || s === "PURELY SHS") {
-    return ["SHS"];
+  if (
+    s.includes("ALL OFFERING") ||
+    s.includes("K TO 12") ||
+    s.includes("K-12") ||
+    s.includes("COMPREHENSIVE") ||
+    s.includes("INTEGRATED")
+  ) {
+    return ["Elementary", "JHS", "SHS"];
   } else if (
     s.includes("ES AND JHS") ||
     s.includes("K TO 10") ||
     s.includes("K-10") ||
     s.includes("ELEMENTARY + JHS") ||
-    s.includes("ELEMENTARY AND JUNIOR HIGH")
+    s.includes("ELEMENTARY AND JUNIOR HIGH") ||
+    (s.includes("ELEMENTARY") && s.includes("JUNIOR"))
   ) {
     return ["Elementary", "JHS"];
   } else if (
@@ -31,33 +35,49 @@ function parseCurricularOffering(rawOff) {
     s.includes("JUNIOR HIGH AND SENIOR HIGH") ||
     s.includes("JUNIOR HIGH & SENIOR HIGH") ||
     (s.includes("JUNIOR") && s.includes("SENIOR")) ||
+    (s.includes("JHS") && s.includes("SHS")) ||
     s.includes("7 TO 12") ||
     s.includes("7-12")
   ) {
     return ["JHS", "SHS"];
   } else if (
-    s.includes("ALL OFFERING") ||
-    s.includes("K TO 12") ||
-    s.includes("K-12") ||
-    s.includes("COMPREHENSIVE")
+    s.includes("PURELY ES") ||
+    s === "PURELY ES" ||
+    s.includes("PURELY ELEMENTARY") ||
+    s === "ELEMENTARY"
   ) {
-    return ["Elementary", "JHS", "SHS"];
+    return ["Elementary"];
+  } else if (
+    s.includes("PURELY JHS") ||
+    s === "PURELY JHS" ||
+    s.includes("PURELY JUNIOR") ||
+    (s.includes("JUNIOR HIGH") && !s.includes("SENIOR"))
+  ) {
+    return ["JHS"];
+  } else if (
+    s.includes("PURELY SHS") ||
+    s === "PURELY SHS" ||
+    s.includes("PURELY SENIOR") ||
+    (s.includes("SENIOR HIGH") && !s.includes("JUNIOR"))
+  ) {
+    return ["SHS"];
   }
 
   const offerings = [];
   if (
     s.includes("ELEM") ||
-    s.includes("ES") ||
     s.includes("PRIMARY") ||
-    s.includes("KINDER")
+    s.includes("KINDER") ||
+    /\bES\b/.test(s)
   ) {
     offerings.push("Elementary");
   }
   if (
     s.includes("JHS") ||
     s.includes("JUNIOR") ||
-    s.includes("SEC") ||
-    s.includes("HIGH")
+    (!s.includes("SENIOR") &&
+      !s.includes("SHS") &&
+      (s.includes("SEC") || s.includes("HIGH")))
   ) {
     offerings.push("JHS");
   }
@@ -81,7 +101,15 @@ const handleGetSchool = async (req, res) => {
       req.headers["x-school-id"] ||
       getSchoolIdFromRequest(req) ||
       "199999";
-    const cleanSchoolId = String(rawSchoolId).replace("SCH-", "").trim();
+    const cleanSchoolId = String(rawSchoolId).replace(/^SCH-/i, "").trim();
+    const reqSchoolYear = req.query.schoolYear || "SY 26-27";
+    const cacheKey = `esf7:school:identity:${cleanSchoolId}:${reqSchoolYear}`;
+
+    // 0. High-concurrency Redis cache lookup (0 DB queries)
+    const cachedSchool = await cacheService.get(cacheKey).catch(() => null);
+    if (cachedSchool) {
+      return res.json(cachedSchool);
+    }
 
     let schoolName = `School ${cleanSchoolId}`;
     let region = "";
@@ -89,7 +117,7 @@ const handleGetSchool = async (req, res) => {
     let district = "";
     let rawMCOC = null;
     let numberOfShifts = "1";
-    let schoolYear = "SY 26-27";
+    let schoolYear = reqSchoolYear;
     let certifiedBy = null;
     let certifiedSignature = null;
     let certifiedAt = null;
@@ -392,7 +420,7 @@ const handleGetSchool = async (req, res) => {
       ...(hasJhsSpecialPrograms ? jhsSpecialPrograms : []),
     ];
 
-    return res.json({
+    const responsePayload = {
       schoolId: cleanSchoolId,
       schoolName,
       region,
@@ -444,7 +472,10 @@ const handleGetSchool = async (req, res) => {
       shiftEndTime,
       shiftsConfig,
       curricularConfigSaved: localProf.rows.length > 0,
-    });
+    };
+
+    cacheService.set(cacheKey, responsePayload, 600).catch(() => {});
+    return res.json(responsePayload);
   } catch (err) {
     console.error("[GetSchool Error]:", err.message);
     res.status(500).json({ error: err.message });

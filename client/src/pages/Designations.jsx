@@ -225,6 +225,39 @@ export const parseKS1GradesFromKey = (keyStr) => {
     : ["Kinder", "Grade 1", "Grade 2", "Grade 3"];
 };
 
+export const extractDesignationString = (item) => {
+  if (!item) return "";
+  if (typeof item === "string") {
+    const s = item.replace(/::APPROVED_SDS/gi, "").trim();
+    if (
+      !s ||
+      s === "[object Object]" ||
+      s === "object Object" ||
+      s === "{}" ||
+      s.startsWith("[object")
+    ) {
+      return "";
+    }
+    return s;
+  }
+  if (typeof item === "object") {
+    const candidate =
+      (typeof item.serializedKey === "string" && item.serializedKey) ||
+      (typeof item.serialized_key === "string" && item.serialized_key) ||
+      (typeof item.designationName === "string" && item.designationName) ||
+      (typeof item.designation_name === "string" && item.designation_name) ||
+      (typeof item.designation === "string" && item.designation) ||
+      (typeof item.name === "string" && item.name) ||
+      (typeof item.title === "string" && item.title) ||
+      "";
+    if (candidate) return extractDesignationString(candidate);
+    if (item.designation && typeof item.designation === "object") {
+      return extractDesignationString(item.designation);
+    }
+  }
+  return "";
+};
+
 export default function Designations() {
   const {
     personnel,
@@ -287,16 +320,11 @@ export default function Designations() {
       personnel: (personnel || []).map((p) => ({
         id: p.id,
         prn: p.prn,
-        designation:
-          typeof p.designation === "string"
-            ? p.designation
-            : p.designation?.name || p.designation?.designation || "",
+        designation: extractDesignationString(p.designation),
         designations: Array.isArray(p.designations)
-          ? p.designations.map((d) =>
-              typeof d === "string"
-                ? d
-                : d?.name || d?.designation || d?.title || "",
-            )
+          ? p.designations
+              .map((d) => extractDesignationString(d))
+              .filter(Boolean)
           : [],
       })),
       naMap: { ...(designationsNaMap || {}) },
@@ -563,70 +591,49 @@ export default function Designations() {
   // Check if a person is assigned to targetKey (matching with or without ::APPROVED_SDS suffix)
   const isAssignedToKey = (personDesignation, targetKey) => {
     if (!personDesignation || !targetKey) return false;
-    const pStr =
-      typeof personDesignation === "string"
-        ? personDesignation
-        : personDesignation?.name ||
-          personDesignation?.designation ||
-          personDesignation?.title ||
-          String(personDesignation || "");
-    const tStr =
-      typeof targetKey === "string"
-        ? targetKey
-        : targetKey?.name ||
-          targetKey?.designation ||
-          targetKey?.title ||
-          String(targetKey || "");
-    const cleanPerson = String(pStr)
-      .replace(/::APPROVED_SDS/gi, "")
-      .trim()
-      .toUpperCase();
-    const cleanTarget = String(tStr)
-      .replace(/::APPROVED_SDS/gi, "")
-      .trim()
-      .toUpperCase();
+    const cleanPerson =
+      extractDesignationString(personDesignation).toUpperCase();
+    const cleanTarget = extractDesignationString(targetKey).toUpperCase();
+    if (!cleanPerson || !cleanTarget) return false;
     return cleanPerson === cleanTarget;
+  };
+
+  // Helper to check if a person already holds a specific designation (either primary or in secondary array)
+  const personHasRole = (person, canonicalKey, altKeys = []) => {
+    if (!person) return false;
+    const allTargets = [
+      canonicalKey,
+      ...(Array.isArray(altKeys) ? altKeys : []),
+    ]
+      .map((k) => extractDesignationString(k).toUpperCase())
+      .filter(Boolean);
+    if (allTargets.length === 0) return false;
+
+    const primaryKey = extractDesignationString(
+      person.designation,
+    ).toUpperCase();
+    const secondaryKeys = Array.isArray(person.designations)
+      ? person.designations
+          .map((d) => extractDesignationString(d).toUpperCase())
+          .filter(Boolean)
+      : [];
+
+    return allTargets.some(
+      (k) =>
+        primaryKey === k ||
+        primaryKey.startsWith(`${k} -`) ||
+        primaryKey.startsWith(`${k}:`) ||
+        secondaryKeys.some(
+          (d) => d === k || d.startsWith(`${k} -`) || d.startsWith(`${k}:`),
+        ),
+    );
   };
 
   // Helper to find all personnel assigned to a specific canonical key or list of alternative keys (strictly deduplicated)
   const getAssignedPersonnelForKey = (canonicalKey, altKeys = []) => {
-    const allKeys = [
-      canonicalKey,
-      ...(Array.isArray(altKeys) ? altKeys : []),
-    ].map((k) => String(k).toUpperCase());
-    const matched = activePersonnel.filter((p) => {
-      const pDesigStr =
-        typeof p.designation === "string"
-          ? p.designation
-          : p.designation?.name ||
-            p.designation?.designation ||
-            String(p.designation || "");
-      const clean = String(pDesigStr || "")
-        .replace(/::APPROVED_SDS/gi, "")
-        .trim()
-        .toUpperCase();
-      const desigsList = Array.isArray(p.designations)
-        ? p.designations.map((d) => {
-            const str =
-              typeof d === "string"
-                ? d
-                : d?.name || d?.designation || d?.title || String(d || "");
-            return str
-              .replace(/::APPROVED_SDS/gi, "")
-              .trim()
-              .toUpperCase();
-          })
-        : [];
-      return allKeys.some(
-        (k) =>
-          clean === k ||
-          clean.startsWith(`${k} -`) ||
-          clean.startsWith(`${k}:`) ||
-          desigsList.some(
-            (d) => d === k || d.startsWith(`${k} -`) || d.startsWith(`${k}:`),
-          ),
-      );
-    });
+    const matched = activePersonnel.filter((p) =>
+      personHasRole(p, canonicalKey, altKeys),
+    );
 
     // Strictly deduplicate so the same person is NEVER displayed multiple times in the same card
     const seen = new Set();
@@ -642,7 +649,7 @@ export default function Designations() {
     });
   };
 
-  // Assign personnel directly to a target key
+  // Assign personnel directly to a target key (allows multiple designations per personnel)
   const handleAssignDirectKey = async (targetKey, selectedPersonId) => {
     if (!selectedPersonId || !targetKey) return;
 
@@ -653,26 +660,24 @@ export default function Designations() {
     );
     if (!person) return;
 
-    const currentPrimary =
-      typeof person.designation === "string"
-        ? person.designation
-        : person.designation?.name || person.designation?.designation || "";
+    const cleanTarget = extractDesignationString(targetKey);
+    if (!cleanTarget) return;
+
+    const currentPrimary = extractDesignationString(person.designation);
     const currentDesigs = Array.isArray(person.designations)
-      ? person.designations.map((d) =>
-          typeof d === "string"
-            ? d
-            : d?.name || d?.designation || d?.title || String(d || ""),
-        )
+      ? person.designations
+          .map((d) => extractDesignationString(d))
+          .filter(Boolean)
       : [];
 
     let updatedPrimary = currentPrimary;
     let updatedDesigs = [...currentDesigs];
 
     if (!updatedPrimary) {
-      updatedPrimary = targetKey;
-    } else if (!isAssignedToKey(updatedPrimary, targetKey)) {
-      if (!updatedDesigs.some((d) => isAssignedToKey(d, targetKey))) {
-        updatedDesigs.push(targetKey);
+      updatedPrimary = cleanTarget;
+    } else if (!isAssignedToKey(updatedPrimary, cleanTarget)) {
+      if (!updatedDesigs.some((d) => isAssignedToKey(d, cleanTarget))) {
+        updatedDesigs.push(cleanTarget);
       }
     }
 
@@ -694,44 +699,11 @@ export default function Designations() {
         if (isCurrentPerson) {
           return updatedPerson;
         }
-
-        const pDesigStr =
-          typeof p.designation === "string"
-            ? p.designation
-            : p.designation?.name || p.designation?.designation || "";
-        const pDesigsList = Array.isArray(p.designations)
-          ? p.designations.map((d) =>
-              typeof d === "string"
-                ? d
-                : d?.name || d?.designation || d?.title || String(d || ""),
-            )
-          : [];
-
-        const hasTarget =
-          isAssignedToKey(pDesigStr, targetKey) ||
-          pDesigsList.some((d) => isAssignedToKey(d, targetKey));
-        if (!hasTarget) return p;
-
-        const newDesigs = pDesigsList.filter(
-          (d) => !isAssignedToKey(d, targetKey),
-        );
-        let newPrimary = pDesigStr;
-        if (isAssignedToKey(newPrimary, targetKey)) {
-          newPrimary = newDesigs.length > 0 ? newDesigs[0] : "";
-        }
-        const cleanedList = Array.from(
-          new Set(newDesigs.map((d) => String(d).trim())),
-        ).filter((d) => Boolean(d) && !isAssignedToKey(d, newPrimary));
-
-        return {
-          ...p,
-          designation: newPrimary,
-          designations: cleanedList,
-        };
+        return p;
       }),
     );
     showToast(
-      `✓ Assigned ${person.firstName} ${person.lastName} as ${targetKey}`,
+      `✓ Assigned ${person.firstName} ${person.lastName} as ${cleanTarget}`,
       "success",
     );
   };
@@ -746,22 +718,18 @@ export default function Designations() {
     );
     if (!person) return;
 
+    const cleanDesigName = extractDesignationString(desigName);
     const currentDesigs = Array.isArray(person.designations)
-      ? person.designations.map((d) =>
-          typeof d === "string"
-            ? d
-            : d?.name || d?.designation || d?.title || String(d || ""),
-        )
+      ? person.designations
+          .map((d) => extractDesignationString(d))
+          .filter(Boolean)
       : [];
     const remainingDesigs = currentDesigs.filter(
-      (d) => !isAssignedToKey(d, desigName),
+      (d) => !isAssignedToKey(d, cleanDesigName),
     );
 
-    let updatedPrimary =
-      typeof person.designation === "string"
-        ? person.designation
-        : person.designation?.name || person.designation?.designation || "";
-    if (isAssignedToKey(updatedPrimary, desigName)) {
+    let updatedPrimary = extractDesignationString(person.designation);
+    if (isAssignedToKey(updatedPrimary, cleanDesigName)) {
       updatedPrimary = remainingDesigs.length > 0 ? remainingDesigs[0] : "";
     }
 
@@ -783,7 +751,7 @@ export default function Designations() {
       ),
     );
     showToast(
-      `Unassigned ${person.firstName} ${person.lastName} from ${desigName}`,
+      `Unassigned ${person.firstName} ${person.lastName} from ${cleanDesigName || desigName}`,
       "info",
     );
   };
@@ -1158,39 +1126,23 @@ export default function Designations() {
     const list = [];
     activePersonnel.forEach((p) => {
       const keysToCheck = [];
-      if (p.designation) {
-        const dStr =
-          typeof p.designation === "string"
-            ? p.designation
-            : p.designation?.name ||
-              p.designation?.designation ||
-              String(p.designation || "");
-        if (dStr && dStr !== "[object Object]") keysToCheck.push(dStr);
-      }
+      const primaryStr = extractDesignationString(p.designation);
+      if (primaryStr) keysToCheck.push(primaryStr);
+
       if (Array.isArray(p.designations)) {
         p.designations.forEach((d) => {
-          if (!d) return;
-          const dStr =
-            typeof d === "string"
-              ? d
-              : d?.name || d?.designation || d?.title || String(d || "");
-          if (dStr && dStr !== "[object Object]" && !keysToCheck.includes(dStr))
+          const dStr = extractDesignationString(d);
+          if (dStr && !keysToCheck.includes(dStr)) {
             keysToCheck.push(dStr);
+          }
         });
       }
 
       keysToCheck.forEach((rawFullKey) => {
-        const fullKey =
-          typeof rawFullKey === "string"
-            ? rawFullKey
-            : rawFullKey?.name ||
-              rawFullKey?.designation ||
-              String(rawFullKey || "");
-        if (!fullKey || fullKey === "[object Object]") return;
-        const isApproved = String(fullKey).includes("::APPROVED_SDS");
-        const clean = String(fullKey)
-          .replace(/::APPROVED_SDS/gi, "")
-          .trim();
+        const fullKey = extractDesignationString(rawFullKey);
+        if (!fullKey) return;
+        const isApproved = String(rawFullKey).includes("::APPROVED_SDS");
+        const clean = fullKey;
 
         if (clean && !isSpecialSectionKey(clean)) {
           let category = clean;
@@ -1217,6 +1169,30 @@ export default function Designations() {
 
     return list;
   }, [activePersonnel, isAshRequired]);
+
+  // Grouped Additional Assignments for Section 3 Cards (each unique designation has a list of assigned personnel)
+  const groupedAdditionalAssignments = useMemo(() => {
+    const map = new Map();
+    additionalAssignments.forEach((item) => {
+      if (!map.has(item.cleanKey)) {
+        map.set(item.cleanKey, {
+          id: item.cleanKey,
+          cleanKey: item.cleanKey,
+          category: item.category,
+          parameter: item.parameter,
+          isSdsApproved: item.isSdsApproved,
+          assigned: [],
+        });
+      }
+      const entry = map.get(item.cleanKey);
+      if (
+        !entry.assigned.some((ap) => String(ap.id) === String(item.person.id))
+      ) {
+        entry.assigned.push(item.person);
+      }
+    });
+    return Array.from(map.values());
+  }, [additionalAssignments]);
 
   // OPTIONS AVAILABLE IN "+ ADD DESIGNATION" MODAL (Section 3)
   const additionalRoleOptions = useMemo(() => {
@@ -1383,18 +1359,13 @@ export default function Designations() {
       const changedPersonnel = (personnel || []).filter((p) => {
         const prev = prevPersonnelMap.get(String(p.id));
         if (!prev) return true;
-        const curDesig =
-          typeof p.designation === "string"
-            ? p.designation
-            : p.designation?.name || p.designation?.designation || "";
+        const curDesig = extractDesignationString(p.designation);
         const curList = Array.isArray(p.designations)
-          ? p.designations.map((d) =>
-              typeof d === "string"
-                ? d
-                : d?.name || d?.designation || d?.title || "",
-            )
+          ? p.designations
+              .map((d) => extractDesignationString(d))
+              .filter(Boolean)
           : [];
-        if (curDesig !== prev.designation) return true;
+        if (curDesig !== (prev.designation || "")) return true;
         if (
           JSON.stringify(curList.slice().sort()) !==
           JSON.stringify((prev.designations || []).slice().sort())
@@ -1406,15 +1377,13 @@ export default function Designations() {
       // Only the designation rows of each changed person are written (add / change /
       // remove); the rest of the profile, trainings and learning areas are not resent.
       for (const p of changedPersonnel) {
-        const primary =
-          typeof p.designation === "string"
-            ? p.designation
-            : p.designation?.name || p.designation?.designation || "";
-        await api.saveDesignationsForPersonnel(
-          p.id,
-          primary,
-          Array.isArray(p.designations) ? p.designations : [],
-        );
+        const primary = extractDesignationString(p.designation);
+        const secondary = Array.isArray(p.designations)
+          ? p.designations
+              .map((d) => extractDesignationString(d))
+              .filter(Boolean)
+          : [];
+        await api.saveDesignationsForPersonnel(p.id, primary, secondary);
         localStorage.removeItem(`draft_personnel_${p.id}`);
       }
 
@@ -1491,15 +1460,17 @@ export default function Designations() {
     return matchesName || matchesDesc || matchesTeacher;
   });
 
-  const filteredAdditionalAssignments = additionalAssignments.filter((a) => {
-    if (!searchTerm) return true;
+  const filteredAdditionalAssignments = useMemo(() => {
+    if (!searchTerm) return groupedAdditionalAssignments;
     const term = searchTerm.toLowerCase();
-    const matchesRole = a.cleanKey.toLowerCase().includes(term);
-    const matchesTeacher = `${a.person.firstName} ${a.person.lastName}`
-      .toLowerCase()
-      .includes(term);
-    return matchesRole || matchesTeacher;
-  });
+    return groupedAdditionalAssignments.filter((a) => {
+      const matchesRole = a.cleanKey.toLowerCase().includes(term);
+      const matchesTeacher = a.assigned.some((p) =>
+        `${p.firstName} ${p.lastName}`.toLowerCase().includes(term),
+      );
+      return matchesRole || matchesTeacher;
+    });
+  }, [groupedAdditionalAssignments, searchTerm]);
 
   const ks2Assigned = useMemo(() => {
     let count = 0;
@@ -1772,7 +1743,7 @@ export default function Designations() {
                     const isAssigned = assignedPersonnel.length > 0;
                     const isNa = !!designationsNaMap[role.id];
                     const availablePersonnel = activePersonnel.filter(
-                      (p) => !isAssignedToKey(p.designation, role.canonicalKey),
+                      (p) => !personHasRole(p, role.canonicalKey, role.altKeys),
                     );
 
                     return (
@@ -4190,7 +4161,7 @@ export default function Designations() {
                           );
                           const isAssigned = assigned.length > 0;
                           const available = activePersonnel.filter(
-                            (p) => !isAssignedToKey(p.designation, track.key),
+                            (p) => !personHasRole(p, track.key, track.altKeys),
                           );
 
                           return (
@@ -4763,9 +4734,6 @@ export default function Designations() {
                     }}
                   >
                     {filteredAdditionalAssignments.map((item) => {
-                      const initials =
-                        `${(item.person.firstName || "")[0] || ""}${(item.person.lastName || "")[0] || ""}`.toUpperCase();
-
                       return (
                         <div
                           key={item.id}
@@ -4789,7 +4757,7 @@ export default function Designations() {
                                 justifyContent: "space-between",
                                 alignItems: "flex-start",
                                 gap: "8px",
-                                marginBottom: "8px",
+                                marginBottom: "10px",
                               }}
                             >
                               <div>
@@ -4829,12 +4797,15 @@ export default function Designations() {
 
                               <button
                                 type="button"
-                                onClick={() =>
-                                  handleRemovePersonnel(
-                                    item.person.id,
-                                    item.cleanKey,
-                                  )
-                                }
+                                onClick={() => {
+                                  // Unassign all personnel from this designation
+                                  item.assigned.forEach((person) =>
+                                    handleRemovePersonnel(
+                                      person.id,
+                                      item.cleanKey,
+                                    ),
+                                  );
+                                }}
                                 style={{
                                   background: "#FEE2E2",
                                   color: "#DC2626",
@@ -4845,60 +4816,219 @@ export default function Designations() {
                                   fontWeight: "700",
                                   cursor: "pointer",
                                 }}
-                                title="Remove designation"
+                                title="Remove entire designation"
                               >
                                 Remove ✕
                               </button>
                             </div>
 
+                            {/* Assigned Personnel List */}
                             <div
                               style={{
-                                background: "#F8FAFC",
-                                border: "1px solid #E2E8F0",
-                                borderRadius: "10px",
-                                padding: "10px 12px",
                                 display: "flex",
-                                alignItems: "center",
-                                gap: "10px",
-                                marginTop: "6px",
+                                flexDirection: "column",
+                                gap: "6px",
                               }}
                             >
-                              <div
-                                style={{
-                                  width: "32px",
-                                  height: "32px",
-                                  borderRadius: "50%",
-                                  background: "#0D9488",
-                                  color: "white",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  fontWeight: "800",
-                                  fontSize: "12px",
-                                  flexShrink: 0,
-                                }}
-                              >
-                                {initials}
-                              </div>
-                              <div style={{ minWidth: 0, flex: 1 }}>
+                              {item.assigned.map((person) => {
+                                const initials =
+                                  `${(person.firstName || "")[0] || ""}${(person.lastName || "")[0] || ""}`.toUpperCase();
+
+                                return (
+                                  <div
+                                    key={person.id}
+                                    style={{
+                                      background: "#F8FAFC",
+                                      border: "1px solid #E2E8F0",
+                                      borderRadius: "10px",
+                                      padding: "8px 12px",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "space-between",
+                                      gap: "10px",
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "10px",
+                                        minWidth: 0,
+                                        flex: 1,
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          width: "30px",
+                                          height: "30px",
+                                          borderRadius: "50%",
+                                          background: "#0D9488",
+                                          color: "white",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "center",
+                                          fontWeight: "800",
+                                          fontSize: "11px",
+                                          flexShrink: 0,
+                                        }}
+                                      >
+                                        {initials}
+                                      </div>
+                                      <div style={{ minWidth: 0, flex: 1 }}>
+                                        <div
+                                          style={{
+                                            fontSize: "12.5px",
+                                            fontWeight: "800",
+                                            color: "#0F172A",
+                                            whiteSpace: "nowrap",
+                                            overflow: "hidden",
+                                            textOverflow: "ellipsis",
+                                          }}
+                                        >
+                                          {person.firstName} {person.lastName}
+                                        </div>
+                                        <div
+                                          style={{
+                                            fontSize: "10.5px",
+                                            color: "#64748B",
+                                          }}
+                                        >
+                                          {person.position || "Teacher"}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleRemovePersonnel(
+                                          person.id,
+                                          item.cleanKey,
+                                        )
+                                      }
+                                      style={{
+                                        background: "#FEE2E2",
+                                        color: "#DC2626",
+                                        border: "none",
+                                        borderRadius: "4px",
+                                        padding: "3px 6px",
+                                        fontSize: "10px",
+                                        fontWeight: "700",
+                                        cursor: "pointer",
+                                        flexShrink: 0,
+                                      }}
+                                      title="Unassign this teacher"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                );
+                              })}
+
+                              {/* + ADD PERSONNEL BUTTON / INLINE DROPDOWN */}
+                              {showAddPersonnelMap[item.cleanKey] ? (
                                 <div
                                   style={{
-                                    fontSize: "13px",
-                                    fontWeight: "800",
-                                    color: "#0F172A",
-                                    whiteSpace: "nowrap",
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
+                                    marginTop: "4px",
+                                    padding: "8px",
+                                    background: "#F0F9FF",
+                                    border: "1px solid #BAE6FD",
+                                    borderRadius: "8px",
                                   }}
                                 >
-                                  {item.person.firstName} {item.person.lastName}
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      alignItems: "center",
+                                      marginBottom: "4px",
+                                    }}
+                                  >
+                                    <span
+                                      style={{
+                                        fontSize: "11px",
+                                        fontWeight: "700",
+                                        color: "#0369A1",
+                                      }}
+                                    >
+                                      Add Personnel
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        toggleAddPersonnel(item.cleanKey, false)
+                                      }
+                                      style={{
+                                        background: "none",
+                                        border: "none",
+                                        color: "#64748B",
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      <FiX size={12} />
+                                    </button>
+                                  </div>
+                                  <SearchableDropdown
+                                    compact
+                                    options={activePersonnel
+                                      .filter(
+                                        (p) =>
+                                          !item.assigned.some(
+                                            (ap) =>
+                                              String(ap.id) === String(p.id),
+                                          ),
+                                      )
+                                      .map(
+                                        (p) =>
+                                          `${p.firstName} ${p.lastName} (${p.position || "Teacher"})`,
+                                      )}
+                                    value=""
+                                    onChange={(val) => {
+                                      const p = activePersonnel.find(
+                                        (person) =>
+                                          `${person.firstName} ${person.lastName} (${person.position || "Teacher"})` ===
+                                          val,
+                                      );
+                                      if (p) {
+                                        handleAssignDirectKey(
+                                          item.cleanKey,
+                                          p.id,
+                                        );
+                                        toggleAddPersonnel(
+                                          item.cleanKey,
+                                          false,
+                                        );
+                                      }
+                                    }}
+                                    placeholder="Select teacher to add..."
+                                  />
                                 </div>
-                                <div
-                                  style={{ fontSize: "11px", color: "#64748B" }}
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    toggleAddPersonnel(item.cleanKey, true)
+                                  }
+                                  style={{
+                                    marginTop: "4px",
+                                    background: "#F0F9FF",
+                                    color: "#0284C7",
+                                    border: "1px dashed #7DD3FC",
+                                    borderRadius: "8px",
+                                    padding: "6px 12px",
+                                    fontSize: "11.5px",
+                                    fontWeight: "700",
+                                    cursor: "pointer",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    gap: "6px",
+                                    transition: "all 0.15s ease",
+                                  }}
                                 >
-                                  {item.person.position || "Teacher"}
-                                </div>
-                              </div>
+                                  <FiPlus size={13} /> + Add Personnel
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -5000,7 +5130,7 @@ export default function Designations() {
                     const isAssigned = assignedPersonnel.length > 0;
                     const isNa = !!designationsNaMap[role.id];
                     const availablePersonnel = activePersonnel.filter(
-                      (p) => !isAssignedToKey(p.designation, role.canonicalKey),
+                      (p) => !personHasRole(p, role.canonicalKey, role.altKeys),
                     );
 
                     return (
@@ -5611,7 +5741,10 @@ export default function Designations() {
                       ]);
                       const isAssigned = assigned.length > 0;
                       const available = activePersonnel.filter(
-                        (p) => !isAssignedToKey(p.designation, targetKey),
+                        (p) =>
+                          !personHasRole(p, targetKey, [
+                            `DEPARTMENT HEAD - ${area.name.toUpperCase()}`,
+                          ]),
                       );
 
                       return (
@@ -5758,7 +5891,7 @@ export default function Designations() {
                       );
                       const isAssigned = assigned.length > 0;
                       const available = activePersonnel.filter(
-                        (p) => !isAssignedToKey(p.designation, track.key),
+                        (p) => !personHasRole(p, track.key, track.altKeys),
                       );
 
                       return (

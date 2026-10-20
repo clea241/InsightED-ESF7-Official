@@ -12,6 +12,7 @@ const cleanSid = (v) =>
 function formatDesignationRecord(row) {
   if (!row) return null;
   const extras = row.extras || {};
+  const canonicalName = row.serialized_key || row.designation_name || "";
   return {
     ...extras,
     id: row.id,
@@ -19,6 +20,8 @@ function formatDesignationRecord(row) {
     personnel_id: row.personnel_id,
     schoolId: row.school_id,
     school_id: row.school_id,
+    name: canonicalName,
+    designation: canonicalName,
     designationName: row.designation_name,
     designation_name: row.designation_name,
     keyStage: row.key_stage || extras.keyStage || null,
@@ -129,10 +132,65 @@ router.put("/personnel/:personnel_id", async (req, res) => {
   const client = await db.getClient();
   try {
     await client.query("BEGIN");
-    const personRes = await client.query(
-      `SELECT id, school_id FROM esf7_personnel_profile WHERE id = $1 OR legacy_id = $1 OR prn = $1 LIMIT 1`,
+    let personRes = await client.query(
+      `SELECT id, school_id FROM esf7_personnel_profile WHERE id = $1 OR legacy_id = $1 OR prn = $1 OR employee_no = $1 LIMIT 1`,
       [personnel_id],
     );
+    if (personRes.rows.length === 0) {
+      try {
+        const mRes = await client.query(
+          "SELECT * FROM esf7_database WHERE employee_no = $1 OR prn = $1 OR CAST(id AS TEXT) = $1 LIMIT 1",
+          [personnel_id],
+        );
+        if (mRes.rows.length > 0) {
+          const m = mRes.rows[0];
+          const canId = String(
+            m.prn ||
+              m.employee_no ||
+              `PER-${sessionSchoolId || "000000"}-${m.id}`,
+          ).trim();
+          const schId = String(m.school_id || sessionSchoolId || "000000")
+            .replace(/^SCH-/i, "")
+            .trim();
+          const legId = m.employee_no
+            ? String(m.employee_no).trim()
+            : String(m.id || personnel_id);
+          await client.query(
+            `INSERT INTO esf7_personnel_profile (
+              id, legacy_id, prn, school_id, school_year, first_name, middle_name, last_name, suffix,
+              sex, birthdate, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, 'SY 26-27', $5, $6, $7, $8, $9, $10, NOW(), NOW())
+            ON CONFLICT (id) DO UPDATE SET updated_at = NOW()`,
+            [
+              canId,
+              legId,
+              m.prn ? String(m.prn).trim() : null,
+              schId,
+              m.first_name || m.firstname || "TEACHER",
+              m.middle_name || m.middlename || null,
+              m.last_name || m.lastname || "TEACHER",
+              m.suffix || null,
+              m.sex || m.gender || null,
+              m.date_of_birth || m.birthdate || null,
+            ],
+          );
+          await client
+            .query(
+              `INSERT INTO esf7_personnel_employment (
+              id, personnel_id, position_title, position_category, appointment_status, created_at, updated_at
+            ) VALUES ($1, $2, $3, 'TEACHING', 'PERMANENT', NOW(), NOW())
+            ON CONFLICT (personnel_id) DO UPDATE SET updated_at = NOW()`,
+              [
+                `EMP-${canId}`,
+                canId,
+                m.position || m.position_title || "Teacher",
+              ],
+            )
+            .catch(() => {});
+          personRes = { rows: [{ id: canId, school_id: schId }] };
+        }
+      } catch (_e) {}
+    }
     if (personRes.rows.length === 0) {
       await client.query("ROLLBACK");
       return res.status(404).json({
@@ -294,10 +352,60 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ error: "personnel_id is required" });
     }
 
-    const personRes = await db.query(
+    let personRes = await db.query(
       `SELECT id, school_id FROM esf7_personnel_profile WHERE id = $1 OR prn = $1 OR legacy_id = $1 LIMIT 1`,
       [targetPersonId],
     );
+    if (personRes.rows.length === 0) {
+      try {
+        const mRes = await db.query(
+          "SELECT * FROM esf7_database WHERE employee_no = $1 OR prn = $1 OR CAST(id AS TEXT) = $1 LIMIT 1",
+          [targetPersonId],
+        );
+        if (mRes.rows.length > 0) {
+          const m = mRes.rows[0];
+          const canId = String(
+            m.prn || m.employee_no || `PER-${m.school_id || "000000"}-${m.id}`,
+          ).trim();
+          const schId = String(m.school_id || "000000")
+            .replace(/^SCH-/i, "")
+            .trim();
+          await db.query(
+            `INSERT INTO esf7_personnel_profile (
+              id, legacy_id, prn, school_id, school_year, first_name, middle_name, last_name, suffix,
+              sex, birthdate, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, 'SY 26-27', $5, $6, $7, $8, $9, $10, NOW(), NOW())
+            ON CONFLICT (id) DO UPDATE SET updated_at = NOW()`,
+            [
+              canId,
+              m.employee_no ? String(m.employee_no).trim() : null,
+              m.prn ? String(m.prn).trim() : null,
+              schId,
+              m.first_name || m.firstname || "TEACHER",
+              m.middle_name || m.middlename || null,
+              m.last_name || m.lastname || "TEACHER",
+              m.suffix || null,
+              m.sex || m.gender || null,
+              m.date_of_birth || m.birthdate || null,
+            ],
+          );
+          await db
+            .query(
+              `INSERT INTO esf7_personnel_employment (
+              id, personnel_id, position_title, position_category, appointment_status, created_at, updated_at
+            ) VALUES ($1, $2, $3, 'TEACHING', 'PERMANENT', NOW(), NOW())
+            ON CONFLICT (personnel_id) DO UPDATE SET updated_at = NOW()`,
+              [
+                `EMP-${canId}`,
+                canId,
+                m.position || m.position_title || "Teacher",
+              ],
+            )
+            .catch(() => {});
+          personRes = { rows: [{ id: canId, school_id: schId }] };
+        }
+      } catch (_e) {}
+    }
     if (personRes.rows.length === 0) {
       return res.status(404).json({
         error: `Cannot assign designation: Personnel profile '${targetPersonId}' does not exist in esf7_personnel_profile.`,

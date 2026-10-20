@@ -95,7 +95,8 @@ router.post("/toggle", async (req, res) => {
     }
 
     const cleanSchoolId = String(schoolId).replace(/^SCH-/i, "").trim();
-    const laId = `LA-${cleanSchoolId}-${resolvedPersonnelId.slice(0, 8)}`;
+    const crypto = require("crypto");
+    const laId = `LA-${cleanSchoolId}-${crypto.randomUUID()}`;
 
     const query = `
       INSERT INTO esf7_personnel_learning_areas (id, personnel_id, matrix_data, updated_at)
@@ -180,7 +181,8 @@ router.post("/:personnel_id", async (req, res) => {
     const resolvedPersonnelId = personRes.rows[0].id;
     const schoolId = personRes.rows[0].school_id || "108348";
     const cleanSchoolId = String(schoolId).replace(/^SCH-/i, "").trim();
-    const laId = `LA-${cleanSchoolId}-${resolvedPersonnelId.slice(0, 8)}`;
+    const crypto = require("crypto");
+    const laId = `LA-${cleanSchoolId}-${crypto.randomUUID()}`;
 
     const query = `
       INSERT INTO esf7_personnel_learning_areas (id, personnel_id, matrix_data, updated_at)

@@ -5524,11 +5524,7 @@ export const AppProvider = ({ children }) => {
                   mergedSchoolInfo.numberOfShifts ||
                   "1",
               ),
-              curricularOffering:
-                Array.isArray(node01.curricular_offering) &&
-                node01.curricular_offering.length > 0
-                  ? node01.curricular_offering
-                  : mergedSchoolInfo.curricularOffering,
+              // Authoritative Curricular Offering is governed strictly by DepEd master records (schools_iern.mcoc). Never override with node status.
             };
           }
 
@@ -5757,11 +5753,7 @@ export const AppProvider = ({ children }) => {
                   mergedSchoolInfo.numberOfShifts ||
                   "1",
               ),
-              curricularOffering:
-                Array.isArray(node01.curricular_offering) &&
-                node01.curricular_offering.length > 0
-                  ? node01.curricular_offering
-                  : mergedSchoolInfo.curricularOffering,
+              // Authoritative Curricular Offering is governed strictly by DepEd master records (schools_iern.mcoc). Never override with node status.
             };
           }
           setSchoolInfo(mergedSchoolInfo);
