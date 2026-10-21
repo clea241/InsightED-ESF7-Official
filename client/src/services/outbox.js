@@ -874,25 +874,8 @@ export async function runOneTimeLegacyCleanup({
         const raw = localStorage.getItem(key);
         if (raw) {
           try {
-            const parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === "object") {
-              let mod = "recovered_legacy";
-              let endpoint = "/api/school/draft";
-              if (key.includes("curricular_config")) {
-                mod = "school_profile";
-                endpoint = "/api/school/curricular-config";
-              } else if (key.includes("personnel")) {
-                mod = "personnel_profile";
-                endpoint = "/api/personnel";
-              } else if (key.includes("workload")) {
-                mod = "workload";
-                endpoint = "/api/workloads/batch";
-              } else if (key.includes("sections")) {
-                mod = "organized_classes";
-                endpoint = "/api/sections/bulk";
-              }
-            }
-          } catch (e) {
+            JSON.parse(raw);
+          } catch {
             // Not valid JSON, skip
           }
         }

@@ -803,57 +803,6 @@ router.get("/", async (req, res) => {
                 Array.isArray(dbMatch.trainings) && dbMatch.trainings.length > 0
                   ? dbMatch.trainings
                   : m.trainings || [],
-              position_title:
-                dbMatch.position_title || m.position_title || m.position,
-              collegeDegree:
-                dbMatch.collegeDegree ||
-                dbMatch.college_degree ||
-                m.collegeDegree ||
-                m.college_degree ||
-                "",
-              college_degree:
-                dbMatch.college_degree ||
-                dbMatch.collegeDegree ||
-                m.college_degree ||
-                m.collegeDegree ||
-                "",
-              major: dbMatch.major || m.major || "",
-              minor: dbMatch.minor || m.minor || "N/A",
-              highestEducationalAttainment:
-                dbMatch.highestEducationalAttainment ||
-                dbMatch.highest_educational_attainment ||
-                m.highestEducationalAttainment ||
-                m.highest_educational_attainment ||
-                "",
-              highest_educational_attainment:
-                dbMatch.highest_educational_attainment ||
-                dbMatch.highestEducationalAttainment ||
-                m.highest_educational_attainment ||
-                m.highestEducationalAttainment ||
-                "",
-              degreeRows:
-                Array.isArray(dbMatch.degreeRows) &&
-                dbMatch.degreeRows.length > 0
-                  ? dbMatch.degreeRows
-                  : m.degreeRows || [],
-              collegeDegrees:
-                Array.isArray(dbMatch.collegeDegrees) &&
-                dbMatch.collegeDegrees.length > 0
-                  ? dbMatch.collegeDegrees
-                  : m.collegeDegrees || [],
-              prcSpecialization:
-                dbMatch.prcSpecialization ||
-                dbMatch.prc_specialization ||
-                m.prcSpecialization ||
-                m.prc_specialization ||
-                "",
-              prc_specialization:
-                dbMatch.prc_specialization ||
-                dbMatch.prcSpecialization ||
-                m.prc_specialization ||
-                m.prcSpecialization ||
-                "",
-              workloadRows: resolvedWkl,
             };
 
         mergedList.push(mergedRecord);
