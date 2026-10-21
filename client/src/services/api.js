@@ -152,6 +152,7 @@ export class ApiError extends Error {
     this.status = status;
     /** @type {any} parsed JSON body of a non-OK reply, when the server sent one */
     this.body = null;
+    /** @type {string|number|null} */ this.retryAfter = null;
     /** @type {string} */ this.method = "";
     /** @type {string} */ this.statusText = "";
     /** @type {string[]} */ this.payloadKeys = [];
