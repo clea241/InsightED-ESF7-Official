@@ -1,3 +1,4 @@
+require("../db/directPort");
 const { Pool } = require("pg");
 
 const BASE =

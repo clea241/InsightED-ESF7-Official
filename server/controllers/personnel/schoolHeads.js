@@ -53,8 +53,11 @@ async function writeSchoolHeads(
       ? db.getPoolForSchool(sid)
       : null) ||
     db.prodPool ||
-    db.getPool();
-  const client = await pool.connect();
+    (typeof db.getPool === "function" ? db.getPool() : null);
+  const client =
+    pool && typeof pool.connect === "function"
+      ? await pool.connect()
+      : await db.getClient();
   let resolvedSet = [];
   let resolvedUnset = [];
   try {
